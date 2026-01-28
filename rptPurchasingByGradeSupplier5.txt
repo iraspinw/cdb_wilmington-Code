@@ -1,0 +1,958 @@
+
+
+-- 8/1/23 I.R Suppliers Report; this report corresponds to Purchases by Supplier Cietrade report
+
+-- 9/1/23 I.R. Made format similar to Wild Suppliers list (per T.Topp)
+
+-- 10/27/23 I.R. Changed where and from clauses, based on LoadmanagerInquiry
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier5] '','','','','','S','','SHIP','', 0 -- use this
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier5] '2023-07-01','2023-07-31','','','','S','','SHIP','', 0
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier5] '2023-07-01','2023-07-31','','','','S','','SHIP','', 1
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier5] '2023-07-01','2023-07-31','','','','S','','INV','', 0
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier5] '2023-07-01','2023-07-31','','','','S','','SHIP','', 0
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier5] '2022-08-01','2023-08-01','','','','S','','SHIP','', 0
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier5] '2023-07-01','2023-08-01','','','','S','','SHIP','', 0
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier5] '2023-07-01','2023-08-31','','','','S','','SHIP','', 0
+
+
+
+CREATE   PROCEDURE [dbo].[rptPurchasingByGradeSupplier5] @FromMnth datetime,
+
+@ToMnth datetime
+
+                                                               ,
+
+@SupplierID varchar(12)
+
+								                               ,
+
+@CoID varchar(2)
+
+															   ,
+
+@TradeType char(25)
+
+															   ,
+
+@UOM char(1)
+
+								                               ,
+
+@Industry varchar(50) = ''
+
+															   ,
+
+@DateRange varchar(5) = 'INV'
+
+															   ,
+
+@GradeID char(15)
+
+								                               ,
+
+@IncludeCompleted tinyint = 0
+
+
+
+ AS
+
+--12/02/2010 RS: Created from [q_GetPurchasingByGradeSupplier] for .NET
+
+
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+
+
+--select *
+
+--from [cdb_Wilmington].information_schema.columns where column_name = 'pweight'
+
+
+
+--select top(10) * from WKSDetail
+
+
+
+--select top(10) * from BuySell
+
+	
+
+	IF @FromMnth =''
+
+	   SET @FromMnth = '2023-07-01'
+
+	IF @ToMnth = ''
+
+	   SET @ToMnth = GETDATE()
+
+
+
+    CREATE TABLE #REPORT(
+
+	    BillCompany varchar(65),
+
+        GradeName varchar(65), 
+
+        CompanyNm varchar(65),
+
+        --ShipFromID char(45), 
+
+        BuySellNo char(12), 
+
+        Weight decimal(18,8),
+
+        Units decimal(12,0), 
+
+        Cost money,
+
+        Adjustments Money DEFAULT 0,
+
+        TotalCost money,
+
+        Freight money,
+
+        TotalWeight decimal(18,8),
+
+		TransactionPeriod varchar(7),
+
+		COID char(2)
+
+         )
+
+
+
+    CREATE TABLE #SUMMARY(
+
+	    BillCompany varchar(65),
+
+        GradeName varchar(65), 
+
+        CompanyNm varchar(65),
+
+        --ShipFromID char(45), 
+
+        Weight decimal(18,8) DEFAULT 0,
+
+        Cost money DEFAULT 0,
+
+        Adjustments Money DEFAULT 0,
+
+        TotalCost money DEFAULT 0,
+
+        AvgCost decimal(18,8) DEFAULT 0,
+
+        NoShipments int DEFAULT 0,
+
+        Freight money DEFAULT 0,
+
+        AvgFrt money DEFAULT 0,
+
+		AvgPurchCost decimal(18,8) DEFAULT 0
+
+		, TransactionPeriod varchar(7)
+
+		, COID char(2)
+
+         )
+
+
+
+    INSERT	#REPORT(BillCompany,
+
+	               CompanyNm,
+
+	               BuySellNo,
+
+	               GradeName,
+
+	               Weight,
+
+	               Cost,
+
+	               --ShipFromID,
+
+	               TransactionPeriod,
+
+	               COID)    
+
+	SELECT BuySell.ShipToID BillCompany,
+
+		   Vend.companynm,
+
+		   BuySell.BuySellNo,
+
+		   Grade.[description]
+
+		   ,SUM(dbo.CONVERT_TO_UOM(wksdetail.pweight, wksdetail.pweightuom, @UOM))
+
+
+
+		   --,SUM(wksdetail.PAmount)
+
+
+
+		   ,(SELECT b.PSupplierCost + b.PAdjustment FROM Buysell b WHERE b.Buysellno = buysell.buysellno)
+
+
+
+		   --,ShipFromID
+
+
+
+		   ,FORMAT(BuySell.ShippingDt, 'M/yyyy') TransactionPeriod
+
+		   ,BuySell.COID
+
+
+
+FROM BuySell WITH(NOLOCK) 
+
+
+
+	INNER JOIN Counterparty Vend WITH(NOLOCK) ON BuySell.VendorID = Vend.CpID
+
+	INNER JOIN Counterparty C WITH(NOLOCK) ON BuySell.CustID = C.CpID
+
+
+
+	LEFT JOIN [Address] A WITH(NOLOCK) ON A.CpID = '(INV)' and A.Type = BuySell.ShipFromID
+
+
+
+	LEFT JOIN [CompanyInfo] W WITH(NOLOCK) ON W.COID = BuySell.COID
+
+	LEFT JOIN po PO on PO.PONumber = BuySell.RefPONo
+
+	LEFT JOIN po SO on SO.PONumber = BuySell.RefSONo
+
+	LEFT JOIN Booksheet BS on BS.BookingNo = BuySell.BookingNo
+
+	LEFT JOIN Grade on Grade.GradeID = BuySell.RefGradeID
+
+	LEFT JOIN [Address] ShipToAddress WITH(NOLOCK) ON ShipToAddress.CpID = BuySell.CustID 
+
+	AND ShipToAddress.[Type] = BuySell.ShipToID
+
+	LEFT JOIN [Address] ShipFromAddress WITH(NOLOCK) ON ShipFromAddress.CpID = BuySell.VendorID 
+
+	AND ShipFromAddress.[Type] = BuySell.ShipFromID
+
+	LEFT JOIN [UserDef] UD WITH(NOLOCK) ON UD.UserID = BuySell.UserID
+
+
+
+	LEFT JOIN wksdetail WITH(NOLOCK) ON buysell.buysellno = wksdetail.buysellno
+
+
+
+	WHERE 
+
+    -- ((@DateRange = 'INV'
+
+	--	AND B.InvoiceDt >= @FromMnth
+
+	--	AND B.InvoiceDt <= @ToMnth)
+
+
+
+	--OR (@DateRange = 'SHIP'
+
+	--	AND 
+
+
+
+	BuySell.ShippingDt >= @FromMnth AND BuySell.ShippingDt <= @ToMnth
+
+
+
+	--BuySell.ShippingDt >= '2023-09-01' AND BuySell.ShippingDt <= '2023-09-30'
+
+
+
+    AND ISNULL(BuySell.PublicTradeID, 0) = 0
+
+
+
+	AND (ISNULL(BuySell.IsAgency, 0) <> 1)
+
+
+
+	AND UPPER([dbo].[CnvShipStatus_Name](BuySell.ShippingOK)) = 'SHIPPED'
+
+
+
+	AND UPPER([dbo].[CnvWksStatus_Name](ISNULL(BuySell.[Status], ''), '')) = 'INVOICED'
+
+
+
+	--AND BuySell.COID = 1
+
+
+
+	-- 10/27/23 I.R. Commented out the code below
+
+--FROM
+
+--	BuySell WITH(NOLOCK)
+
+
+
+--INNER JOIN wksdetail WITH(NOLOCK) ON
+
+--	buysell.buysellno = wksdetail.buysellno
+
+
+
+--INNER JOIN Counterparty Vend WITH(NOLOCK) ON
+
+--	buysell.vendorid = Vend.cpid
+
+
+
+--INNER JOIN Grade WITH(NOLOCK) ON
+
+--	wksdetail.gradeid = Grade.gradeid
+
+
+
+--WHERE
+
+
+
+--	--BuySell.Completed = 1 
+
+--	--AND 
+
+
+
+--	--(BuySell.ShippingDt >=@FromMnth  AND BuySell.ShippingDt <= @ToMnth)
+
+--	--AND
+
+--	--((@IncludeCompleted=0 and BuySell.Invoiced = '1') OR (@IncludeCompleted=1 and BuySell.Completed = 1))
+
+
+
+--	--AND 
+
+
+
+--	((@DateRange = 'INV'
+
+--		AND BuySell.InvoiceDt >= @FromMnth
+
+--		AND BuySell.InvoiceDt <= @ToMnth)
+
+--	OR (@DateRange = 'SHIP'
+
+--		AND BuySell.ShippingDt >= @FromMnth
+
+--		AND BuySell.ShippingDt <= @ToMnth))
+
+
+
+--	AND BuySell.vendorid <> '(INV)' 
+
+	
+
+--	AND BuySell.vendorid <> '(PLANT)'
+
+
+
+--	--AND BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(Plant)'
+
+
+
+--	AND (@SupplierID = '' OR @SupplierID = Vend.CpID)
+
+
+
+--	AND (@GradeID = '' 	OR wksdetail.gradeid = @GradeID)
+
+
+
+--	AND (@COID = '' OR @COID = BUYSELL.COID)
+
+
+
+--	AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+
+
+--	AND WksDetail.PWeightUOM <> 'E'
+
+
+
+--	AND (@Industry = '' OR Vend.IndustryNm = @Industry)
+
+
+
+GROUP BY
+
+	BuySell.ShipToID,
+
+	Vend.companynm,
+
+	BuySell.BuySellNo,
+
+	Grade.Description
+
+	,BuySell.ShipFromID
+
+	,FORMAT(BuySell.ShippingDt, 'M/yyyy')
+
+	,BuySell.COID
+
+
+
+	-- UPDATE REPORT DETAIL TABLE WITH TOTAL WORKSHEET COSTS
+
+
+
+
+
+    SELECT
+
+	DISTINCT #REPORT.BuySellNo,
+
+	sum(#REPORT.cost) AS TotalCost,
+
+	sum(#REPORT.Weight) AS TotalWeight
+
+INTO
+
+	#BuySellList
+
+FROM
+
+	#REPORT
+
+GROUP BY
+
+	#REPORT.BUYSELLNO
+
+
+
+    UPDATE	#REPORT
+
+    SET
+
+	#REPORT.TotalCost = #BuySellList.TotalCost
+
+    FROM
+
+	#REPORT
+
+    INNER JOIN #BuySellList ON
+
+	#REPORT.BUYSELLNO = #BuySellList.BuySellNo
+
+
+
+    UPDATE #REPORT
+
+    SET #REPORT.TotalWeight = #BuySellList.TotalWeight
+
+    FROM #REPORT
+
+    INNER JOIN #BuySellList ON
+
+	#REPORT.BUYSELLNO = #BuySellList.BuySellNo
+
+
+
+	-- UPDATE REPORT DETAIL TABLE WITH EXPENSES
+
+
+
+    SELECT	#REPORT.BuySellNo,	GradeName
+
+
+
+	,sum(ISNULL(Payables.Amount, 0) * (#REPORT.Weight / #REPORT.TotalWeight)) AS FRT
+
+
+
+	--08/02/2023 I.R.
+
+	--, sum(ISNULL(Buysell.PFreightChg, 0)) AS FRT
+
+
+
+    INTO #EXP
+
+    FROM #REPORT
+
+	INNER JOIN Payables WITH(NOLOCK) ON
+
+	Payables.buysellno = #REPORT.buysellno
+
+    INNER JOIN BuySell WITH(NOLOCK) ON
+
+    Buysell.BuySellNo = #REPORT.buysellno
+
+
+
+    WHERE
+
+
+
+	#REPORT.TotalWeight <> 0
+
+
+
+	AND 
+
+
+
+	Payables.ItemIDSource = 'D'
+
+	AND Payables.Amount <> 0
+
+	AND ISNULL(Payables.Reversed,0) <> 1
+
+    GROUP BY #REPORT.BUYSELLNO, GradeName 
+
+
+
+    UPDATE	#REPORT
+
+    SET #REPORT.Freight = #EXP.FRT
+
+    FROM
+
+	#REPORT
+
+  INNER JOIN #EXP ON
+
+	#REPORT.BUYSELLNO = #EXP.BuySellNo
+
+	AND #REPORT.GradeName = #EXP.GradeName
+
+
+
+	-- ADJUSTMENTS
+
+    SELECT
+
+	#REPORT.BuySellNo,
+
+	GradeName,
+
+	sum(GPLEDGER.COST * (#REPORT.Cost / #REPORT.TotalCost)) AS AllocAmt
+
+    INTO
+
+	#ALLOCADJ
+
+FROM
+
+	GPLEDGER WITH(NOLOCK)
+
+INNER JOIN #REPORT ON
+
+	GPLEDGER.BUYSELLNO = #REPORT.BuySellNo
+
+WHERE
+
+	GPLEDGER.AdjType = 'P'
+
+	AND #REPORT.TotalCost > 0
+
+	AND (@SupplierID = ''
+
+		OR @SupplierID = AdjCPID)
+
+GROUP BY
+
+	#REPORT.BuySellNo,
+
+	GradeName 
+
+
+
+    UPDATE
+
+	#REPORT
+
+    SET Adjustments = AllocAmt,
+
+	TotalCost = TotalCost + AllocAmt
+
+    FROM
+
+	#REPORT
+
+    INNER JOIN #ALLOCADJ ON
+
+	#REPORT.BuysellNo = #ALLOCADJ.BuysellNo
+
+	AND #REPORT.GradeName = #ALLOCADJ.GradeName
+
+
+
+    SELECT
+
+	BillCompany,
+
+	CompanyNm,
+
+	GradeName,
+
+	BuySellNo,
+
+	TransactionPeriod,
+
+	COID,
+
+	SUM(WEIGHT) AS Weight,
+
+	SUM(COST) AS Cost,
+
+	SUM(Adjustments) AS Adjustments,
+
+	1 AS Shipments,
+
+	SUM(Freight) AS Freight
+
+	--,ShipFromID
+
+    INTO
+
+	#CONSOLIDATION
+
+FROM
+
+	#REPORT
+
+GROUP BY
+
+	BillCompany,
+
+	GradeName,
+
+	CompanyNm,
+
+	--ShipFromID,
+
+	BuySellNo ,
+
+	TransactionPeriod,
+
+	COID
+
+
+
+    INSERT
+
+	#SUMMARY (BillCompany,
+
+	CompanyNm,
+
+	GradeName,
+
+	Weight,
+
+	Cost,
+
+	Adjustments,
+
+	NoShipments,
+
+	Freight,
+
+	AvgFrt,
+
+	--ShipFromID,
+
+	TransactionPeriod,
+
+	COID)
+
+
+
+    SELECT
+
+	BillCompany,
+
+	CompanyNm,
+
+	GradeName,
+
+	SUM(WEIGHT) AS Weight,
+
+	SUM(COST) AS Cost,
+
+	SUM(Adjustments) AS Adjustments,
+
+	SUM(Shipments),
+
+	SUM(ISNULL(Freight, 0)),
+
+	0 AS AvgFrt,
+
+	--,ShipFromID
+
+	TransactionPeriod,
+
+	COID
+
+FROM
+
+	#CONSOLIDATION
+
+GROUP BY
+
+	BillCompany,
+
+	GradeName,
+
+	CompanyNm,
+
+	--ShipFromID,
+
+	TransactionPeriod,
+
+	COID
+
+
+
+    UPDATE
+
+	#SUMMARY
+
+SET
+
+	TotalCost = Cost + ISNULL(Adjustments,
+
+	0)+ ISNULL(Freight,
+
+	0),
+
+	AvgCost = (Cost + ISNULL(Adjustments,
+
+	0)+ ISNULL(Freight,
+
+	0))/ Weight
+
+WHERE
+
+	Cost + ISNULL(Adjustments,
+
+	0)+ ISNULL(Freight,
+
+	0) <> 0
+
+	AND Weight <> 0
+
+    UPDATE
+
+	#SUMMARY
+
+SET
+
+	AvgFrt = Freight / Weight
+
+WHERE
+
+	Freight <> 0
+
+	AND Weight <> 0
+
+    UPDATE
+
+	#SUMMARY
+
+SET
+
+	AvgPurchCost = Cost / Weight
+
+WHERE
+
+	Cost <> 0
+
+	AND Weight <> 0
+
+	--UPDATE #SUMMARY SET CompanyNm = 'UNASSIGNED' WHERE CompanyNm = '(Other)'
+
+	--SELECT * FROM #SUMMARY ORDER BY GradeName,Companynm,ShipFromID
+
+	--COUNT LOCATIONS PER SUPPLIER
+
+	SELECT
+
+	GradeName,
+
+	CompanyNm
+
+	--,COUNT(DISTINCT ShipFromID) AS LocCount
+
+	INTO
+
+	#LocCount
+
+FROM
+
+	#SUMMARY
+
+GROUP BY
+
+	GradeName,
+
+	CompanyNm
+
+	
+
+    SELECT
+
+	--LocCount,
+
+	--#SUMMARY.*
+
+	--#SUMMARY.[BillCompany],
+
+	RTRIM(CompanyInfo.CompanyNm) Branch --BillCompany
+
+
+
+	,(SELECT Cpid from Counterparty where Companynm = #SUMMARY.[CompanyNm]) SupplierID
+
+
+
+	,#SUMMARY.[CompanyNm] SuppName --Supplier
+
+
+
+	,(SELECT RTRIM(Cpid) from Counterparty where Companynm = #SUMMARY.[CompanyNm]) + ' - ' + #SUMMARY.[CompanyNm] SupplierName
+
+
+
+	,(SELECT ProductGroupID FROM Grade where [Description] = #SUMMARY.[GradeName]) GradeGroup
+
+	,(SELECT GradeID FROM Grade where [Description] = #SUMMARY.[GradeName]) Grade
+
+		,#SUMMARY.[GradeName] --CieTradeGradeName
+
+
+
+		,(SELECT RTRIM(GradeID) FROM Grade where [Description] = #SUMMARY.[GradeName]) + ' (' + 
+
+		 (SELECT RTRIM(ProductGroupID) FROM Grade where [Description] = #SUMMARY.[GradeName]) + ') ' + #SUMMARY.[GradeName] GradeID
+
+		 ,#SUMMARY.[GradeName] ItemDescription
+
+		 ,#SUMMARY.[GradeName] CieTradeGradeName
+
+		--#SUMMARY.[ShipFromID] ,
+
+		,#SUMMARY.[Weight] Tons,
+
+		#SUMMARY.[Cost] BuyPrice,
+
+		'' TotalNetProfit,
+
+		@FromMnth FromDate,
+
+		'' LatestPickupDate,
+
+		@ToMnth ToDate,
+
+		#SUMMARY.[TransactionPeriod] [Period],
+
+		#SUMMARY.[Adjustments],
+
+		#SUMMARY.[TotalCost] ,
+
+		#SUMMARY.[AvgCost],
+
+		#SUMMARY.[NoShipments],
+
+		#SUMMARY.[Freight] ,
+
+		#SUMMARY.[AvgFrt],
+
+		#SUMMARY.[AvgPurchCost] 
+
+
+
+	--,#SUMMARY.[COID]
+
+	-- #SUMMARY.[InUOM] 
+
+	-- , dbo.CnvUOM_Names(@UOM) as InUOM
+
+
+
+	INTO #Final
+
+FROM
+
+	#SUMMARY
+
+--INNER JOIN #LocCount ON
+
+--	#LocCount.Companynm = #SUMMARY.Companynm
+
+--	AND #LocCount.GradeName = #SUMMARY.GradeName
+
+INNER JOIN CompanyInfo ON #SUMMARY.COID = CompanyInfo.coid
+
+
+
+WHERE #SUMMARY.[CompanyNm] <> '(Inventory)' 
+
+
+
+ORDER BY
+
+	CompanyInfo.CompanyNm,
+
+	#SUMMARY.Companynm,
+
+	#SUMMARY.GradeName
+
+	--,#SUMMARY.ShipFromID
+
+
+
+SELECT SuppName, SUM(TotalCost) [Amount USD], SUM(Tons) [Weight Shipped],  SUM(NoShipments) Loads
+
+FROM #Final
+
+where Branch = 'RMR Atlanta'
+
+AND [Period] = '9/2023'
+
+GROUP BY SuppName
+
+
+
+-- rptPurchasingByGradeSupplier '11/02/2010','12/02/2010','','','','S','','INV','',0
+

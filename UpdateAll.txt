@@ -1,0 +1,37 @@
+
+
+-- 4/11/24 I.R.
+
+
+
+-- EXEC [dbo].[UpdateAll]
+
+
+
+CREATE   Procedure [dbo].[UpdateAll] AS
+
+
+
+BEGIN
+
+
+
+set nocount on
+
+
+
+EXEC [dbo].[UpdateTables]
+
+
+
+--EXEC [dbo].[cw_RptPurchasesBySupplier2CietradeAndWildCombined] '', '', '', '', 'S', '', 0, 0, 'POST', 0, ''
+
+
+
+--EXEC [dbo].[cw_SalesByCustomerProduct2CietradeAndWildCombined] '', '', '', '', '', '', '', 'L', 0, ''
+
+
+
+
+
+END 

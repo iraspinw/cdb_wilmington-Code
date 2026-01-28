@@ -1,0 +1,131 @@
+CREATE Procedure UpdateInvLotNo AS
+
+BEGIN
+
+declare @charcnt as int
+
+declare @fld as varchar(20)
+
+declare @x as varchar(20)
+
+declare @pipecnt as int	
+
+declare @invlotno as varchar(100)
+
+declare @detailID as int
+
+declare @lenInvlotno as int
+
+
+
+
+
+set nocount on
+
+declare detailID_cursor CURSOR FOR Select detailid, invlotno from wksdetail
+
+open detailID_cursor
+
+fetch next from detailID_cursor INTO @detailID, @invlotno
+
+while(@@fetch_status <> -1)
+
+begin
+
+    if (@@fetch_status <> -2) 
+
+    begin
+
+    	select @charcnt = 0
+
+	select @pipecnt = 0
+
+	--select @invlotno = invlotno from wksdetail where detailid =3056
+
+	while len(@invlotno) >0 
+
+	begin
+
+	    select @charcnt = @charcnt + 1
+
+	    --check each character
+
+	    select @x=substring(@invlotno, @charcnt,1) 
+
+	    if @x = '|' begin
+
+	   
+
+	   	select @pipecnt = @pipecnt + 1
+
+		-- get field value left of the "|"
+
+	        select @fld = left(@invlotno, @charcnt -1)
+
+		if @fld = '|' begin 
+
+		   select @fld = ''
+
+ 		end
+
+	        if @pipecnt = 1 begin
+
+			update wksdetail set lotno =  @fld where detailid =@detailID
+
+	        end
+
+	        if @pipecnt = 2 begin
+
+			update wksdetail set unittype = @fld where detailid = @detailID
+
+	        end
+
+	        if @pipecnt = 3 begin
+
+		 	update wksdetail set units = convert(int, convert(float,@fld)) where detailid = @detailID
+
+	        end
+
+	        if @pipecnt = 4 begin
+
+			update wksdetail set relno = @fld where detailid = @detailID
+
+			-- update rollno by getting the last substring which is equal to rollno
+
+			select @lenInvlotno = len(@invlotno)
+
+	        	update wksdetail set rollno = substring(@invlotno, @charcnt+1, @lenInvlotno) where detailid = @detailID
+
+			break --want to exit the loop since there are only 4 "|"s
+
+		end
+
+		  /*if @pipecnt = 5 begin
+
+			update wksdetail set rollno = @fld where detailid =948
+
+		  end	
+
+		  */  
+
+	        select @lenInvlotno = len(@invlotno)
+
+	        select @invlotno = substring(@invlotno, @charcnt+1, @lenInvlotno) 
+
+	        select @charcnt = 0
+
+    	    end --@x = '|'	
+
+	end --len(@invlotno) >0 
+
+	
+
+    end --@@fetch_status <> -2
+
+    fetch next from detailID_cursor INTO @detailID, @invlotno
+
+end --@@fetch_status <> -1
+
+DEALLOCATE detailID_cursor
+
+END --store procedure

@@ -1,0 +1,2104 @@
+
+
+-- 8/8/24 I.R. Added 'SS', 'RS' inventory statuses
+
+-- 10/31/23 I.R.
+
+-- Customers report corresponds (tonnage) to Sales By Customer & Product Cietrade report (tonnage, $ sales), combined with Wild data
+
+-- 2/6/25 Ticket 12042002
+
+
+
+-- 9/4/25 Made changes - some data was in gpledger instead of wksdelivery table
+
+
+
+-- RMR
+
+-- Requested runs
+
+
+
+-- 10/28/25 Per T. Topp (Urgent)
+
+
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2025-01-01', '2025-09-30', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- Scheduled on wpgtestsql server
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2025-01-01', '', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- 9/17/25 Per T. Topp
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2025-01-01', '2025-08-31', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- 9/4/25 Per T. Topp
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2025-01-01', '2025-08-31', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- 8/13/25 Per T. Topp
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2024-11-01', '2025-07-31', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- 7/15/25 Per T. Topp
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2025-01-01', '2025-06-30', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- 6/11/25 Per T. Topp
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2025-04-01', '2025-05-31', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2025-02-01', '2025-04-30', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2025-02-01', '2025-03-31', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- Wilmington
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2025-02-01', '2025-03-31', '', '', '11', '', '', 'L', 0, ''
+
+
+
+-- Tests
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2023-11-01', '2023-11-13', '', '', '', '', '', 'S', 0, ''
+
+
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2023-07-01', '2023-07-31', '', '', '', '', '', 'S', 0, ''
+
+
+
+-- [dbo].[cw_SalesByCustomerProduct2Cietrade] '2023-09-01', '2023-09-30', '', '', '', '', '', 'S', 0, ''
+
+
+
+
+
+CREATE PROCEDURE [dbo].[cw_SalesByCustomerProduct2Cietrade] 
+
+	 @FromDate datetime = '',
+
+	 @ToDate datetime = '',
+
+	 @CustID char(12) = '',  
+
+	 @TradeType varchar(48) = '',
+
+	 @CoID varchar(10) = '',
+
+	 @Product varchar(40) = '',
+
+	 @salesRep varchar(40) = '',
+
+	 @UOM char = 'L',
+
+	 @isdrilldown bit = 0,
+
+	 @drilldownCust varchar(100) = ''
+
+
+
+--9/23/2022 DN: Created for Sales by Customer & Product Report
+
+
+
+AS
+
+
+
+BEGIN
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	IF @FromDate =''
+
+	   --SET @FromDate = '2023-07-01'
+
+	   SET @FromDate = '2024-11-01' -- Per T.Topp on 2/6/25
+
+	IF @ToDate = ''
+
+	   SET @ToDate = CAST(GETDATE() AS DATE)
+
+
+
+DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+
+
+BEGIN TRY
+
+IF OBJECT_ID('tempdb..#detail','U') IS NOT NULL
+
+DROP TABLE #detail
+
+
+
+
+
+CREATE TABLE #detail(
+
+	CompanyNm varchar(100),
+
+	CustomerID varchar(100),
+
+	Grade varchar(100),
+
+	shipppingDt datetime,
+
+	Sales money,
+
+	buysellno varchar(20),
+
+	TotalShippedWeight decimal(22, 3),
+
+	ShipmentCount int,
+
+	COID char(50),
+
+	WksType char(1)
+
+	,TransactionPeriod varchar(7)
+
+
+
+	,SFreightChg money
+
+	,SupplierID char(12)
+
+	,Delivery [char](50)
+
+	,SAdjustment money
+
+
+
+	,[Product Category] [char](30) 
+
+	,[Product Group] [char](30) 
+
+	,[Grade Group] [char](30) 
+
+	,[CieTradeGradeName] [varchar](65) 
+
+	,[ItemDescription] [varchar](65) 
+
+	,[Grade_ID] [char](15)
+
+	,[GradeName] [varchar] (100)
+
+	,[Unit] [char](30)
+
+	,[Reference #] [varchar](50)
+
+	,[Tons] [decimal](18, 5)
+
+	,[SellPriceTon] money
+
+	,[SalesAmountTotal] money
+
+)
+
+
+
+--TRUNCATE TABLE tblCietradeAndWildCustomerCombined_Ticket_12042002
+
+
+
+IF OBJECT_ID('tempdb..#r23') IS NOT NULL
+
+    DROP TABLE #r23
+
+
+
+IF OBJECT_ID('tempdb..#r24') IS NOT NULL
+
+    DROP TABLE #r24
+
+
+
+IF OBJECT_ID('tempdb..#r25') IS NOT NULL
+
+    DROP TABLE #r25
+
+
+
+IF OBJECT_ID('tempdb..#detail2') IS NOT NULL
+
+    DROP TABLE #detail2
+
+
+
+SELECT case when TRIM(cr.[Company]) = 'RMR' then 'RMR Raleigh'
+
+            when TRIM(cr.[Company]) = 'RMR Philadelphia' then 'RMR Philly'
+
+	        else cr.[Company]
+
+		end Company
+
+		, ri.[Index]
+
+		, ri.[Index_Value]
+
+
+
+		,CASE when LEN(RTRIM(Substring(ri.[Period],6,2)) +'/'+Substring(ri.[Period],1,4)) = 6 then
+
+			      '0' + RTRIM(Substring(ri.[Period],6,2)) +'/'+Substring(ri.[Period],1,4) 
+
+		    else Substring(ri.[Period],6,2) +'/'+Substring(ri.[Period],1,4)  end [Period]
+
+			INTO #r23
+
+		FROM [cdb_Wilmington].[dbo].[tblCompanyRegion] cr
+
+		JOIN [cdb_Wilmington].[dbo].[tblRegionalIndices2] ri
+
+		ON ri.[Region] = cr.[Region]
+
+
+
+SELECT [CieTradeGradeName]
+
+      ,[Index]
+
+	  INTO #r24
+
+  FROM [cdb_Wilmington].[dbo].[CietradeGradeNameIndexes]
+
+
+
+   SELECT 
+
+       #r23.Company
+
+      ,#r23.[Index]
+
+      ,#r23.[Index_Value]
+
+	  ,#r23.[Period]
+
+	  ,#r24.[CieTradeGradeName]
+
+	  INTO #r25
+
+  FROM #r23
+
+  LEFT JOIN #r24
+
+  ON #r23.[Index] = #r24.[Index]
+
+
+
+INSERT
+
+	#detail
+
+SELECT 
+
+	 --counterparty.CompanyNm AS [Company Name],
+
+
+
+	case when TRIM(counterparty.Companynm) = 'RMR Raleigh, LLC' then 'RMR Raleigh'
+
+		      when TRIM(counterparty.Companynm) = 'RMR Philadelphia' then 'RMR Philly'
+
+			  else TRIM(counterparty.Companynm) 
+
+	end [Company Name],
+
+
+
+	buysell.CustID AS [Customer ID],
+
+	grade.Description AS Grade,
+
+	buysell.InvoiceDt AS [Shippipng DT],
+
+	wksdetail.SAmount AS [sales],
+
+	buysell.BuySellNo AS BuySellNo,
+
+
+
+	-- 7/11/2024
+
+	--isnull(DBO.CONVERT_TO_UOM(WKSDetail.SWeight,WKSDetail.SWeightUOM,@UOM),0) ,
+
+	--8/29/24 I.R.
+
+	isnull(DBO.CONVERT_TO_UOM2(WKSDetail.SWeight,WKSDetail.SWeightUOM,@UOM),0) ,
+
+    --ISNULL(buysell.Netwt, 0),
+
+
+
+	-- 11/28/23 I.R.
+
+	--ISNULL(buysell.TotalWeightLbs, 0),
+
+
+
+	1,
+
+	CompanyInfo.CompanyDesc,
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+
+
+	-- 8/14/24 Per T.Topp Ticket 11411369
+
+	,FORMAT(BuySell.InvoiceDt, 'MM/yyyy') TransactionPeriod
+
+    --,FORMAT(BuySell.InvoiceDt, 'M/yyyy') TransactionPeriod
+
+	--,FORMAT(BuySell.ShippingDt, 'MM/yyyy') TransactionPeriod
+
+
+
+
+
+	,SfreightChg
+
+	,buysell.VendorID SupplierID
+
+	,buysell.PriceBasis Delivery
+
+	,buysell.SAdjustment
+
+
+
+	,grade.ProductCategoryID
+
+	,grade.ProductGroupID
+
+	,grade.ProductGroupID
+
+	,[dbo].[GetCietradeGradeName](grade.Description)
+
+	,grade.[Description]
+
+	,grade.GradeID
+
+	,TRIM(grade.GradeID) + ' ' + '(' + trim(grade.Description)+')'
+
+	,(SELECT [UnitType] from Unittype where [TypeID] = WKSDetail.UnitType)
+
+	,ISNULL(buysell.PickupNo, '')
+
+	,wksdetail.SWeight/2000
+
+	--,wksdetail.PPrice
+
+	,wksdetail.SPrice
+
+	--,wksdetail.PAmount
+
+	,wksdetail.SAmount
+
+
+
+from BuySell
+
+	left join WKSDetail on WKSDetail.BuySellNo = buysell.BuySellNo
+
+	left join CounterParty on buysell.CustID = counterparty.CpID
+
+	left join GPLedger on GPLedger.BuySellNo = buysell.BuySellNo
+
+	left join grade on grade.GradeID = WksDetail.GradeID
+
+	left join CompanyInfo on buysell.COID = CompanyInfo.COID
+
+where
+
+   	--12/20/23 I.R
+
+	((GPLedger.Source = 'B' and buysell.status = 'I'))
+
+
+
+	--12/20/23 I.R
+
+	--((GPLedger.Source = 'B'))
+
+	--AND (GPLedger.TradeDt >= @FromDate AND GPLedger.TradeDt <= @ToDaTe)
+
+
+
+	AND ((InvoiceDt >=@FromDate) OR (@FromDate = ''))
+
+	AND ((InvoiceDt <=@ToDate) OR (@ToDate = ''))
+
+
+
+	and (buysell.CustID = @CustID or @CustID = '')
+
+	AND ((@CoID = '' and BuySell.CoID <> '11') OR (BuySell.CoID = @CoID))
+
+	AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+	AND (@salesRep = '' OR @salesRep= BuySell.ReferrerNo1 OR @salesRep= BuySell.ReferrerNo2)
+
+	and(@Product = '' or grade.GradeID = @Product)
+
+
+
+	--01/17/24 I.R.
+
+	--and WksDetail.SFxAmount <> 0
+
+
+
+	--8/29/24 I.R.
+
+	--and WksDetail.SweightUOM <> 'E'
+
+
+
+	and (BuySell.CustID <> '(OTHER)' AND  BuySell.CustID <> '(INV)')
+
+	AND (IsNull(IsAgency,0) <> 1)		--worksheets where products dont count on financials.
+
+
+
+			--	(GPLedger.TradeDt >= @FromDt AND GPLedger.TradeDt <= @ToDT)   
+
+			--AND ((@FilterDept = '') OR (CompanyInfo.COID = @FilterDept))
+
+			--AND ((@TradeType = '') OR (@TradeType = BuySell.TradeType))
+
+			--AND ((@CPID = '') OR (@CPID = CounterParty.CPID))
+
+			--AND (BuySell.CustID <> '(OTHER)' AND  BuySell.CustID <> '(INV)')
+
+			--AND ((GPLedger.Source = 'B' AND BuySell.[Status] = 'I')  
+
+			--OR (GPLedger.Source = 'A' AND AdjType = 'S' AND GPLEDGER.AdjPosted = 'Y' ))
+
+			--AND (IsNull(IsAgency,0) <> 1)
+
+
+
+
+
+	SELECT 
+
+        --COID BillCompany,
+
+
+
+		 case when TRIM(COID) = 'RMR Raleigh, LLC' then 'RMR Raleigh'
+
+		      when TRIM(COID) = 'RMR Philadelphia' then 'RMR Philly'
+
+		 else TRIM(COID) end BillCompany
+
+
+
+         ,CustomerID, CompanyNm CustDescript
+
+	     ,[Shipped to Name] = (SELECT ShipToID from Buysell where buysellno = #detail.buysellno)
+
+	  ,[Customer County] = ''
+
+
+
+      ,[Customer Zip] = ISNULL((SELECT Postalcd FROM [Address] where cpid = [CustomerID] and [Type] = (SELECT ShipToID from buysell where buysellno = #detail.buysellno)), '')
+
+
+
+      ,[Customer City] = ISNULL((SELECT City FROM [Address] where cpid = [CustomerID] and [Type] = (SELECT ShipToID from buysell where buysellno = #detail.buysellno)), '')
+
+
+
+      ,[Customer Street Address] = ISNULL((SELECT ISNULL(TRIM(Addr2), '') + ' ' + ISNULL(TRIM(Addr3), '') FROM [Address] where cpid = [CustomerID] and [Type] = (SELECT ShipToID from buysell where buysellno = #detail.buysellno)), '')
+
+
+
+	  ,[Product Category]
+
+
+
+	  ,[Product Group]
+
+
+
+	  ,[Grade Group]
+
+
+
+	  ,CietradeGradeName
+
+
+
+	  ,ItemDescription
+
+	  ,[Grade] = Grade_ID
+
+
+
+	  ,GradeName
+
+
+
+	  ,ISNULL(Unit, '') Unit
+
+
+
+	  ,[Index] = '' -- update at the end
+
+
+
+	  ,[Index_Value] = 0.00 -- update at the end
+
+
+
+	  ,[Delivery Term] = [Delivery]
+
+
+
+	  , [Load] = buysellno
+
+
+
+	  , [Reference #]
+
+
+
+	  , Tons
+
+
+
+	  ,SellPriceTon
+
+
+
+	  ,SalesAmountTotal
+
+
+
+	  ,[Outbound Freight Cost on Load] = 
+
+	  --
+
+		
+
+		 ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = #detail.Buysellno and InvoiceDesc = 'Freight-Plant-Outbound'
+
+		           and IsFreight = 1), 0.00)
+
+		      * [Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       
+
+	  , [Outbound Freight Cost Allocated] = 0.00
+
+
+
+	   ,[Outbound Freight Cost Adjustment] = 
+
+	   --
+
+		
+
+		 ROUND(ISNULL((SELECT SUM(Cost) FROM GPLedger where Buysellno = #detail.Buysellno and [source] = 'A' 
+
+		      --and Glacct = '510020'
+
+		       and Adjreason like '%actually billed%'), 0.00)
+
+		      * [Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+		  
+
+
+
+	   , [Open N/A] = 0.00
+
+
+
+	   -- SELECT SUM(ChgToCustAmt) FROM Wksdelivery where Buysellno ='57629'
+
+
+
+	   -- SELECT * FROM Wksdelivery where Buysellno ='57629'
+
+
+
+	  ,[Freight Charge to Customer on Load] = 
+
+	  --
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510030'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+		 --ROUND(ISNULL((SELECT SUM(ChgToCustAmt) FROM Wksdelivery where Buysellno = #detail.Buysellno 
+
+		 --          --and InvoiceDesc = 'Freight-Plant-Outbound'
+
+			--	   and SalesGLAcct = '400100' and IsFreight = 1), 0.00)
+
+		 --    * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3)
+
+       
+
+
+
+	   ,[Freight Charge to Customer Allocated] = 0.00
+
+
+
+
+
+	   -- select * from gpledger where GLAcct = '414140'
+
+
+
+	  ,[Light Weight Deduction] = 
+
+	  --
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '414140' and [source] = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+		
+
+		 --ROUND(ISNULL((SELECT SUM(ChgToCustAmt) FROM Wksdelivery where Buysellno = #detail.Buysellno 
+
+		 --          and InvoiceDesc = 'Light Weight Deduction'
+
+			--	   and SalesGLAcct = '400100' 
+
+			--	   --and IsFreight = 1
+
+			--	   ), 0.00)
+
+		 --     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3)
+
+       
+
+
+
+	  , [Sum of all out of original period adjustments] = 
+
+
+
+	  --
+
+		 
+
+		ROUND(ISNULL((SELECT SUM(Sale) FROM GPLedger where Buysellno = #detail.Buysellno  
+
+		                  and [source] = 'A' and Tradedt = (SELECT Invoicedt from buysell where Buysellno = #detail.Buysellno)), 0.00)
+
+		                  * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3)
+
+
+
+       -- select * from wksdelivery where GLAcct = '510310'
+
+
+
+	  ,[Bobtail] = 
+
+	  --
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510310'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 		 
+
+
+
+	-- select * from gpledger where glacct = '510310' [source]= 'A' and AdjType = 'S' --  nothing found
+
+
+
+	-- select * from wksdelivery where GLAcct = '528105'
+
+
+
+	,[Bale Tags] = 
+
+	  --
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '528105'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+
+
+      -- select * from wksdelivery where GLAcct = '512000'
+
+
+
+	  ,[BOL Fee] = 
+
+	  --
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '512000'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3)        
+
+
+
+	   -- select * from gpledger where glacct = '414100' [source]= 'A' and AdjType = 'S' --  nothing found
+
+
+
+	   -- select * from wksdelivery where GLAcct = '535005'
+
+
+
+	  ,[Chassis Dray Expenses] = 
+
+	  --
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '535005'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+      -- select * from wksdelivery where GLAcct = '414100'
+
+	  ,[Chassis Dray Sales] = 
+
+	  --
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414100'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+	   -- select * from gpledger where glacct = '414105' [source]= 'A' and AdjType = 'S' --  nothing found
+
+
+
+	   -- select * from wksdelivery where GLAcct = '414105'
+
+
+
+	   -- select * from wksdelivery where GLAcct = '535000'
+
+
+
+
+
+   	  ,[Chassis Rental Expenses] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '535000'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3)   
+
+
+
+   	  --,[Chassis Rental Sales] = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414105'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+      -- select * from wksdelivery where GLAcct = '535000'
+
+
+
+    
+
+
+
+   --	  ,[Commissions Brokerage] = 
+
+	  ----
+
+		
+
+	  --		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '555515'), 0.00)
+
+		 --    * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+      -- select * from wksdelivery where GLAcct = '510500'
+
+
+
+   	  ,[Customs charges Expenses] = 
+
+	  --
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510500'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+   --	  ,[Customs charges Sales] = 
+
+	  ----
+
+		
+
+	  --		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414100'), 0.00)
+
+		 --    * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3)       
+
+
+
+
+
+   	  --,[Demurrage Sales] = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414115'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+      
+
+	  -- select * from wksdelivery where GLAcct = '511000'
+
+
+
+   	  ,[Demurrage Expenses] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '511000'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+      -- select * from wksdelivery where GLAcct = '525005'
+
+
+
+   	  ,[Detention Expenses] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '525005'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+ 
+
+   	  --,[Detention Sales] = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414120'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+
+
+	  -- select * from gpledger where GLAcct = '414180'
+
+
+
+   	  ,[Downgrade] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '414180' and [source] = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+   	  --,[Drayage Sales] = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414125'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+	  -- select * from wksdelivery where GLAcct = '531000'
+
+
+
+   	  ,[Drayage Expenses] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '531000'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3)        
+
+
+
+	  
+
+	  -- select * from wksdelivery where GLAcct = '527500'
+
+
+
+   	  ,[Drop trailer] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '527500'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+      -- select * from wksdelivery where GLAcct = '510025'
+
+
+
+   	  ,[Freight chargeback] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510025'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+      -- select * from wksdelivery where GLAcct = '511100'
+
+
+
+	  ,[Freight Pass Through] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '511100'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+      -- select * from wksdelivery where GLAcct = '510200'
+
+
+
+   	  ,[Freight-brokerage] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510200'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+      -- select * from wksdelivery where GLAcct = '510210'
+
+
+
+   	  ,[Freight-brokerage-prior-adj] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510210'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+      -- select * from wksdelivery where GLAcct = '510030'
+
+
+
+   	  ,[Freight-plant-outbound Expenses] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510030'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+   	  --,[Freight-plant-outbound Sales] = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414130'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+	
+
+	   -- select * from gpledger where GLAcct = '510010'
+
+
+
+   	  ,[Freight-Prior Adj] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '510010' and [source] = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+  	   -- select * from wksdelivery where GLAcct = '510200'
+
+
+
+   	  ,[Fuel Surcharge Recovery] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510200'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+  	   -- select * from wksdelivery where GLAcct = '530000'
+
+
+
+   	  ,[Handling] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '530000'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+  	   -- select * from wksdelivery where GLAcct = '510031'
+
+
+
+   	  ,[Interco Freight-Plant-Outbound] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510031'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+  	   -- select * from wksdelivery where GLAcct = '400510'
+
+
+
+   	  ,[Intercompany Sales] = 
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '400510'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+  	   -- select * from wksdelivery where GLAcct = '528700'
+
+   	  ,[Landfill] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '528700'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+  	   -- select * from wksdelivery where GLAcct = '520000'
+
+
+
+   	  ,[Layover Expenses] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '520000'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+   	  --,[Layover Sales] = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414135'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+   	  --,[Lightweight Charge Sales] = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414140'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+  	   -- select * from wksdelivery where GLAcct = '500220'
+
+
+
+   	  ,[Lightweight Charge Expenses] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '500220'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 	
+
+			 
+
+	--, [Ocean Freight Sales] = 
+
+	--  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414145'), 0.00)
+
+	--	     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+ 
+
+	--, [Ocean Freight Expenses] = 
+
+	--  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '510400'), 0.00)
+
+	--	     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+   	  --,[Overweight Charge Sales]  = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414150'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+	   -- select * from gpledger where GLAcct = '500230'
+
+
+
+   	  ,[Overweight Charge Expenses]  = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '500230'  and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+
+
+	   -- select * from gpledger where GLAcct = '414200'
+
+
+
+   	  ,[Pallets]  = 
+
+				
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '414200' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+  
+
+     --,[Per Diem Sales]  = 
+
+		
+
+	  		-- ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414155'), 0.00)
+
+		   --  * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+	   -- select * from gpledger where GLAcct = '528200'
+
+
+
+     ,[Per Diem Expenses]  = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '528200' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+   	  --,[Pre-pull/Yard pull Sales]  = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414160'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+
+
+	   -- select * from gpledger where GLAcct = '510320'
+
+	   
+
+	  ,[Pre-pull/Yard pull Expenses]  = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [GPledger] where buysellno = #detail.Buysellno and GLAcct = '510320' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+	   -- select * from gpledger where GLAcct = '414190'
+
+
+
+   	  ,[Pricing Error]  = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(sale) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '414190' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+	   -- select * from gpledger where GLAcct = '412000'
+
+
+
+   	  ,[Quality Adjustment]  = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '412000' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+   	  --,[Redelivery Fee Sales]  = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414165'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+ 
+
+ 
+
+	   -- select * from gpledger where GLAcct = '532000'
+
+	   
+
+		,[Redelivery Fee Expenses]  = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '532000' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+
+
+	   -- select * from gpledger where GLAcct = '414185'
+
+
+
+   	  ,[Rejection]  = 
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '414185' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+   	  --,[Repo (Chassis or Container) Sales]  = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414170'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+
+
+	   -- select * from wksdelivery where GLAcct = '535200'
+
+ 
+
+   	  ,[Repo (Chassis or Container) Expenses]  = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '535200'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+
+
+	   -- select * from gpledger where GLAcct = '400100'
+
+
+
+   	  ,[Sales]   = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '400100' and [source] = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+	   -- select * from gpledger where GLAcct = '400110'
+
+
+
+   	  ,[Sales Discount]   = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '400110'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+	   -- select * from gpledger where GLAcct = '810000'
+
+
+
+   	  ,[Sales Tax Paid]   = 
+
+		 
+
+	  		 ROUND(ISNULL((SELECT SUM(sale) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '810000' and [source] = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+	   -- select * from gpledger where GLAcct = '820000'
+
+   
+
+   	  ,[Sales Tax Received]   = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(sale) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '820000' and [source] = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+	   -- select * from gpledger where GLAcct = '400200'
+
+   	  
+
+	  ,[Sales-Brokerage]   = 
+
+		 
+
+	  		 ROUND(ISNULL((SELECT SUM(sale) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '400200' and [source] = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+	   -- select * from gpledger where GLAcct = '400210'
+
+
+
+   	  ,[Sales-Brokerage Prior Adj]   = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(sale) FROM [GPLedger] where buysellno = #detail.Buysellno and GLAcct = '400210' and [source] = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+	   -- select * from gpledger where GLAcct = '400120'
+
+
+
+   	  ,[Sales-Prior Adj]   = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '400120' and [Source] = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+   	  --,[Service]   = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '528400'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+
+
+	  -- select * from gpledger where GLAcct = '414175'
+
+
+
+   	  ,[Storage]   = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '414175' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+			 
+
+   	  --,[Storage Sales]   = 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '414175'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+
+
+
+
+	  -- select * from gpledger where GLAcct = '414205'
+
+
+
+   	  ,[Switcher]   = 
+
+			
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '414205' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+	   -- select * from gpledger where GLAcct = '410000'
+
+
+
+   	  ,[TOLERANCE]  = 
+
+		 
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '410000' and source = 'A'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+       -- select * from gpledger where GLAcct = '414195'
+
+
+
+   	  ,[TONU]   = 
+
+		 
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [gpLedger] where buysellno = #detail.Buysellno and GLAcct = '414195'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+      
+
+
+
+	  -- select * from gpledger where GLAcct = '424000'
+
+
+
+   	  ,[Transload] = 
+
+		
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '424000'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+	   -- select top(10) * from wksdelivery where buysellno = '35111' --GLAcct = '411000'
+
+
+
+	   -- select top(10) * from gpledger where buysellno = '35111'  and GLAcct = '411000'
+
+
+
+   	  ,[Weight Adjustment]   = 
+
+
+
+	  		 ROUND(ISNULL((SELECT SUM(Sale) FROM [gpledger] where buysellno = #detail.Buysellno and GLAcct = '411000'), 0.00)
+
+		     * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+		
+
+	  		 --ROUND(ISNULL((SELECT SUM(Cost) FROM [WksDelivery] where buysellno = #detail.Buysellno and GLAcct = '411000'), 0.00)
+
+		    -- * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3) 
+
+       
+
+
+
+		 ,[Cash Received Date] = (SELECT Max(PaymentDt) FROM [Receipt] where Buysellno = #detail.Buysellno /* and [PostingType] = 'CRE'*/)
+
+
+
+	     ,[Amount Cash Received] = 
+
+		                          
+
+								   ROUND(ISNULL((SELECT SUM(Amount) FROM [Receipt] where Buysellno = #detail.Buysellno 
+
+								   /*and [PostingType] = 'CRE'*/), 0.00)
+
+		                           * ([Tons] /sum(IIF([Tons] > 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 3)
+
+			                       
+
+         ,ISNULL((SELECT [dbo].[CnvWksStatus_Name](ISNULL([Status],''),'') FROM Buysell where buysellno = #detail.Buysellno), '') [Status]
+
+
+
+		, UPPER([dbo].[CnvShipStatus_Name]((SELECT BuySell.ShippingOK from buysell where Buysellno = #detail.Buysellno))) [Logistics]
+
+		, [Period] = [TransactionPeriod]
+
+
+
+    INTO #detail2
+
+
+
+	FROM #detail 
+
+
+
+	--DROP TABLE  IF EXISTS tmprr
+
+
+
+SELECT 
+
+   #detail2.BillCompany
+
+	   --(SELECT TradeType from buysell where buysellno = [Load]) [Program Or Brokerage]
+
+      ,[CustomerID]
+
+      ,[CustDescript]
+
+      ,[Shipped to Name]
+
+      ,[Customer County]
+
+      ,[Customer Zip]
+
+      ,[Customer City]
+
+      ,[Customer Street Address]
+
+      ,[Product Category]
+
+      ,[Product Group]
+
+      ,[Grade Group]
+
+      ,#detail2.[CietradeGradeName]
+
+      ,[ItemDescription]
+
+      ,[Grade]
+
+      ,[GradeName]
+
+      ,[Unit]
+
+	  ,#r25.[Index],#r25.[Index_Value]
+
+      ,[Delivery Term]
+
+      ,[Load]
+
+      ,[Reference #]
+
+      ,[Tons]
+
+      ,[SellPriceTon]
+
+      ,[SalesAmountTotal]
+
+      ,[Outbound Freight Cost on Load]
+
+      ,[Outbound Freight Cost Allocated]
+
+      ,[Outbound Freight Cost Adjustment]
+
+      ,[Open N/A]
+
+      ,[Freight Charge to Customer on Load]
+
+      ,[Freight Charge to Customer Allocated]
+
+      ,[Light Weight Deduction]
+
+      ,[Sum of all out of original period adjustments]
+
+       --,[Bale Tags]
+
+      ,[Bobtail]
+
+      --,[BOL Fee]
+
+      ,[Chassis Dray] = [Chassis Dray Expenses]
+
+      --,[Chassis Dray Sales]
+
+      --,[Chassis Rental Sales]
+
+      ,[Chassis Rental] = [Chassis Rental Expenses]
+
+
+
+      --,[Commissions Brokerage]
+
+
+
+      ,[Customs charges] = [Customs charges Expenses]
+
+
+
+      --,[Customs charges Sales]
+
+
+
+      --,[Demurrage Sales]
+
+
+
+      ,[Demurrage] = [Demurrage Expenses]
+
+
+
+      ,[Detention] = [Detention Expenses]
+
+
+
+      --,[Detention Sales]
+
+
+
+      ,[Downgrade]
+
+
+
+      --,[Drayage Sales]
+
+
+
+      ,[Drayage] = [Drayage Expenses]
+
+
+
+      ,[Drop trailer]
+
+
+
+      ,[Freight chargeback]
+
+
+
+      --,[Freight Pass Through]
+
+
+
+      ,[Freight-brokerage]
+
+
+
+      ,[Freight-brokerage-prior-adj]
+
+      ,[Freight-plant-outbound] = [Freight-plant-outbound Expenses]
+
+
+
+      --,[Freight-plant-outbound Sales]
+
+
+
+      ,[Freight-Prior Adj]
+
+
+
+      ,[Fuel Surcharge Recovery]
+
+
+
+      ,[Handling]
+
+      ,[Interco Freight-Plant-Outbound]
+
+
+
+      ,[Intercompany Sales]
+
+
+
+      ,[Landfill]
+
+
+
+      ,[Layover] = [Layover Expenses]
+
+
+
+      --,[Layover Sales]
+
+
+
+      --,[Lightweight Charge Sales]
+
+
+
+      ,[Lightweight Charge] = [Lightweight Charge Expenses]
+
+
+
+      --,[Ocean Freight Sales]
+
+
+
+      --,[Ocean Freight] = [Ocean Freight Expenses]
+
+
+
+      --,[Overweight Charge Sales]
+
+
+
+      ,[Overweight Charge] = [Overweight Charge Expenses]
+
+
+
+      ,[Pallets]
+
+
+
+      --,[Per Diem Sales]
+
+
+
+      --,[Per Diem] = [Per Diem Expenses]
+
+
+
+      --,[Pre-pull/Yard pull Sales]
+
+
+
+      ,[Pre-pull/Yard pull] = [Pre-pull/Yard pull Expenses]
+
+
+
+      ,[Pricing Error]
+
+
+
+      ,[Quality Adjustment]
+
+
+
+      --,[Redelivery Fee Sales]
+
+
+
+      ,[Redelivery Fee] = [Redelivery Fee Expenses]
+
+
+
+      ,[Rejection]
+
+
+
+      --,[Repo (Chassis or Container) Sales]
+
+
+
+      ,[Repo (Chassis or Container)] = [Repo (Chassis or Container) Expenses]
+
+
+
+      ,[Sales]
+
+
+
+      ,[Sales Discount]
+
+
+
+      ,[Sales Tax Paid]
+
+
+
+      ,[Sales Tax Received]
+
+
+
+      ,[Sales-Brokerage]
+
+
+
+      ,[Sales-Brokerage Prior Adj]
+
+
+
+      ,[Sales-Prior Adj]
+
+
+
+      --,[Service]
+
+
+
+      ,[Storage] 
+
+
+
+      --,[Storage Sales]
+
+
+
+      ,[Switcher]
+
+
+
+      ,[TOLERANCE]
+
+
+
+      ,[TONU]
+
+
+
+      ,[Transload]
+
+
+
+      ,[Weight Adjustment]
+
+
+
+      ,[Cash Received Date]
+
+
+
+      ,[Amount Cash Received]
+
+
+
+      ,[Status]
+
+
+
+      ,[Logistics]
+
+      ,#detail2.[Period]
+
+
+
+	  --INTO tmprr
+
+
+
+  FROM #detail2
+
+left join #r25 ON #detail2.BillCompany = #r25.[Company] and #detail2.[Period] = #r25.[Period] and #detail2.CietradeGradeName = #r25.CietradeGradeName
+
+
+
+ORDER BY 1,2
+
+
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
+
+
+
+END TRY
+
+
+
+BEGIN CATCH
+
+
+
+   SELECT ERROR_NUMBER() AS ErrorNumber,
+
+        ERROR_SEVERITY() AS ErrorSeverity,
+
+        ERROR_STATE() AS ErrorState,
+
+        ERROR_PROCEDURE() AS ErrorProcedure,
+
+        ERROR_LINE() AS ErrorLine,
+
+        ERROR_MESSAGE() AS ErrorMessage;
+
+
+
+    INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' error')
+
+
+
+    EXEC msdb.dbo.sp_send_dbmail
+
+    @profile_name = 'Wilmington_Email',
+
+    @recipients = 'iraspin@wilmingtonpaper.com',
+
+    @subject = 'cdb_Wilmington database cw_SalesByCustomerProduct2Cietrade procedure failed',
+
+    @body = 'Troubleshoot cdb_Wilmington database cw_SalesByCustomerProduct2Cietrade procedure on server WPGTESTSQL' 
+
+
+
+END CATCH;  
+
+
+
+END
+
+
+

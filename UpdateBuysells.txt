@@ -1,0 +1,46 @@
+CREATE PROC [dbo].[UpdateBuysells]  AS
+
+
+
+	declare @BuySellNo CHAR(12), @RecNo INT	, @maxrecs int
+
+	create Table #UpdateWks(seq INT Identity(1,1), BuysellNo CHAR(12))
+
+	insert #UpdateWks(buysellno) SELECT buysellno from _buysell
+
+	SELECT @maxrecs = Count(*) FROM #UpdateWks
+
+	SET @RecNo= 1
+
+
+
+	WHILE 1=1 BEGIN
+
+		select @BuySellNo = BuySellNo FROM #UpdateWks WHERE Seq = @RecNo
+
+		EXEC q_UpdateBuySellBuckets @BuySellNo 
+
+		select @BuySellNo 
+
+		SET @RecNo=@RecNo+1			
+
+		IF @RecNo > @maxrecs Break
+
+	END
+
+
+
+	PRINT '**COMPLETED**'
+
+
+
+
+
+
+
+
+
+
+
+
+

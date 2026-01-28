@@ -1,0 +1,156 @@
+
+
+-- 12/22/24 
+
+-- EXEC [dbo].[UpdateCietrade_SystemLog]
+
+
+
+CREATE PROCEDURE [dbo].[UpdateCietrade_SystemLog]
+
+AS
+
+
+
+BEGIN
+
+
+
+Declare @ErrorMessage NVARCHAR(200) 
+
+Declare @ErrorNumber Int
+
+Declare @ErrorLine Int
+
+Declare @ErrorString NVARCHAR(400)
+
+
+
+-- SELECT * FROM tblCietrade_SystemLog
+
+
+
+DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+
+
+BEGIN TRY
+
+
+
+TRUNCATE TABLE tblCietrade_SystemLog;
+
+
+
+-- SELECT * FROM tblCietrade_SystemLog order by log_date desc
+
+
+
+-- DROP TABLE tblCietrade_SystemLog
+
+
+
+BULK INSERT tblCietrade_SystemLog
+
+FROM 'C:\WilmingtonPaper\Cietrade_SystemLog.csv'
+
+WITH (FORMAT = 'CSV', FIRSTROW = 2);
+
+
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
+
+
+
+--DROP TABLE IF EXISTS #RowCount;
+
+
+
+--SELECT * 
+
+--into #RowCount 
+
+--FROM tblCietrade_SystemLog
+
+
+
+--IF @@ROWCOUNT = 0
+
+--    BEGIN
+
+--    EXEC msdb.dbo.sp_send_dbmail
+
+--    @profile_name = 'Wilmington_Email',
+
+--    @recipients = 'iraspin@wilmingtonpaper.com',
+
+--    @subject = 'cdb_Wilmington database UpdateCietrade_SystemLog table - no rows inserted',
+
+--    @body = 'Troubleshoot on server WPGTESTSQL (192.168.1.19), procedure [dbo].[UpdateCietrade_SystemLog].' 
+
+--	END
+
+--ELSE 
+
+--    BEGIN
+
+--    EXEC msdb.dbo.sp_send_dbmail
+
+--    @profile_name = 'Wilmington_Email',
+
+--    @recipients = 'iraspin@wilmingtonpaper.com',
+
+--    @subject = 'cdb_Wilmington database UpdateCietrade_SystemLog table was updated',
+
+--    @body = 'Server WPGTESTSQL (192.168.1.19), procedure [dbo].[UpdateCietrade_SystemLog].' 
+
+--	END
+
+
+
+DROP TABLE IF EXISTS #RowCount;
+
+
+
+END TRY
+
+
+
+BEGIN CATCH
+
+
+
+SET @ErrorMessage = ERROR_MESSAGE()
+
+SET @ErrorNumber = ERROR_NUMBER()
+
+SET @ErrorLine = ERROR_LINE()
+
+
+
+SET @ErrorString = @ProcedureName + ' procedure: ' + @ErrorMessage + ' ' + 'Error line - ' 
+
+	     + CONVERT(VARCHAR(4), @ErrorLine) + '.Error number - ' + CONVERT(VARCHAR(6), @ErrorNumber) + ' error occurred'
+
+INSERT INTO tblEvents ([Event]) VALUES(@ErrorString)
+
+		 
+
+EXEC msdb.dbo.sp_send_dbmail
+
+    @profile_name = 'Wilmington_Email',
+
+    @recipients = 'iraspin@wilmingtonpaper.com',
+
+    @subject = 'cdb_Wilmington database UpdateCietrade_SystemLog update failed',
+
+    @body = 'Troubleshoot on server WPGTESTSQL (192.168.1.19), procedure [dbo].[UpdateCietrade_SystemLog].' 
+
+
+
+END CATCH;  
+
+
+
+END
+

@@ -1,0 +1,81 @@
+
+
+
+
+-- Updating index values instructions
+
+-- This is done once a month
+
+-- Create a CSV file first (from Regions Indexes Values tab of the file provided by J. Lurie) name it RegionalIndices2.csv
+
+-- copy it from your working folder into C:\WilmingtonPaper\RegionalIndices2.csv on WPGTESTSQL server).
+
+-- you may want to save already existing C:\WilmingtonPaper\RegionalIndices2.csv (used after previous update) file under different name 
+
+-- make sure to have the latest csv file in the folder, e.g. C:\WilmingtonPaper\RegionalIndices2.csv
+
+
+
+-- C:\Users\IRaspin\RegionalIndices2.csv file should have the following fields:
+
+-- Region, Index, index_value, Period, Convertd_Date, Index_ID
+
+-- Replace NULL values with nothing in index_value column, in the csv file (C:\WilmingtonPaper\RegionalIndices2.csv) before processing
+
+
+
+-- Run the procedure below in SSMS on WPGTESTSQL server
+
+-- Delete records with 'United States' in region field in tblRegionalIndices2 table (optional)
+
+
+
+-- EXEC UpdateRegionalIndexes
+
+
+
+CREATE Procedure [dbo].[UpdateRegionalIndexes]
+
+AS
+
+BEGIN
+
+
+
+DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+
+
+TRUNCATE TABLE tblRegionalIndices2;
+
+
+
+BULK INSERT tblRegionalIndices2
+
+FROM 'C:\WilmingtonPaper\RegionalIndices2.csv'
+
+WITH (FORMAT = 'CSV', FIRSTROW = 2);
+
+
+
+DELETE FROM tblRegionalIndices2_History
+
+WHERE AddedMonthYear = FORMAT(GETDATE(), 'MM/yyyy');
+
+
+
+INSERT tblRegionalIndices2_History
+
+SELECT *, FORMAT(GETDATE(), 'MM/yyyy') FROM tblRegionalIndices2
+
+
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
+
+
+
+END
+
+
+
+-- SELECT * FROM tblRegionalIndices2 where [Region] = 'SouthEast' and [index] = '#4' and Converted_date= '24-Oct'

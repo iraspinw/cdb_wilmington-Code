@@ -1,0 +1,756 @@
+
+
+-- Customers report corresponds to Sales By Customer & Product Cietrade report
+
+
+
+-- [dbo].[cw_SalesByCustomerProduct2BasedOnLoadManagerInquiry2] '', '', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- [dbo].[cw_SalesByCustomerProduct2BasedOnLoadManagerInquiry2] '2023-07-01', '2023-07-31', '', '', '', '', '', 'S', 0, ''
+
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_SalesByCustomerProduct2BasedOnLoadManagerInquiry2] 
+
+	 @FromDate datetime = '',
+
+	 @ToDate datetime = '',
+
+	 @CustID char(12) = '',  
+
+	 @TradeType varchar(48) = '',
+
+	 @CoID varchar(10) = '',
+
+	 @Product varchar(40) = '',
+
+	 @salesRep varchar(40) = '',
+
+	 @UOM char = 'L',
+
+	 @isdrilldown bit = 0,
+
+	 @drilldownCust varchar(100) = ''
+
+
+
+--9/23/2022 DN: Created for Sales by Customer & Product Report
+
+
+
+AS
+
+SET
+
+NOCOUNT ON
+
+SET
+
+TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	IF @FromDate =''
+
+	   SET @FromDate = '2023-07-01'
+
+	IF @ToDate = ''
+
+	   SET @ToDate = CAST(GETDATE() AS DATE)
+
+
+
+IF OBJECT_ID('tempdb..#detail','U') IS NOT NULL
+
+DROP TABLE #detail
+
+
+
+CREATE TABLE #detail(
+
+	CompanyNm varchar(100),
+
+	customerID varchar(100),
+
+	Grade varchar(100),
+
+	shipppingDt datetime,
+
+	Sales money,
+
+	buysellno varchar(20),
+
+	TotalShippedWeight decimal(22,2),
+
+	ShipmentCount int,
+
+	COID char(50),
+
+	WksType char(1)
+
+
+
+	,
+
+TransactionPeriod varchar(7)
+
+)
+
+
+
+INSERT
+
+	#detail
+
+SELECT 
+
+	c.CompanyNm AS [Company Name],
+
+	buysell.CustID AS [Customer ID],
+
+	g.Description AS Grade,
+
+	buysell.ShippingDt AS [Shipping DT],
+
+
+
+	buysell.SalesAmt + buysell.SFreightChg + buysell.SAdjustment AS [Sales],
+
+	--wksdetail.SAmount AS [sales],
+
+
+
+
+
+	buysell.BuySellNo AS BuySellNo
+
+
+
+	--isnull(DBO.CONVERT_TO_UOM(WKSDetail.SWeight,WKSDetail.SWeightUOM,@UOM),0) ,
+
+
+
+	,[dbo].[CnvFromLbs](buysell.TotalWeightLbs, 'S') TotalShippedWeight,
+
+
+
+	1,
+
+	w.CompanyDesc,
+
+	CASE
+
+		WHEN Buysell.custid = '(INV)' THEN 'R'
+
+		WHEN buysell.vendorid = '(INV)' THEN 'S'
+
+		ELSE 'W'
+
+	END
+
+
+
+	,
+
+	FORMAT(BuySell.ShippingDt, 'MM/yyyy') TransactionPeriod
+
+	--CASE
+
+	--	WHEN TRIM(CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)) = 1
+
+	--  THEN '0' + CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--	ELSE CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--END TransactionPeriod
+
+
+
+
+
+FROM BuySell WITH(NOLOCK) 
+
+	INNER JOIN Counterparty Vend WITH(NOLOCK) ON BuySell.VendorID = Vend.CpID
+
+	INNER JOIN Counterparty C WITH(NOLOCK) ON BuySell.CustID = C.CpID
+
+	LEFT JOIN [Address] A WITH(NOLOCK) ON A.CpID = '(INV)' and A.Type = BuySell.ShipFromID
+
+	LEFT JOIN [CompanyInfo] W WITH(NOLOCK) ON W.COID = BuySell.COID
+
+	left join po PO on PO.PONumber =  BuySell.RefPONo
+
+	left join po SO on SO.PONumber =  BuySell.RefSONo
+
+	left join Booksheet BS on BS.BookingNo =  BuySell.BookingNo
+
+	left join Grade G on G.GradeID =  BuySell.RefGradeID
+
+	LEFT JOIN [Address] ShipToAddress WITH(NOLOCK) ON ShipToAddress.CpID=BuySell.CustID and ShipToAddress.Type = BuySell.ShipToID
+
+	LEFT JOIN [Address] ShipFromAddress WITH(NOLOCK) ON ShipFromAddress.CpID=BuySell.VendorID and ShipFromAddress.Type = BuySell.ShipFromID
+
+	LEFT JOIN [UserDef] UD WITH(NOLOCK) ON UD.UserID = BuySell.UserID
+
+
+
+    --LEFT JOIN WKSDetail ON
+
+    --WKSDetail.BuySellNo = buysell.BuySellNo
+
+
+
+	WHERE 
+
+	--LEFT(b.BuySellNo, 2) = 'PR'
+
+	--((@ToDt= '' and @FromDt = '') OR
+
+
+
+    -- ((@DateRange = 'INV'
+
+	--	AND B.InvoiceDt >= @FromMnth
+
+	--	AND B.InvoiceDt <= @ToMnth)
+
+
+
+	--OR (@DateRange = 'SHIP'
+
+	--	AND 
+
+
+
+	BuySell.ShippingDt >= @FromDate AND BuySell.ShippingDt <= @ToDate
+
+
+
+    AND ISNULL(BuySell.PublicTradeID, 0) = 0
+
+
+
+	AND (ISNULL(BuySell.IsAgency, 0) <> 1)
+
+
+
+	AND UPPER([dbo].[CnvShipStatus_Name](BuySell.ShippingOK)) = 'SHIPPED'
+
+
+
+	--AND UPPER([dbo].[CnvWksStatus_Name](ISNULL(BuySell.[Status], ''), '')) = 'INVOICED'
+
+
+
+--FROM
+
+--	BuySell
+
+--LEFT JOIN WKSDetail ON
+
+--	WKSDetail.BuySellNo = buysell.BuySellNo
+
+--LEFT JOIN CounterParty ON
+
+--	buysell.CustID = counterparty.CpID
+
+--LEFT JOIN GPLedger ON
+
+--	GPLedger.BuySellNo = buysell.BuySellNo
+
+--LEFT JOIN grade ON
+
+--	grade.GradeID = WksDetail.GradeID
+
+--LEFT JOIN CompanyInfo ON
+
+--	buysell.COID = CompanyInfo.COID
+
+--WHERE
+
+
+
+--  ((GPLedger.Source = 'B'
+
+
+
+--		AND buysell.status = 'I'))
+
+
+
+--	AND ((InvoiceDt >= @FromDate)
+
+--		OR (@FromDate = ''))
+
+--	AND ((InvoiceDt <= @ToDate)
+
+--		OR (@ToDate = ''))
+
+--	AND (buysell.CustID = @CustID
+
+--		OR @CustID = '')
+
+--	AND (@CoID = ''
+
+--		OR (BuySell.CoID = @CoID))
+
+--	AND (@TradeType = ''
+
+--		OR @TradeType = BuySell.TradeType)
+
+--	AND (@salesRep = ''
+
+--		OR @salesRep = BuySell.ReferrerNo1
+
+--		OR @salesRep = BuySell.ReferrerNo2)
+
+--	AND(@Product = ''
+
+--		OR grade.GradeID = @Product)
+
+--	AND WksDetail.SFxAmount <> 0
+
+--	AND (BuySell.CustID <> '(OTHER)'
+
+--		AND BuySell.CustID <> '(INV)')
+
+--	AND (IsNull(IsAgency,0) <> 1)
+
+	--worksheets where products dont count on financials.
+
+
+
+IF @Product = '' 
+
+BEGIN
+
+	--sales chargebacks
+
+INSERT
+
+	#detail
+
+SELECT
+
+	CounterParty.CompanyNm AS [Company Name],
+
+	buysell.CustID AS [Customer ID],
+
+	'Chargebacks: ' + isnull(glaccount.Name,
+
+	'Other') AS grade,
+
+	buysell.InvoiceDt AS tradeDT,
+
+	WksDelivery.ChgToCustAmt AS sale,
+
+	buysell.BuySellNo AS buyusell,
+
+	0.00,
+
+	0,
+
+	CompanyInfo.CompanyDesc,
+
+	CASE
+
+		WHEN Buysell.custid = '(INV)' THEN 'R'
+
+		WHEN buysell.vendorid = '(INV)' THEN 'S'
+
+		ELSE 'W'
+
+	END
+
+	,
+
+	FORMAT(BuySell.ShippingDt, 'MM/yyyy') TransactionPeriod
+
+	--CASE
+
+	--	WHEN TRIM(CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)) = 1
+
+	--  THEN '0' + CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--	ELSE CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--END TransactionPeriod
+
+FROM
+
+	BuySell
+
+LEFT JOIN WksDelivery ON
+
+	wksdelivery.BuySellNo = buysell.BuySellNo
+
+LEFT JOIN GLAccount ON
+
+	WksDelivery.SalesGLAcct = glaccount.GLAcct
+
+LEFT JOIN CounterParty ON
+
+	buysell.CustID = counterparty.CpID
+
+LEFT JOIN CompanyInfo ON
+
+	buysell.COID = CompanyInfo.COID
+
+WHERE
+
+	buysell.status = 'I'
+
+	AND ((InvoiceDt >= @FromDate)
+
+		OR (@FromDate = ''))
+
+	AND ((InvoiceDt <= @ToDate)
+
+		OR (@ToDate = ''))
+
+	AND (buysell.CustID = @CustID
+
+		OR @CustID = '')
+
+	AND (@CoID = ''
+
+		OR (BuySell.CoID = @CoID))
+
+	AND (@TradeType = ''
+
+		OR @TradeType = BuySell.TradeType)
+
+	AND (@salesRep = ''
+
+		OR @salesRep = BuySell.ReferrerNo1
+
+		OR @salesRep = BuySell.ReferrerNo2)
+
+	AND (BuySell.CustID <> '(OTHER)'
+
+		AND BuySell.CustID <> '(INV)')
+
+	AND ChgToCustAmt <> 0
+
+	AND (IsNull(IsAgency,
+
+	0) <> 1)
+
+	--need to exclude for chargebacks
+
+	--adjustmnets
+
+INSERT
+
+	#detail
+
+SELECT 
+
+	CounterParty.CompanyNm AS [company Name],
+
+	buysell.CustID AS [Customer ID],
+
+	'Adjustment: ' + isnull(GLAccount.Name,
+
+	'Other') AS [adjustment TYPE],
+
+	GPLedger.TradeDt,
+
+	GPLedger.sale AS [total cost OF adjustment],
+
+	buysell.BuySellNo,
+
+	isnull(DBO.CONVERT_TO_UOM(AdjWeight,
+
+	AdjWeightUOM,
+
+	@UOM),
+
+	0) ,
+
+	0,
+
+	CompanyInfo.CompanyDesc,
+
+	CASE
+
+		WHEN Buysell.custid = '(INV)' THEN 'R'
+
+		WHEN buysell.vendorid = '(INV)' THEN 'S'
+
+		ELSE 'W'
+
+	END
+
+		,
+
+	FORMAT(BuySell.ShippingDt, 'MM/yyyy') TransactionPeriod
+
+	--CASE
+
+	--	WHEN TRIM(CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)) = 1
+
+	--  THEN '0' + CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--	ELSE CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--END TransactionPeriod
+
+FROM
+
+	BuySell
+
+LEFT JOIN CounterParty ON
+
+	buysell.CustID = CounterParty.CpID
+
+LEFT JOIN GPLedger ON
+
+	GPLedger.BuySellNo = buysell.BuySellNo
+
+LEFT JOIN GLAccount ON
+
+	GPLedger.GLAcct = GLAccount.GLAcct
+
+LEFT JOIN CompanyInfo ON
+
+	buysell.COID = CompanyInfo.COID
+
+WHERE
+
+	GPLedger.Source = 'A'
+
+	AND GPLedger.AdjType = 'S'
+
+	AND GPLedger.AdjPosted = 'Y'
+
+	AND (TradeDt >= @FromDate
+
+		OR @FromDate = '')
+
+	AND (TradeDt <= @ToDate
+
+		OR @ToDate = '')
+
+	AND (buysell.CustID = @CustID
+
+		OR @CustID = '')
+
+	AND (@CoID = ''
+
+		OR (BuySell.CoID = @CoID))
+
+	AND (@TradeType = ''
+
+		OR @TradeType = BuySell.TradeType)
+
+	AND (@salesRep = ''
+
+		OR @salesRep = BuySell.ReferrerNo1
+
+		OR @salesRep = BuySell.ReferrerNo2)
+
+	AND GPLedger.sale <> 0
+
+	AND (BuySell.CustID <> '(OTHER)'
+
+		AND BuySell.CustID <> '(INV)')
+
+END
+
+
+
+IF @isdrilldown = 1 
+
+	BEGIN
+
+
+
+    SELECT
+
+	CompanyNm AS [Customer] ,
+
+	shipppingDt AS [Shipping Date],
+
+	buysellno AS [Wks NO] ,
+
+	Grade AS [Product / Expense TYPE],
+
+	Sales AS [Sale Amount]
+
+	--[{C}Sale Amount]
+
+	
+
+	,TotalShippedWeight AS Tons
+
+
+
+	--, [dbo].[CnvFromLbs](TotalShippedWeight, 'S') [TotalShippedWeight] --[Tons]
+
+
+
+	--,SUM([dbo].[CnvFromLbs](TotalWeightLbs, 'S')) [Tons]
+
+
+
+	--[Weight UOM] 
+
+	,
+
+	CAST(CASE
+
+		WHEN TotalShippedWeight = 0 THEN 0.00
+
+		ELSE (sales / TotalShippedWeight)
+
+	END AS NUMERIC(22,
+
+	3)) AS [Sale Per UOM],
+
+	WksType AS '-Hidden-WksType'
+
+FROM
+
+	#detail
+
+WHERE
+
+	CompanyNm = @drilldownCust
+
+END
+
+ELSE
+
+	BEGIN
+
+
+
+	SELECT
+
+	COID AS BillCompany
+
+	--Department
+
+	,(SELECT Cpid FROM Counterparty where CompanyNm = #Detail.CompanyNm) CustomerID 
+
+	,
+
+	RTRIM(CompanyNm) + ' (' + (SELECT RTRIM(Cpid) FROM Counterparty where CompanyNm = #Detail.CompanyNm) +')' AS [ CustDescript] --[Customer] ,
+
+	--, (SELECT GradeID from Grade where [Description] = #Detail.Grade) GradeID
+
+	--, RTRIM(ISNULL((SELECT GradeID from Grade where [Description] = #Detail.Grade), '')) + ' ('  + RTRIM(Grade)  + ')' CustGrade
+
+
+
+	, ISNULL(RTRIM(ISNULL((SELECT GradeID from Grade where [Description] = #Detail.Grade), '')) + ' ('  + RTRIM(Grade)  + ')', '') CustGrade
+
+
+
+	, ISNULL(Grade, '')  AS [CieTrade Grade Name] --Grade
+
+	--[Product/Expense Type]
+
+	,
+
+	ISNULL(sum(Sales), '')  AS [AmountTotal]
+
+
+
+	, '' Delivery
+
+
+
+	,SUM(TotalShippedWeight) AS [TonsTotal]
+
+
+
+	, '' FreightCharge
+
+	, '' OtherChargesAvg
+
+	, '' [Cust Adj Avg]
+
+	, '' [FOB Price]
+
+	, '' PricePerTon
+
+	,  TransactionPeriod [Period]
+
+	, '' SupplierID
+
+	, '' [Net Revenue]
+
+	--[Weight UOM] 
+
+
+
+	--[{C}Total Sales]
+
+	,
+
+	sum(shipmentcount) AS Loads, 
+
+	CAST((CASE
+
+		WHEN sum(TotalShippedWeight) > 0 THEN (sum(sales)/ sum(TotalShippedWeight))
+
+		ELSE 0
+
+	END) AS NUMERIC(22,
+
+	3)) AS [Avg Sales]
+
+	--[Avg Sales Per UOM] 
+
+	--,WksType as '-Hidden-WksType'
+
+	--,	TransactionPeriod [Period]
+
+
+
+FROM
+
+	#detail
+
+	WHERE RTRIM(CustomerID) NOT IN ('(INV)', '(OTHER)')
+
+GROUP BY
+
+	COID,
+
+	CompanyNm,
+
+	Grade,
+
+	COID,
+
+	WksType,
+
+	TransactionPeriod
+
+
+
+	ORDER BY
+
+	COID,
+
+	CompanyNm,
+
+	Grade
+
+	--asc
+
+		         ,
+
+	TransactionPeriod
+
+
+
+END
+

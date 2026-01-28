@@ -1,0 +1,64 @@
+
+
+-- Template - exec [dbo].[UpdateSalesAmount] <each_buysellno_in_question>
+
+
+
+-- 7/18/24 
+
+-- [dbo].[UpdateSalesAmount] '19527'
+
+
+
+CREATE PROCEDURE [dbo].[UpdateSalesAmount] @BuysellNo [char](12)
+
+
+
+AS
+
+BEGIN
+
+
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+
+
+DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+
+
+UPDATE wksdetail set SpriceUOM = 'S', SAmount = SWeight/2000 * SPrice, SFxAmount = SWeight/2000 * SPrice
+
+WHERE buysellno = @BuysellNo
+
+
+
+-- Then check table wksdetail data
+
+-- select * from wksdetail where buysellno = @BuysellNo
+
+
+
+UPDATE buysell SET buysell.salesAmt = (SELECT SUM(wksdetail.SAmount) SAmount from wksdetail where buysellno = @BuysellNo)
+
+,buysell.SBalanceDue = (SELECT SUM(wksdetail.SAmount) SAmount from wksdetail where buysellno = @BuysellNo)
+
+WHERE buysell.buysellno = @BuysellNo
+
+
+
+-- Then check table buysell data
+
+-- select * from buysell where buysellno = @BuysellNo
+
+
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
+
+
+
+END
+

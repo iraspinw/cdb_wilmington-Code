@@ -1,0 +1,946 @@
+
+
+
+
+-- 10/31/23 I.R.
+
+-- Customers report corresponds to Sales By Customer & Product Cietrade report, combined with Wild data
+
+
+
+-- Run this
+
+-- [dbo].[cw_SalesByCustomerProduct2CietradeAndWildCombined] '', '', '', '', '', '', '', 'L', 0, ''
+
+
+
+-- Tests
+
+-- [dbo].[cw_SalesByCustomerProduct2CietradeAndWildCombined] '2023-11-01', '2023-11-13', '', '', '', '', '', 'S', 0, ''
+
+
+
+-- [dbo].[cw_SalesByCustomerProduct2CietradeAndWildCombined] '2023-07-01', '2023-07-31', '', '', '', '', '', 'S', 0, ''
+
+
+
+-- [dbo].[cw_SalesByCustomerProduct2CietradeAndWildCombined] '2023-09-01', '2023-09-30', '', '', '', '', '', 'S', 0, ''
+
+
+
+
+
+CREATE PROCEDURE [dbo].[cw_SalesByCustomerProduct2CietradeAndWildCombined_VJ] 
+
+	 @FromDate datetime = '',
+
+	 @ToDate datetime = '',
+
+	 @CustID char(12) = '',  
+
+	 @TradeType varchar(48) = '',
+
+	 @CoID varchar(10) = '',
+
+	 @Product varchar(40) = '',
+
+	 @salesRep varchar(40) = '',
+
+	 @UOM char = 'L',
+
+	 @isdrilldown bit = 0,
+
+	 @drilldownCust varchar(100) = ''
+
+
+
+--9/23/2022 DN: Created for Sales by Customer & Product Report
+
+
+
+AS
+
+
+
+BEGIN
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	IF @FromDate =''
+
+	   SET @FromDate = '2023-07-01'
+
+	IF @ToDate = ''
+
+	   SET @ToDate = CAST(GETDATE() AS DATE)
+
+
+
+DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+
+
+BEGIN TRY
+
+
+
+TRUNCATE TABLE tblCietradeAndWildCustomerCombined
+
+
+
+IF OBJECT_ID('tempdb..#detail','U') IS NOT NULL
+
+DROP TABLE #detail
+
+
+
+CREATE TABLE #detail(
+
+	CompanyNm varchar(100),
+
+	customerID varchar(100),
+
+	Grade varchar(100),
+
+	shipppingDt datetime,
+
+	Sales money,
+
+	buysellno varchar(20),
+
+	TotalShippedWeight decimal(22,2),
+
+	ShipmentCount int,
+
+	COID char(50),
+
+	WksType char(1)
+
+	,TransactionPeriod varchar(7)
+
+
+
+	,SFreightChg money
+
+	,SupplierID char(12)
+
+	,Delivery [char](50)
+
+)
+
+
+
+INSERT
+
+	#detail
+
+SELECT 
+
+	counterparty.CompanyNm AS [Company Name],
+
+	buysell.CustID AS [Customer ID],
+
+	grade.Description AS Grade,
+
+	buysell.InvoiceDt AS [Shippipng DT],
+
+	wksdetail.SAmount AS [sales],
+
+	buysell.BuySellNo AS BuySellNo,
+
+	-- 11/28/23 I.R.
+
+	--isnull(DBO.CONVERT_TO_UOM(WKSDetail.SWeight,WKSDetail.SWeightUOM,@UOM),0) ,
+
+	ISNULL(buysell.TotalWeightLbs, 0),
+
+	1,
+
+	CompanyInfo.CompanyDesc,
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+	,FORMAT(BuySell.InvoiceDt, 'MM/yyyy') TransactionPeriod
+
+
+
+	,SfreightChg
+
+	,buysell.VendorID SupplierID
+
+	, buysell.PriceBasis Delivery
+
+
+
+from BuySell
+
+	left join WKSDetail on WKSDetail.BuySellNo = buysell.BuySellNo
+
+	left join CounterParty on buysell.CustID = counterparty.CpID
+
+	left join GPLedger on GPLedger.BuySellNo = buysell.BuySellNo
+
+	left join grade on grade.GradeID = WksDetail.GradeID
+
+	left join CompanyInfo on buysell.COID = CompanyInfo.COID
+
+where
+
+   	--12/20/23 I.R
+
+	((GPLedger.Source = 'B' and buysell.status = 'I'))
+
+
+
+	--((GPLedger.Source = 'B' AND BuySell.[Status] = 'I')  
+
+	--OR (GPLedger.Source = 'A' AND AdjType = 'S' AND GPLEDGER.AdjPosted = 'Y' ))
+
+
+
+	--12/20/23 I.R
+
+	--((GPLedger.Source = 'B'))
+
+	--AND (GPLedger.TradeDt >= @FromDate AND GPLedger.TradeDt <= @ToDaTe)
+
+
+
+	AND ((InvoiceDt >=@FromDate) OR (@FromDate = ''))
+
+	AND ((InvoiceDt <=@ToDate) OR (@ToDate = ''))
+
+
+
+
+
+	and (buysell.CustID = @CustID or @CustID = '')
+
+	AND (@CoID = '' OR (BuySell.CoID = @CoID))
+
+	AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+	AND (@salesRep = '' OR @salesRep= BuySell.ReferrerNo1 OR @salesRep= BuySell.ReferrerNo2)
+
+	and(@Product = '' or grade.GradeID = @Product)
+
+
+
+	--01/17/24 I.R.
+
+	--and WksDetail.SFxAmount <> 0
+
+
+
+	and (BuySell.CustID <> '(OTHER)' AND  BuySell.CustID <> '(INV)')
+
+	AND (IsNull(IsAgency,0) <> 1)		--worksheets where products dont count on financials.
+
+
+
+			--	(GPLedger.TradeDt >= @FromDt AND GPLedger.TradeDt <= @ToDT)   
+
+			--AND ((@FilterDept = '') OR (CompanyInfo.COID = @FilterDept))
+
+			--AND ((@TradeType = '') OR (@TradeType = BuySell.TradeType))
+
+			--AND ((@CPID = '') OR (@CPID = CounterParty.CPID))
+
+			--AND (BuySell.CustID <> '(OTHER)' AND  BuySell.CustID <> '(INV)')
+
+			--AND ((GPLedger.Source = 'B' AND BuySell.[Status] = 'I')  
+
+			--OR (GPLedger.Source = 'A' AND AdjType = 'S' AND GPLEDGER.AdjPosted = 'Y' ))
+
+			--AND (IsNull(IsAgency,0) <> 1)
+
+
+
+
+
+IF @Product = '' 
+
+BEGIN
+
+	--sales chargebacks
+
+INSERT
+
+	#detail
+
+SELECT
+
+	CounterParty.CompanyNm AS [Company Name],
+
+	buysell.CustID AS [Customer ID],
+
+	'Chargebacks: ' + isnull(glaccount.Name,
+
+	'Other') AS grade,
+
+	buysell.InvoiceDt AS tradeDT,
+
+	WksDelivery.ChgToCustAmt AS sale,
+
+	buysell.BuySellNo AS buyusell,
+
+	0.00,
+
+	0,
+
+	CompanyInfo.CompanyDesc,
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+	,FORMAT(BuySell.InvoiceDt, 'MM/yyyy') TransactionPeriod
+
+
+
+	,0
+
+	,buysell.VendorID SupplierID
+
+	,buysell.PriceBasis Delivery
+
+	--,
+
+	--CASE
+
+	--	WHEN TRIM(CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)) = 1
+
+	--  THEN '0' + CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--	ELSE CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--END TransactionPeriod
+
+from
+
+BuySell
+
+	left join WksDelivery on wksdelivery.BuySellNo = buysell.BuySellNo
+
+	left join GLAccount on WksDelivery.SalesGLAcct = glaccount.GLAcct
+
+	left join CounterParty on buysell.CustID = counterparty.CpID
+
+	left join CompanyInfo on buysell.COID = CompanyInfo.COID
+
+where
+
+	buysell.status = 'I'
+
+	and ((InvoiceDt >=@FromDate) OR (@FromDate = ''))
+
+	AND ((InvoiceDt <=@ToDate) OR (@ToDate = ''))
+
+	and (buysell.CustID = @CustID or @CustID = '')
+
+	AND (@CoID = '' OR (BuySell.CoID = @CoID))
+
+	AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+	AND (@salesRep = '' OR @salesRep= BuySell.ReferrerNo1 OR @salesRep= BuySell.ReferrerNo2)
+
+	and (BuySell.CustID <> '(OTHER)' AND  BuySell.CustID <> '(INV)')
+
+	and ChgToCustAmt <> 0
+
+	AND (IsNull(IsAgency,0) <> 1)		--need to exclude for chargebacks
+
+
+
+
+
+	--adjustmnets
+
+INSERT
+
+	#detail
+
+SELECT 
+
+	CounterParty.CompanyNm AS [company Name],
+
+	buysell.CustID AS [Customer ID],
+
+	'Adjustment: ' + isnull(GLAccount.Name,
+
+	'Other') AS [adjustment TYPE],
+
+	GPLedger.TradeDt,
+
+	GPLedger.sale AS [total cost OF adjustment],
+
+	buysell.BuySellNo,
+
+	isnull(DBO.CONVERT_TO_UOM(AdjWeight,
+
+	AdjWeightUOM,
+
+	@UOM),
+
+	0) ,
+
+	0,
+
+	CompanyInfo.CompanyDesc,
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+	,FORMAT(GPLedger.TradeDt, 'MM/yyyy') TransactionPeriod
+
+	,0
+
+	,VendorID SupplierID
+
+	,buysell.PriceBasis Delivery
+
+	--,CASE
+
+	--	WHEN TRIM(CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)) = 1
+
+	--  THEN '0' + CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--	ELSE CAST(MONTH(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.InvoiceDt AS DATE)) AS VARCHAR)
+
+	--END TransactionPeriod
+
+from BuySell
+
+	left join CounterParty on buysell.CustID = CounterParty.CpID
+
+	left join GPLedger on GPLedger.BuySellNo = buysell.BuySellNo
+
+	left join GLAccount on  GPLedger.GLAcct = GLAccount.GLAcct
+
+	left join CompanyInfo on buysell.COID = CompanyInfo.COID
+
+where
+
+	GPLedger.Source = 'A'
+
+	AND GPLedger.AdjType = 'S'
+
+	and GPLedger.AdjPosted = 'Y'
+
+	AND (TradeDt >=@FromDate OR @FromDate = '')
+
+	AND (TradeDt <=@ToDate OR @ToDate = '')
+
+	and (buysell.CustID = @CustID or @CustID = '')
+
+	AND (@CoID = '' OR (BuySell.CoID = @CoID))
+
+	AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+	AND (@salesRep = '' OR @salesRep= BuySell.ReferrerNo1 OR @salesRep= BuySell.ReferrerNo2)
+
+	and GPLedger.sale <> 0
+
+	and (BuySell.CustID <> '(OTHER)' AND  BuySell.CustID <> '(INV)')
+
+END
+
+
+
+IF @isdrilldown = 1 
+
+BEGIN
+
+
+
+   SELECT
+
+	CompanyNm AS [Customer] ,
+
+	shipppingDt AS [Shipping Date],
+
+	buysellno AS [Wks NO] ,
+
+	Grade AS [Product / Expense TYPE],
+
+	Sales AS [Sale Amount]
+
+	--[{C}Sale Amount]
+
+	,
+
+	TotalShippedWeight AS Tons
+
+	--[Weight UOM] 
+
+	,
+
+	CAST(CASE
+
+		WHEN TotalShippedWeight = 0 THEN 0.00
+
+		ELSE (sales / TotalShippedWeight)
+
+	END AS NUMERIC(22,
+
+	3)) AS [Sale Per UOM],
+
+	WksType AS '-Hidden-WksType'
+
+FROM
+
+	#detail
+
+WHERE
+
+	CompanyNm = @drilldownCust
+
+END
+
+ELSE
+
+BEGIN
+
+
+
+
+
+    INSERT tblCietradeAndWildCustomerCombined
+
+
+
+	SELECT a1.BillCompany
+
+	       ,CustomerID
+
+		   ,[CustDescript]
+
+		   ,a1.CustGrade
+
+		   ,a1.[CieTradeGradeName]
+
+		   ,ISNULL(a4.[Index], '') [Index]
+
+           ,ISNULL(a4.[Index_Value], 0) [Index_Value]
+
+		   ,[AmountTotal]
+
+		   ,Delivery
+
+		   ,[TonsTotal]
+
+		   ,FreightCharge
+
+		   ,OtherChargesAvg
+
+		   ,[Cust Adj Avg]
+
+		   ,[FOB Price]
+
+		   , CASE WHEN TonsTotal = 0 then 0
+
+		     else [AmountTotal]/TonsTotal 
+
+			 end PricePerTon
+
+			 ,a1.[Period]
+
+			 ,SupplierID
+
+			 ,[Net Revenue]
+
+			 ,[Datasource]
+
+    FROM(
+
+	SELECT
+
+	RTRIM(COID) AS BillCompany
+
+	--Department
+
+	,(SELECT Cpid FROM Counterparty where CompanyNm = #Detail.CompanyNm) CustomerID 
+
+	, RTRIM(CompanyNm) + ' (' + (SELECT RTRIM(Cpid) FROM Counterparty where CompanyNm = #Detail.CompanyNm) +')' AS [CustDescript] --[Customer] ,
+
+	, RTRIM(ISNULL((SELECT GradeID from Grade where [Description] = #Detail.Grade), '')) + ' ('  + RTRIM(Grade)  + ')' CustGrade
+
+
+
+	--, Grade AS [CieTrade Grade Name] --Grade
+
+
+
+	, CASE WHEN RIGHT([Grade], 5) = ' - RM' THEN SUBSTRING([Grade], 1, CHARINDEX(' - RM', [Grade])-1)
+
+   		   WHEN RIGHT([Grade], 5) = ' - FG' THEN SUBSTRING([Grade], 1, CHARINDEX(' - FG', [Grade])-1)
+
+		   WHEN RIGHT([Grade], 5) = ' - NP' THEN SUBSTRING([Grade], 1, CHARINDEX(' - NP', [Grade])-1)
+
+		ELSE [Grade] END
+
+			 [CieTradeGradeName]
+
+
+
+	,sum(Sales) AS [AmountTotal]
+
+	, Delivery
+
+	,sum(TotalShippedWeight/2000) AS [TonsTotal]
+
+	, sum(sFreightchg) FreightCharge
+
+	, '' OtherChargesAvg
+
+	, '' [Cust Adj Avg]
+
+	, '' [FOB Price]
+
+
+
+	, case when sum(TotalShippedWeight) = 0 then 0
+
+	       else ROUND(sum(Sales)/ sum(TotalShippedWeight), 2)
+
+		   end PricePerTon
+
+
+
+	,  TransactionPeriod [Period]
+
+	,  SupplierID
+
+	, '' [Net Revenue]
+
+	, 'Cietrade' [Datasource]
+
+
+
+	--[Weight UOM] 
+
+
+
+	--[{C}Total Sales]
+
+	--,
+
+	--sum(shipmentcount) AS Loads, 
+
+	--CAST((CASE
+
+	--	WHEN sum(TotalShippedWeight) > 0 THEN (sum(sales)/ sum(TotalShippedWeight))
+
+	--	ELSE 0
+
+	--END) AS NUMERIC(22,
+
+	--3)) AS [Avg Sales]
+
+
+
+	--[Avg Sales Per UOM] 
+
+	--,WksType as '-Hidden-WksType'
+
+	--,	TransactionPeriod [Period]
+
+
+
+FROM
+
+	#detail
+
+GROUP BY
+
+	#detail.COID,
+
+	#detail.CompanyNm,
+
+	 CASE WHEN RIGHT(#detail.[Grade], 5) = ' - RM' THEN SUBSTRING(#detail.[Grade], 1, CHARINDEX(' - RM', #detail.[Grade])-1)
+
+   		   WHEN RIGHT(#detail.[Grade], 5) = ' - FG' THEN SUBSTRING(#detail.[Grade], 1, CHARINDEX(' - FG', #detail.[Grade])-1)
+
+		   WHEN RIGHT(#detail.[Grade], 5) = ' - NP' THEN SUBSTRING(#detail.[Grade], 1, CHARINDEX(' - NP', #detail.[Grade])-1)
+
+		ELSE [Grade] END
+
+
+
+	,#detail.Grade
+
+	,#detail.WksType
+
+	,#detail.TransactionPeriod
+
+	,#detail.SupplierID
+
+	,#detail.Delivery) a1
+
+
+
+   LEFT JOIN
+
+   (
+
+   SELECT 
+
+       case when r23.[Company] = 'RMR' then 'RMR Raleigh'
+
+	        else r23.Company
+
+			end Company
+
+      ,r23.[Index]
+
+      ,r23.[Index_Value]
+
+      --,r23.[Period]
+
+	,CASE when LEN(RTRIM(Substring(r23.[Period],6,2)) +'/'+Substring(r23.[Period],1,4)) = 6 then
+
+	'0' + RTRIM(Substring(r23.[Period],6,2)) +'/'+Substring(r23.[Period],1,4) 
+
+	else Substring(r23.[Period],6,2) +'/'+Substring(r23.[Period],1,4)  end [Period]
+
+--      ,r23.[Converted_Date]
+
+--      ,r23.[Index_ID]
+
+	  ,[CieTradeGradeName]
+
+  FROM [cdb_Wilmington].[dbo].[tblRegionalIndices] r23
+
+  LEFT JOIN 
+
+  (SELECT [CieTradeGradeName]
+
+      ,[Index]
+
+  FROM [cdb_Wilmington].[dbo].[CietradeGradeNameIndexes]
+
+       --ORDER BY [Index]
+
+       --where [Index]= '#11'
+
+	   ) a3
+
+  on a3.[Index] = r23.[Index]
+
+   ) a4
+
+   ON a4.[Company] = a1.BillCompany
+
+   AND a4.[Period] = a1.[Period]
+
+   AND a4.[CieTradeGradeName] = a1.CieTradeGradeName
+
+	
+
+UNION ALL
+
+
+
+SELECT [BillCompany]
+
+      ,[CustomerID]
+
+      ,[CustDescript]
+
+      ,[CustGrade]
+
+      ,[CieTrade Grade Name] [CieTradeGradeName]
+
+	  ,ISNULL(a5.[Index], '') [Index]
+
+      ,ISNULL(a5.[Index_Value], 0) [Index_Value]
+
+      ,[AmountTotal]
+
+      ,[Delivery]
+
+      ,[TonsTotal]
+
+      ,CAST([FreightCharge] AS VARCHAR(30)) [FreightCharge]
+
+      ,CAST([OtherChargesAvg] AS VARCHAR(30)) [OtherChargesAvg]
+
+	  ,CAST([Cust Adj Avg] AS VARCHAR(30)) [Cust Adj Avg]
+
+      ,CAST([FOB Price] AS VARCHAR(30)) [FOB Price]
+
+      ,[PricePerTon]
+
+      ,[tblWildCustomerspbi] .[Period]
+
+      ,[SupplierID]
+
+      ,CAST([Net Revenue] AS VARCHAR(30)) [Net Revenue] 
+
+	  ,'Wild' [Datasource]
+
+  FROM [WPSQL2K18].[WildRMR].[dbo].[tblWildCustomerspbi] 
+
+  LEFT JOIN 
+
+  (
+
+  SELECT 
+
+       case when r23.[Company] = 'RMR' then 'RMR Raleigh'
+
+	        else r23.Company
+
+			end Company
+
+      ,r23.[Index]
+
+      ,r23.[Index_Value]
+
+      --,r23.[Period]
+
+	,CASE when LEN(RTRIM(Substring(r23.[Period],6,2)) +'/'+Substring(r23.[Period],1,4)) = 6 then
+
+	'0' + RTRIM(Substring(r23.[Period],6,2)) +'/'+Substring(r23.[Period],1,4) 
+
+	else Substring(r23.[Period],6,2) +'/'+Substring(r23.[Period],1,4)  end [Period]
+
+--      ,r23.[Converted_Date]
+
+--      ,r23.[Index_ID]
+
+	  ,[CieTradeGradeName]
+
+  FROM [cdb_Wilmington].[dbo].[tblRegionalIndices] r23
+
+  LEFT JOIN 
+
+  (SELECT [CieTradeGradeName]
+
+      ,[Index]
+
+  FROM [cdb_Wilmington].[dbo].[CietradeGradeNameIndexes]
+
+       --ORDER BY [Index]
+
+       --where [Index]= '#11'
+
+	   ) a1
+
+  on a1.[Index] = r23.[Index]
+
+  ) a5
+
+  ON [tblWildCustomerspbi].[BillCompany] = a5.[Company]
+
+  AND [tblWildCustomerspbi].[Period] = a5.[Period]
+
+  AND [tblWildCustomerspbi].[CieTrade Grade Name] = a5.[CieTradeGradeName]
+
+
+
+  --ORDER BY BillCompany
+
+	 --      ,CustomerID
+
+
+
+
+
+--ORDER BY
+
+--	COID,
+
+--	CompanyNm,
+
+--	Grade
+
+--	--asc
+
+--	,TransactionPeriod
+
+
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran')
+
+
+
+END
+
+
+
+END TRY
+
+
+
+BEGIN CATCH
+
+
+
+    INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' error')
+
+
+
+    EXEC msdb.dbo.sp_send_dbmail
+
+    @profile_name = 'Wilmington_Email',
+
+    @recipients = 'iraspin@wilmingtonpaper.com;ebrown@wilmingtonpaper.com;vjha@wilmingtonpaper.com;jcastoire@recyclingmr.com',
+
+	--@recipients = 'iraspin@wilmingtonpaper.com',
+
+    @subject = 'cdb_Wilmington database cw_SalesByCustomerProduct2CietradeAndWildCombined procedure failed',
+
+    @body = 'Troubleshoot cdb_Wilmington database cw_SalesByCustomerProduct2CietradeAndWildCombined procedure on server WPGTESTSQL' 
+
+
+
+END CATCH;  
+
+
+
+END
+
+
+
+
+
+--SELECT r23.[Company]
+
+--      ,r23.[Index]
+
+--      ,r23.[Index_Value]
+
+--      --,r23.[Period]
+
+--	,CASE when LEN(RTRIM(Substring([Period],6,2)) +'/'+Substring([Period],1,4)) = 6 then
+
+--	'0' + RTRIM(Substring([Period],6,2)) +'/'+Substring([Period],1,4) 
+
+--	else Substring([Period],6,2) +'/'+Substring([Period],1,4)  end [Period]
+
+----      ,r23.[Converted_Date]
+
+----      ,r23.[Index_ID]
+
+--	  ,[CieTradeGradeName]
+
+--  FROM [cdb_Wilmington].[dbo].[tblRegionalIndices] r23
+
+--  LEFT JOIN 
+
+--  (SELECT [CieTradeGradeName]
+
+--      ,[Index]
+
+--  FROM [cdb_Wilmington].[dbo].[CietradeGradeNameIndexes]
+
+--       --ORDER BY [Index]
+
+--       --where [Index]= '#11'
+
+--	   ) a1
+
+--  on a1.[Index] = r23.[Index]
+

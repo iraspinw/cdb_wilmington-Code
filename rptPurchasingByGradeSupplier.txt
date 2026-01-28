@@ -1,0 +1,277 @@
+
+CREATE  PROCEDURE [dbo].[rptPurchasingByGradeSupplier] @FromMnth datetime,@ToMnth datetime,@SupplierID varchar(12),
+
+								@CoID varchar(2), @TradeType char(25),@UOM char(1),
+
+								@Industry varchar(50) = '',@DateRange varchar(5) = 'INV',@GradeID char(15),
+
+								@IncludeCompleted tinyint = 0
+
+
+
+ AS
+
+--12/02/2010 RS: Created from [q_GetPurchasingByGradeSupplier] for .NET
+
+
+
+
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+	
+
+
+
+    CREATE TABLE #REPORT(
+
+        GradeName varchar(65), 
+
+        CompanyNm varchar(65),
+
+        ShipFromID char(45), 
+
+        BuySellNo char(12), 
+
+        Weight decimal(18,8),
+
+        Units decimal(12,0), 
+
+        Cost money,
+
+        Adjustments Money DEFAULT 0,
+
+        TotalCost money,
+
+        Freight money,
+
+        TotalWeight decimal(18,8)
+
+         )
+
+
+
+    CREATE TABLE #SUMMARY(
+
+        GradeName varchar(65), 
+
+        CompanyNm varchar(65),
+
+        ShipFromID char(45), 
+
+        Weight decimal(18,8) DEFAULT 0,
+
+        Cost money DEFAULT 0,
+
+        Adjustments Money DEFAULT 0,
+
+        TotalCost money DEFAULT 0,
+
+        AvgCost decimal(18,8) DEFAULT 0,
+
+        NoShipments int DEFAULT 0,
+
+        Freight money DEFAULT 0,
+
+        AvgFrt money DEFAULT 0,
+
+		AvgPurchCost decimal(18,8) DEFAULT 0
+
+         )
+
+
+
+    INSERT #REPORT(CompanyNm,BuySellNo,GradeName,Weight,Cost,ShipFromID)    
+
+	SELECT Vend.companynm, BuySell.BuySellNo, Grade.description, 
+
+    sum(dbo.CONVERT_TO_UOM(pweight, pweightuom,@UOM)),
+
+    sum(PAmount),ShipFromID
+
+  	FROM BuySell WITH(NOLOCK)  
+
+	INNER JOIN wksdetail WITH(NOLOCK) on buysell.buysellno=wksdetail.buysellno 
+
+	INNER JOIN Counterparty Vend WITH(NOLOCK) on buysell.vendorid = Vend.cpid 
+
+	INNER JOIN Grade WITH(NOLOCK) on wksdetail.gradeid = Grade.gradeid 
+
+	WHERE  
+
+	--BuySell.Completed = 1 
+
+	--AND (BuySell.ShippingDt >=@FromMnth  AND BuySell.ShippingDt <= @ToMnth)
+
+	((@IncludeCompleted=0 and BuySell.Invoiced = '1') OR (@IncludeCompleted=1 and BuySell.Completed = 1))
+
+	AND ((@DateRange = 'INV' AND BuySell.InvoiceDt >=@FromMnth  AND BuySell.InvoiceDt <= @ToMnth)
+
+		OR (@DateRange = 'SHIP' AND BuySell.ShippingDt >=@FromMnth  AND BuySell.ShippingDt <= @ToMnth))
+
+	AND BuySell.vendorid <> '(INV)' AND BuySell.vendorid <> '(PLANT)'
+
+	--AND BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(Plant)'
+
+	AND (@SupplierID = '' OR @SupplierID = Vend.CpID)
+
+	AND (@GradeID = '' OR wksdetail.gradeid = @GradeID)
+
+    AND (@COID = '' OR @COID = BUYSELL.COID)
+
+    AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+	AND WksDetail.PWeightUOM <> 'E'
+
+	AND (@Industry = '' OR Vend.IndustryNm = @Industry)
+
+    GROUP BY BuySell.BuySellNo,Grade.Description, Vend.companynm, ShipFromID
+
+
+
+
+
+    -- UPDATE REPORT DETAIL TABLE WITH TOTAL WORKSHEET COSTS
+
+    SELECT DISTINCT #REPORT.BuySellNo, sum(#REPORT.cost) As TotalCost, sum(#REPORT.Weight) As TotalWeight INTO #BuySellList FROM #REPORT GROUP BY #REPORT.BUYSELLNO
+
+    UPDATE #REPORT SET #REPORT.TotalCost = #BuySellList.TotalCost FROM #REPORT INNER JOIN #BuySellList ON #REPORT.BUYSELLNO = #BuySellList.BuySellNo
+
+    UPDATE #REPORT SET #REPORT.TotalWeight = #BuySellList.TotalWeight FROM #REPORT INNER JOIN #BuySellList ON #REPORT.BUYSELLNO = #BuySellList.BuySellNo
+
+
+
+
+
+    -- UPDATE REPORT DETAIL TABLE WITH EXPENSES
+
+    SELECT #REPORT.BuySellNo,GradeName, sum(ISNULL(Payables.Amount,0) * (#REPORT.Weight/ #REPORT.TotalWeight)) AS FRT
+
+    INTO #EXP 
+
+    FROM #REPORT 
+
+    INNER JOIN Payables WITH(NOLOCK) on Payables.buysellno = #REPORT.buysellno
+
+    WHERE #REPORT.TotalWeight <> 0
+
+    AND Payables.ItemIDSource='D' AND Payables.Amount <> 0 AND ISNULL(Payables.Reversed,0)<>1
+
+    GROUP BY #REPORT.BUYSELLNO, GradeName 
+
+    
+
+    UPDATE #REPORT SET #REPORT.Freight = #EXP.FRT 
+
+		FROM #REPORT INNER JOIN #EXP ON #REPORT.BUYSELLNO = #EXP.BuySellNo
+
+		AND #REPORT.GradeName = #EXP.GradeName
+
+
+
+
+
+    -- ADJUSTMENTS
+
+    SELECT #REPORT.BuySellNo, GradeName, sum(GPLEDGER.COST * (#REPORT.Cost/ #REPORT.TotalCost)) AS AllocAmt
+
+    INTO #ALLOCADJ
+
+    FROM GPLEDGER WITH(NOLOCK)  INNER JOIN #REPORT ON GPLEDGER.BUYSELLNO = #REPORT.BuySellNo
+
+	WHERE AdjType = 'P' AND #REPORT.TotalCost > 0
+
+	AND (@SupplierID = '' OR @SupplierID = AdjCPID)
+
+    GROUP BY #REPORT.BuySellNo, GradeName 
+
+
+
+
+
+    UPDATE #REPORT SET Adjustments  = AllocAmt, TotalCost = TotalCost + AllocAmt
+
+        FROM #REPORT INNER JOIN #ALLOCADJ ON #REPORT.BuysellNo = #ALLOCADJ.BuysellNo  
+
+        AND #REPORT.GradeName = #ALLOCADJ.GradeName
+
+
+
+
+
+
+
+    SELECT CompanyNm, GradeName, BuySellNo, SUM(WEIGHT) As Weight, SUM(COST) AS Cost,
+
+    SUM(Adjustments) As Adjustments, 1 AS Shipments, SUM(Freight) as Freight,ShipFromID
+
+    INTO #CONSOLIDATION
+
+    FROM #REPORT
+
+    GROUP BY GradeName, CompanyNm, ShipFromID,BuySellNo  
+
+
+
+
+
+    INSERT #SUMMARY(CompanyNm,GradeName,Weight,Cost,Adjustments,NoShipments,Freight,AvgFrt,ShipFromID)
+
+            SELECT CompanyNm, GradeName, SUM(WEIGHT) As Weight, SUM(COST) AS Cost, 
+
+            SUM(Adjustments) As Adjustments, SUM(Shipments),SUM(ISNULL(Freight,0)), 0 as AvgFrt,ShipFromID
+
+            FROM #CONSOLIDATION
+
+            GROUP BY GradeName, CompanyNm, ShipFromID
+
+
+
+
+
+    UPDATE #SUMMARY SET TotalCost = Cost+ISNULL(Adjustments,0)+ISNULL(Freight,0), AvgCost = (Cost+ISNULL(Adjustments,0)+ISNULL(Freight,0))/Weight WHERE Cost+ISNULL(Adjustments,0)+ISNULL(Freight,0) <> 0 AND Weight <> 0
+
+    UPDATE #SUMMARY SET AvgFrt = Freight/Weight WHERE Freight<>0 AND Weight <> 0
+
+    UPDATE #SUMMARY SET AvgPurchCost = Cost/Weight WHERE Cost<>0 AND Weight <> 0
+
+    --UPDATE #SUMMARY SET CompanyNm = 'UNASSIGNED' WHERE CompanyNm = '(Other)'
+
+    
+
+    --SELECT * FROM #SUMMARY ORDER BY GradeName,Companynm,ShipFromID
+
+    
+
+    --COUNT LOCATIONS PER SUPPLIER
+
+	SELECT GradeName,CompanyNm, COUNT(DISTINCT ShipFromID) as LocCount
+
+	INTO #LocCount
+
+	FROM #SUMMARY 
+
+	GROUP BY GradeName,CompanyNm
+
+	
+
+	
+
+    SELECT LocCount,#SUMMARY.*, dbo.CnvUOM_Names(@UOM) as InUOM
+
+    FROM #SUMMARY 
+
+    INNER JOIN #LocCount ON #LocCount.Companynm = #SUMMARY.Companynm and #LocCount.GradeName = #SUMMARY.GradeName
+
+    ORDER BY #SUMMARY.GradeName,#SUMMARY.Companynm, #SUMMARY.ShipFromID
+
+
+
+
+
+
+
+-- rptPurchasingByGradeSupplier '11/02/2010','12/02/2010','','','','S','','INV','',0
+

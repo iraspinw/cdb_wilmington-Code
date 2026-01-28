@@ -1,0 +1,1156 @@
+/****** Object:  StoredProcedure [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined]    Script Date: 11/17/2023 11:09:44 AM ******/
+
+
+
+-- 8/1/23 I.R Suppliers Report
+
+-- 9/1/23 I.R. Made format similar to Wild Suppliers list (per T.Topp)
+
+-- 11/17/23 I.R. Combined Suppliers Data from Wild and Cietrade
+
+-- 11/30/23 I.R. Remove supplierid 6410 (per T.Topp)
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined] '','','','','','S','','SHIP','', 0 -- use this
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined] '2023-07-01','2023-07-31','','','','S','','SHIP','', 0
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined] '2023-07-01','2023-07-31','','','','S','','SHIP','', 1
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined] '2023-07-01','2023-07-31','','','','S','','INV','', 0
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined] '2023-07-01','2023-07-31','','','','S','','SHIP','', 0
+
+
+
+
+
+
+
+-- Suppliers report corresponds to Purchases by Supplier Cietrade report
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined] '2022-08-01','2023-08-01','','','','S','','SHIP','', 0
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined] '2023-07-01','2023-08-01','','','','S','','SHIP','', 0
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined] '2023-07-01','2023-08-31','','','','S','','SHIP','', 0
+
+
+
+CREATE   PROCEDURE [dbo].[rptPurchasingByGradeSupplier2CietradeAndWildCombined] @FromMnth datetime,
+
+@ToMnth datetime
+
+                                                               ,
+
+@SupplierID varchar(12)
+
+								                               ,
+
+@CoID varchar(2)
+
+															   ,
+
+@TradeType char(25)
+
+															   ,
+
+@UOM char(1)
+
+								                               ,
+
+@Industry varchar(50) = ''
+
+															   ,
+
+@DateRange varchar(5) = 'INV'
+
+															   ,
+
+@GradeID char(15)
+
+								                               ,
+
+@IncludeCompleted tinyint = 0
+
+
+
+ AS
+
+--12/02/2010 RS: Created from [q_GetPurchasingByGradeSupplier] for .NET
+
+--Suppliers report
+
+
+
+
+
+BEGIN TRY
+
+	
+
+	IF @FromMnth =''
+
+	   SET @FromMnth = '2023-07-01'
+
+	IF @ToMnth = ''
+
+	   SET @ToMnth = GETDATE()
+
+
+
+    CREATE TABLE #REPORT(
+
+	    BillCompany varchar(65),
+
+        GradeName varchar(65), 
+
+        CompanyNm varchar(65),
+
+        --ShipFromID char(45), 
+
+        BuySellNo char(12), 
+
+        Weight decimal(18,8),
+
+        Units decimal(12,0), 
+
+        Cost money,
+
+        Adjustments Money DEFAULT 0,
+
+        TotalCost money,
+
+        Freight money,
+
+        TotalWeight decimal(18,8),
+
+		TransactionPeriod varchar(7),
+
+		COID char(2)
+
+
+
+         )
+
+
+
+    CREATE TABLE #SUMMARY(
+
+	    BillCompany varchar(65),
+
+        GradeName varchar(65), 
+
+        CompanyNm varchar(65),
+
+        --ShipFromID char(45), 
+
+        Weight decimal(18,8) DEFAULT 0,
+
+        Cost money DEFAULT 0,
+
+        Adjustments Money DEFAULT 0,
+
+        TotalCost money DEFAULT 0,
+
+        AvgCost decimal(18,8) DEFAULT 0,
+
+        NoShipments int DEFAULT 0,
+
+        Freight money DEFAULT 0,
+
+        AvgFrt money DEFAULT 0,
+
+		AvgPurchCost decimal(18,8) DEFAULT 0
+
+		, TransactionPeriod varchar(7)
+
+		, COID char(2)
+
+         )
+
+
+
+    INSERT	#REPORT(BillCompany,
+
+	               CompanyNm,
+
+	               BuySellNo,
+
+	               GradeName,
+
+	               Weight,
+
+	               Cost,
+
+	               --ShipFromID,
+
+	               TransactionPeriod,
+
+	               COID)    
+
+	SELECT 	buysell.ShipToID BillCompany,
+
+		Vend.companynm,
+
+		BuySell.BuySellNo,
+
+		Grade.description 
+
+
+
+		,
+
+		sum(dbo.CONVERT_TO_UOM(pweight, pweightuom, @UOM))
+
+		,
+
+		sum(PAmount)
+
+		--,ShipFromID
+
+
+
+		, FORMAT(BuySell.ShippingDt, 'M/yyyy') TransactionPeriod
+
+
+
+		--CASE
+
+		--WHEN TRIM(CAST(MONTH(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)) = 1
+
+		--THEN '0' + CAST(MONTH(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)
+
+		--ELSE CAST(MONTH(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)
+
+		--END TransactionPeriod
+
+
+
+		,BUYSELL.COID
+
+FROM
+
+	BuySell WITH(NOLOCK)
+
+
+
+INNER JOIN wksdetail WITH(NOLOCK) ON
+
+	buysell.buysellno = wksdetail.buysellno
+
+
+
+INNER JOIN Counterparty Vend WITH(NOLOCK) ON
+
+	buysell.vendorid = Vend.cpid
+
+
+
+INNER JOIN Grade WITH(NOLOCK) ON
+
+	wksdetail.gradeid = Grade.gradeid
+
+
+
+WHERE
+
+
+
+	--BuySell.Completed = 1 
+
+	--AND 
+
+
+
+	--(BuySell.ShippingDt >=@FromMnth  AND BuySell.ShippingDt <= @ToMnth)
+
+	--AND
+
+	--((@IncludeCompleted=0 and BuySell.Invoiced = '1') OR (@IncludeCompleted=1 and BuySell.Completed = 1))
+
+
+
+	--AND 
+
+
+
+	((@DateRange = 'INV'
+
+		AND BuySell.InvoiceDt >= @FromMnth
+
+		AND BuySell.InvoiceDt <= @ToMnth)
+
+	OR (@DateRange = 'SHIP'
+
+		AND BuySell.ShippingDt >= @FromMnth
+
+		AND BuySell.ShippingDt <= @ToMnth))
+
+
+
+	AND BuySell.vendorid <> '(INV)' 
+
+	
+
+	AND BuySell.vendorid <> '(PLANT)'
+
+
+
+	--AND BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(Plant)'
+
+
+
+	AND (@SupplierID = '' OR @SupplierID = Vend.CpID)
+
+
+
+	AND (@GradeID = '' 	OR wksdetail.gradeid = @GradeID)
+
+
+
+	AND (@COID = '' OR @COID = BUYSELL.COID)
+
+
+
+	AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+
+
+	AND WksDetail.PWeightUOM <> 'E'
+
+
+
+	AND (@Industry = '' OR Vend.IndustryNm = @Industry)
+
+
+
+	-- 11/30/23 I.R.
+
+	AND vend.Cpid <> '6410'
+
+
+
+GROUP BY
+
+	buysell.ShipToID,
+
+	Vend.companynm,
+
+	BuySell.BuySellNo,
+
+	Grade.Description
+
+	,ShipFromID
+
+
+
+	, FORMAT(BuySell.ShippingDt, 'M/yyyy')
+
+
+
+	--,CASE
+
+	--	WHEN TRIM(CAST(MONTH(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)) = 1
+
+	--     THEN '0' + CAST(MONTH(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)
+
+	--	ELSE CAST(MONTH(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)+ '/' + CAST(YEAR(CAST(BuySell.ShippingDt AS DATE)) AS VARCHAR)
+
+	--END
+
+
+
+	,BUYSELL.COID
+
+
+
+	-- UPDATE REPORT DETAIL TABLE WITH TOTAL WORKSHEET COSTS
+
+
+
+	--SELECT * FROM buysell where buysellno = 'PR-1946'
+
+	--SELECT * FROM wksDetail where buysellno = 'PR-1946'
+
+
+
+
+
+
+
+    SELECT
+
+	DISTINCT #REPORT.BuySellNo,
+
+	sum(#REPORT.cost) AS TotalCost,
+
+	sum(#REPORT.Weight) AS TotalWeight
+
+INTO
+
+	#BuySellList
+
+FROM
+
+	#REPORT
+
+GROUP BY
+
+	#REPORT.BUYSELLNO
+
+
+
+    UPDATE	#REPORT
+
+    SET
+
+	#REPORT.TotalCost = #BuySellList.TotalCost
+
+    FROM
+
+	#REPORT
+
+    INNER JOIN #BuySellList ON
+
+	#REPORT.BUYSELLNO = #BuySellList.BuySellNo
+
+
+
+    UPDATE	#REPORT
+
+    SET #REPORT.TotalWeight = #BuySellList.TotalWeight
+
+    FROM #REPORT
+
+    INNER JOIN #BuySellList ON
+
+	#REPORT.BUYSELLNO = #BuySellList.BuySellNo
+
+
+
+	-- UPDATE REPORT DETAIL TABLE WITH EXPENSES
+
+
+
+    SELECT	#REPORT.BuySellNo,	GradeName
+
+
+
+	,sum(ISNULL(Payables.Amount, 0) * (#REPORT.Weight / #REPORT.TotalWeight)) AS FRT
+
+
+
+	--08/02/2023 I.R.
+
+	--, sum(ISNULL(Buysell.PFreightChg, 0)) AS FRT
+
+
+
+    INTO #EXP
+
+    FROM #REPORT
+
+	INNER JOIN Payables WITH(NOLOCK) ON
+
+	Payables.buysellno = #REPORT.buysellno
+
+    INNER JOIN BuySell WITH(NOLOCK) ON
+
+    Buysell.BuySellNo = #REPORT.buysellno
+
+
+
+    WHERE
+
+
+
+	#REPORT.TotalWeight <> 0
+
+
+
+	AND 
+
+
+
+	Payables.ItemIDSource = 'D'
+
+	AND Payables.Amount <> 0
+
+	AND ISNULL(Payables.Reversed,0) <> 1
+
+    GROUP BY #REPORT.BUYSELLNO, GradeName 
+
+
+
+    UPDATE	#REPORT
+
+    SET #REPORT.Freight = #EXP.FRT
+
+    FROM
+
+	#REPORT
+
+    INNER JOIN #EXP ON
+
+	#REPORT.BUYSELLNO = #EXP.BuySellNo
+
+	AND #REPORT.GradeName = #EXP.GradeName
+
+
+
+
+
+	-- ADJUSTMENTS
+
+    SELECT
+
+	#REPORT.BuySellNo,
+
+	GradeName,
+
+	sum(GPLEDGER.COST * (#REPORT.Cost / #REPORT.TotalCost)) AS AllocAmt
+
+    INTO
+
+	#ALLOCADJ
+
+FROM
+
+	GPLEDGER WITH(NOLOCK)
+
+INNER JOIN #REPORT ON
+
+	GPLEDGER.BUYSELLNO = #REPORT.BuySellNo
+
+WHERE
+
+	GPLEDGER.AdjType = 'P'
+
+	AND #REPORT.TotalCost > 0
+
+	AND (@SupplierID = ''
+
+		OR @SupplierID = AdjCPID)
+
+GROUP BY
+
+	#REPORT.BuySellNo,
+
+	GradeName 
+
+
+
+
+
+    UPDATE
+
+	#REPORT
+
+    SET Adjustments = AllocAmt,
+
+	TotalCost = TotalCost + AllocAmt
+
+    FROM
+
+	#REPORT
+
+   INNER JOIN #ALLOCADJ ON
+
+	#REPORT.BuysellNo = #ALLOCADJ.BuysellNo
+
+	AND #REPORT.GradeName = #ALLOCADJ.GradeName
+
+
+
+
+
+
+
+    SELECT
+
+	BillCompany,
+
+	CompanyNm,
+
+	GradeName,
+
+	BuySellNo,
+
+	TransactionPeriod,
+
+	COID
+
+	,
+
+	SUM(WEIGHT) AS Weight,
+
+	SUM(COST) AS Cost,
+
+	SUM(Adjustments) AS Adjustments,
+
+	1 AS Shipments,
+
+	SUM(Freight) AS Freight
+
+	--,ShipFromID
+
+    INTO
+
+	#CONSOLIDATION
+
+FROM
+
+	#REPORT
+
+GROUP BY
+
+	BillCompany,
+
+	GradeName,
+
+	CompanyNm,
+
+	--ShipFromID,
+
+	BuySellNo ,
+
+	TransactionPeriod,
+
+	COID
+
+
+
+
+
+    INSERT
+
+	#SUMMARY (BillCompany,
+
+	CompanyNm,
+
+	GradeName,
+
+	Weight,
+
+	Cost,
+
+	Adjustments,
+
+	NoShipments,
+
+	Freight,
+
+	AvgFrt,
+
+	--ShipFromID,
+
+	TransactionPeriod,
+
+	COID)
+
+    
+
+	SELECT
+
+	BillCompany,
+
+	CompanyNm,
+
+	GradeName,
+
+	SUM(WEIGHT) AS Weight,
+
+	SUM(COST) AS Cost,
+
+	SUM(Adjustments) AS Adjustments,
+
+	SUM(Shipments),
+
+	SUM(ISNULL(Freight, 0)),
+
+	0 AS AvgFrt
+
+	--,ShipFromID
+
+			,
+
+	TransactionPeriod,
+
+	COID
+
+FROM
+
+	#CONSOLIDATION
+
+GROUP BY
+
+	BillCompany,
+
+	GradeName,
+
+	CompanyNm,
+
+	--ShipFromID,
+
+	TransactionPeriod,
+
+	COID
+
+
+
+
+
+    UPDATE
+
+	#SUMMARY
+
+SET
+
+	TotalCost = Cost + ISNULL(Adjustments,
+
+	0)+ ISNULL(Freight,
+
+	0),
+
+	AvgCost = (Cost + ISNULL(Adjustments,
+
+	0)+ ISNULL(Freight,
+
+	0))/ Weight
+
+WHERE
+
+	Cost + ISNULL(Adjustments,
+
+	0)+ ISNULL(Freight,
+
+	0) <> 0
+
+	AND Weight <> 0
+
+    UPDATE
+
+	#SUMMARY
+
+SET
+
+	AvgFrt = Freight / Weight
+
+WHERE
+
+	Freight <> 0
+
+	AND Weight <> 0
+
+    UPDATE
+
+	#SUMMARY
+
+SET
+
+	AvgPurchCost = Cost / Weight
+
+WHERE
+
+	Cost <> 0
+
+	AND Weight <> 0
+
+	--UPDATE #SUMMARY SET CompanyNm = 'UNASSIGNED' WHERE CompanyNm = '(Other)'
+
+	--SELECT * FROM #SUMMARY ORDER BY GradeName,Companynm,ShipFromID
+
+	--COUNT LOCATIONS PER SUPPLIER
+
+	SELECT
+
+	GradeName,
+
+	CompanyNm
+
+	--,COUNT(DISTINCT ShipFromID) AS LocCount
+
+	INTO
+
+	#LocCount
+
+FROM
+
+	#SUMMARY
+
+GROUP BY
+
+	GradeName,
+
+	CompanyNm
+
+
+
+IF OBJECT_ID('tempdb..#Results') IS NOT NULL DROP TABLE #Results
+
+	
+
+    SELECT
+
+	--LocCount,
+
+	--#SUMMARY.*
+
+	--#SUMMARY.[BillCompany],
+
+	RTRIM(CompanyInfo.CompanyNm) Branch --BillCompany
+
+
+
+	,(SELECT Cpid from Counterparty where Companynm = #SUMMARY.[CompanyNm]) SupplierID
+
+
+
+	,#SUMMARY.[CompanyNm] SuppName --Supplier
+
+
+
+	,(SELECT RTRIM(Cpid) from Counterparty where Companynm = #SUMMARY.[CompanyNm]) + ' - ' + #SUMMARY.[CompanyNm] SupplierName
+
+
+
+	,(SELECT ProductGroupID FROM Grade where [Description] = #SUMMARY.[GradeName]) GradeGroup
+
+	,(SELECT GradeID FROM Grade where [Description] = #SUMMARY.[GradeName]) Grade
+
+		,#SUMMARY.[GradeName] --CieTradeGradeName
+
+
+
+		,(SELECT RTRIM(GradeID) FROM Grade where [Description] = #SUMMARY.[GradeName]) + ' (' + 
+
+		 (SELECT RTRIM(ProductGroupID) FROM Grade where [Description] = #SUMMARY.[GradeName]) + ') ' + #SUMMARY.[GradeName] GradeID
+
+		 ,#SUMMARY.[GradeName] ItemDescription
+
+		 ,#SUMMARY.[GradeName] CieTradeGradeName
+
+		--#SUMMARY.[ShipFromID] ,
+
+		,#SUMMARY.[Weight] Tons
+
+		,#SUMMARY.[Cost] BuyPrice
+
+
+
+		--,case when #SUMMARY.[Weight] = 0 then 0
+
+		--      else ROUND(#SUMMARY.[Cost] / #SUMMARY.[Weight], 2) 
+
+		--	  end BuyPrice
+
+		--,#SUMMARY.[AvgPurchCost] BuyPrice
+
+
+
+
+
+   	    ,'' TotalNetProfit,
+
+		@FromMnth FromDate,
+
+		'' LatestPickupDate,
+
+		@ToMnth ToDate,
+
+		#SUMMARY.[TransactionPeriod] [Period],
+
+		#SUMMARY.[Adjustments],
+
+		#SUMMARY.[TotalCost] ,
+
+		#SUMMARY.[AvgCost],
+
+		#SUMMARY.[NoShipments],
+
+		#SUMMARY.[Freight] ,
+
+		#SUMMARY.[AvgFrt]
+
+		,#SUMMARY.[AvgPurchCost] 
+
+
+
+		--11/17/23 I.R 
+
+		INTO #Results
+
+
+
+	--,#SUMMARY.[COID]
+
+	-- #SUMMARY.[InUOM] 
+
+	-- , dbo.CnvUOM_Names(@UOM) as InUOM
+
+FROM
+
+	#SUMMARY
+
+--INNER JOIN #LocCount ON
+
+--	#LocCount.Companynm = #SUMMARY.Companynm
+
+--	AND #LocCount.GradeName = #SUMMARY.GradeName
+
+INNER JOIN CompanyInfo ON #SUMMARY.COID = CompanyInfo.coid
+
+
+
+
+
+ORDER BY
+
+	CompanyInfo.CompanyNm,
+
+	#SUMMARY.Companynm,
+
+	#SUMMARY.GradeName
+
+	--,#SUMMARY.ShipFromID
+
+
+
+IF OBJECT_ID('tempdb..#WildResults') IS NOT NULL DROP TABLE #WildResults
+
+SELECT [Branch]
+
+      ,[SupplierID]
+
+      ,[SuppName]
+
+      ,[SupplierName]
+
+      ,[GradeGroup]
+
+      ,[Grade]
+
+      ,[GradeName]
+
+      ,[GradeID]
+
+      ,[ItemDescription]
+
+      ,[CieTradeGradeName]
+
+      ,[Tons]
+
+      ,[BuyPrice]
+
+      ,CAST(TotalNetProfit AS VARCHAR(20)) TotalNetProfit
+
+      ,[FromDate]
+
+      ,[LatestPickupDate]
+
+      ,[ToDate]
+
+      ,[Period]
+
+	  , 'Wild' AS [DataSource]
+
+
+
+	  INTO #WildResults
+
+
+
+  FROM [WPSQL2K18].[WildRMR].[dbo].[tblWildSupplierspbi]
+
+
+
+SELECT Branch,
+
+	       SupplierID
+
+		   , SuppName
+
+		   , SupplierName
+
+		   , GradeGroup
+
+		   , Grade
+
+
+
+		   --, GradeName
+
+		   	, CASE WHEN RIGHT([GradeName], 5) = ' - RM' THEN SUBSTRING([GradeName], 1, CHARINDEX(' - RM', [GradeName])-1)
+
+	         WHEN RIGHT([GradeName], 5) = ' - FG' THEN SUBSTRING([GradeName], 1, CHARINDEX(' - FG', [GradeName])-1)
+
+			 WHEN RIGHT([GradeName], 5) = ' - NP' THEN SUBSTRING([GradeName], 1, CHARINDEX(' - NP', [GradeName])-1)
+
+			 ELSE [GradeName] END
+
+			 [GradeName]
+
+		   
+
+		   --, GradeID
+
+		   	, CASE WHEN RIGHT([GradeID], 5) = ' - RM' THEN SUBSTRING([GradeID], 1, CHARINDEX(' - RM', [GradeID])-1)
+
+	         WHEN RIGHT([GradeID], 5) = ' - FG' THEN SUBSTRING([GradeID], 1, CHARINDEX(' - FG', [GradeID])-1)
+
+			 WHEN RIGHT([GradeID], 5) = ' - NP' THEN SUBSTRING([GradeID], 1, CHARINDEX(' - NP', [GradeID])-1)
+
+			 ELSE [GradeID] END
+
+			 [GradeID]
+
+
+
+		   --,ItemDescription
+
+		   	, CASE WHEN RIGHT([ItemDescription], 5) = ' - RM' THEN SUBSTRING([ItemDescription], 1, CHARINDEX(' - RM', [ItemDescription])-1)
+
+	         WHEN RIGHT([ItemDescription], 5) = ' - FG' THEN SUBSTRING([ItemDescription], 1, CHARINDEX(' - FG', [ItemDescription])-1)
+
+			 WHEN RIGHT([ItemDescription], 5) = ' - NP' THEN SUBSTRING([ItemDescription], 1, CHARINDEX(' - NP', [ItemDescription])-1)
+
+			 ELSE [ItemDescription] END
+
+			 [ItemDescription]
+
+		   
+
+		   --, CietradeGradeName
+
+		   	, CASE WHEN RIGHT([CietradeGradeName], 5) = ' - RM' THEN SUBSTRING([CietradeGradeName], 1, CHARINDEX(' - RM', [CietradeGradeName])-1)
+
+	         WHEN RIGHT([CietradeGradeName], 5) = ' - FG' THEN SUBSTRING([CietradeGradeName], 1, CHARINDEX(' - FG', [CietradeGradeName])-1)
+
+			 WHEN RIGHT([CietradeGradeName], 5) = ' - NP' THEN SUBSTRING([CietradeGradeName], 1, CHARINDEX(' - NP', [CietradeGradeName])-1)
+
+			 ELSE [CietradeGradeName] END
+
+			 [CietradeGradeName]
+
+		   
+
+		   , Tons
+
+		   , BuyPrice
+
+		   ,CAST(TotalNetProfit AS VARCHAR(10)) TotalNetProfit
+
+		   , CAST(FromDate AS DATE) FromDate 
+
+		   , CAST(LatestPickupDate AS DATE) LatestPickupDate
+
+		   , CAST(ToDate AS DATE) ToDate 
+
+		  
+
+		   ,[Period]
+
+		   , 'Cietrade' AS [DataSource]
+
+		   --, Adjustments, TotalCost, AvgCost, NoShipments, Freight, AvgFrt, AvgPurchCost
+
+ FROM #Results
+
+
+
+ UNION ALL
+
+
+
+SELECT [Branch]
+
+      ,[SupplierID]
+
+      ,[SuppName]
+
+      ,[SupplierName]
+
+      ,[GradeGroup]
+
+      ,[Grade]
+
+      ,[GradeName]
+
+      ,[GradeID]
+
+      ,[ItemDescription]
+
+      ,[CieTradeGradeName]
+
+      ,[Tons]
+
+      ,[BuyPrice]
+
+      ,CAST(TotalNetProfit AS VARCHAR(20)) TotalNetProfit
+
+      ,CAST([FromDate] AS DATE) [FromDate]
+
+      ,CAST([LatestPickupDate] AS DATE) [LatestPickupDate]
+
+      ,CAST([ToDate] AS DATE) [ToDate]
+
+      ,[Period]
+
+	  ,[DataSource]
+
+ FROM #WildResults
+
+
+
+ ORDER BY 1,3,4,5,6
+
+
+
+END TRY
+
+
+
+BEGIN CATCH
+
+    SELECT  
+
+        ERROR_NUMBER() AS ErrorNumber  
+
+        ,ERROR_SEVERITY() AS ErrorSeverity  
+
+        ,ERROR_STATE() AS ErrorState  
+
+        ,ERROR_PROCEDURE() AS ErrorProcedure  
+
+        ,ERROR_LINE() AS ErrorLine  
+
+        ,ERROR_MESSAGE() AS ErrorMessage;  
+
+END CATCH
+
+
+
+
+
+
+
+
+
+	-- rptPurchasingByGradeSupplier '11/02/2010','12/02/2010','','','','S','','INV','',0
+

@@ -1,0 +1,140 @@
+
+
+
+
+CREATE   PROCEDURE UpdateWPCPringReport
+
+
+
+AS
+
+BEGIN
+
+-- DROP TABLE WPCPricingReport
+
+-- SELECT * FROM WPCPricingReport where  billingcompany like '%wilming%'
+
+
+
+-- SELECT * FROM WPCPricingReport where  supplier like '%FreS-Co System Usa Remit Only%'
+
+
+
+-- SELECT DISTINCT BillingCompany FROM [cdb_wilmington].[dbo].[WPCPricingReport] where billingcompany is not null ORDER BY 1
+
+
+
+-- SELECT supplier, Grade, [Pricing Formula],  MonthFromPrice, MonthToPrice, MonthFromShippedWeight, MonthToShippedWeight, [Shipping Terms] FROM [cdb_wilmington].[dbo].[WPCPricingReport] WHERE BillingCompany='RMR Atlanta'                              
+
+
+
+-- SELECT * FROM [cdb_wilmington].[dbo].[WPCPricingReport] where billingcompany = 'RMR Richmond' and supplier = 'Bargain Books Remit Only'
+
+-- SELECT * FROM [cdb_wilmington].[dbo].[WPCPricingReport] where billingcompany = 'RMR Richmond' and supplier = 'Cascades Tissue Group Invoice Only'
+
+
+
+-- SELECT * FROM [cdb_wilmington].[dbo].[WPCPricingReport] where billingcompany = 'RMR Richmond' and supplier = '4th Generation Recycling Remit & Invoice'
+
+
+
+TRUNCATE TABLE WPCPricingReport
+
+
+
+; with cte1 as (SELECT [BillingCompany],
+
+      [dbo].[CapitalizeFirstLetter](TRIM([Supplier]) + ' ' + TRIM([Location])) [Supplier]
+
+	  ,[Index Formula] [Pricing Formula]
+
+      --,[Location]
+
+      --,[Order No]
+
+      ,Format([Period], 'MMM yyyy') [Month]
+
+      ,Format([Period], 'yyyy MM') [MonthToOrder]
+
+      ,[Product]
+
+     --,[Packaging]
+
+      ,[Price]
+
+      --,[Previous Month Price]
+
+      ,[ShipWtLbs]/2000 [ShippedWeight]
+
+      --,[Previous Month ShipWtLbs]
+
+      --,[PriceUOM]
+
+
+
+      ,[Shipping Terms]
+
+      --,[IsContract]
+
+	  ,datediff(mm,[Period], getdate()) MonthsAgo
+
+  FROM [cdb_Wilmington].[dbo].[tblContractPricesNA]
+
+  --where BillingCompany like '%ATLANTA%'
+
+  --where BillingCompany like '%wilming%'
+
+
+
+  )
+
+
+
+, cte2 as (select [BillingCompany],supplier, [Pricing Formula], [month], [Product], [Price], ShippedWeight, [Shipping Terms]
+
+from cte1 where MonthsAgo = 1)
+
+
+
+, cte3 as (select [BillingCompany],supplier, [Pricing Formula], [month], [Product], [Price], ShippedWeight, [Shipping Terms]
+
+from cte1 where MonthsAgo = 2)
+
+
+
+INSERT WPCPricingReport
+
+
+
+select cte3.BillingCompany, cte3.supplier, cte3.[Pricing Formula], cte3.[month] MonthFrom, cte2.[month] MonthTo,
+
+cte3.[Product] Grade, cte3.[Price] MonthFromPrice, cte2.[Price] MonthToPrice
+
+, cte3.ShippedWeight MonthFromShippedWeight, cte2.ShippedWeight MonthToShippedWeight, cte3.[Shipping Terms] 
+
+--INTO WPCPricingReport
+
+from cte3 full join cte2 on cte3.BillingCompany = cte2.BillingCompany and cte3.supplier = cte2.supplier and cte3.product = cte2.Product
+
+
+
+--supplier, Grade, [Pricing Formula],  MonthFromPrice, MonthToPrice, MonthFromShippedWeight, " + "MonthToShippedWeight, [Shipping Terms]
+
+
+
+
+
+  --and datediff(mm,getdate(), [Period]) <= 2
+
+  
+
+  --ORDER BY TRIM([Supplier]) +  TRIM([Location]), Format([Period], 'yyy MM'), [Product]
+
+
+
+  update WPCPricingReport set grade = 'Aluminum Rolls' where grade = '="Aluminum Rolls'
+
+
+
+  END
+

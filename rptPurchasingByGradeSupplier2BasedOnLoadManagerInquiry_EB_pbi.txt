@@ -1,0 +1,581 @@
+
+
+
+
+-- 9/3/24 I.R.
+
+-- 10/25/23 E.B Suppliers and Customers report 
+
+-- 6/3/24 I.R. Fixing issue with start date when last day of the previous month falls on Friday
+
+-- Used in RMR Daily Metrics report
+
+
+
+-- SupplierID = '(INV)' - Customers Report;
+
+-- CustID = '(INV)' Suppliers Report
+
+
+
+-- Based on Cietrade Load Manager Inquiry
+
+
+
+-- [dbo].[rptPurchasingByGradeSupplier2BasedOnLoadManagerInquiry_EB_pbi] '','','','','','S','','SHIP','', 0
+
+
+
+CREATE PROCEDURE [dbo].[rptPurchasingByGradeSupplier2BasedOnLoadManagerInquiry_EB_pbi] @FromMnth datetime, @ToMnth datetime
+
+                                                               ,
+
+@SupplierID varchar(12)
+
+								                               ,
+
+@CoID varchar(2)
+
+															   ,
+
+@TradeType char(25)
+
+															   ,
+
+@UOM char(1)
+
+								                               ,
+
+@Industry varchar(50) = ''
+
+															   ,
+
+@DateRange varchar(5) = 'SHIP'
+
+															   ,
+
+@GradeID char(15)
+
+								                               ,
+
+@IncludeCompleted tinyint = 0
+
+
+
+ AS
+
+--12/02/2010 RS: Created from [q_GetPurchasingByGradeSupplier] for .NET
+
+BEGIN
+
+
+
+SET
+
+NOCOUNT ON
+
+SET
+
+ANSI_WARNINGS OFF
+
+DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+
+
+ --09/03/24 I.R.
+
+	IF @FromMnth =''
+
+	   SET @FromMnth = '07/01/23'
+
+	IF @ToMnth = ''
+
+	   SET @ToMnth = GETDATE()
+
+IF OBJECT_ID('tempdb..#r23') IS NOT NULL
+
+    DROP TABLE #r23
+
+
+
+SELECT case when TRIM(cr.[Company]) = 'RMR' then 'RMR Raleigh'
+
+            when TRIM(cr.[Company]) = 'RMR Philadelphia' then 'RMR Philly'
+
+	   else cr.[Company]
+
+		end Company
+
+		, ri.[Index]
+
+		, ri.[Index_Value]
+
+		--,ri.[Period]
+
+		,CASE when LEN(RTRIM(Substring(ri.[Period],6,2)) +'/'+Substring(ri.[Period],1,4)) = 6 then
+
+			      '0' + RTRIM(Substring(ri.[Period],6,2)) +'/'+Substring(ri.[Period],1,4) 
+
+		      else Substring(ri.[Period],6,2) +'/'+Substring(ri.[Period],1,4)  end [Period]
+
+		INTO #r23
+
+
+
+		FROM [cdb_Wilmington].[dbo].[tblCompanyRegion] cr
+
+		JOIN [cdb_Wilmington].[dbo].[tblRegionalIndices2] ri
+
+		ON ri.[Region] = cr.[Region]
+
+
+
+	SELECT 		    
+
+		TRIM(Vend.CpID) SupplierID,
+
+		Vend.companynm SuppName
+
+		,TRIM(B.CustID) CustID
+
+        ,C.CompanyNm [Customer/Receiver],
+
+
+
+		--9/1/24 I.R.
+
+		IIF(TRIM(W.CompanyDesc) = 'RMR Philadelphia', 'RMR Philly', TRIM(W.CompanyDesc)) [Branch], --[DEPT]
+
+
+
+		--TRIM(W.CompanyDesc) [Branch], --[DEPT]
+
+
+
+		ISNULL(G.ProductGroupID,'TO BE GRADED') AS GradeGroup,
+
+		ISNULL(G.[Description],'TO BE GRADED') AS [GradeName],
+
+		ISNULL(G.GradeId, '') Grade,
+
+
+
+		RTRIM(G.GradeID) + ' (' + RTRIM(G.ProductGroupID) + ' ' + ') ' + RTRIM(G.[Description]) GradeID,
+
+
+
+		--G.[Description] AS [ItemDescription],
+
+		--G.[Description] AS [CieTradeGradeName]
+
+
+
+		--Per K.Guzman
+
+		SUM([dbo].[CnvFromLbs](b.ScaleGross - b.ScaleTare, 'S')) [Scale Net Tons],
+
+
+
+		ISNULL(SUM([dbo].[CnvFromLbs](b.TotalWeightLbs, 'S')), 0) [Total Tons]
+
+
+
+		,ISNULL(SUM(b.PSupplierCost + b.PAdjustment), 0) [Total Purchases]
+
+		,ISNULL(SUM(b.SalesAmt + b.SFreightChg + b.SAdjustment), 0) [Total Sales]
+
+		,ISNULL(SUM(SalesAmt + b.SFreightChg + b.SAdjustment - (b.PSupplierCost + b.PAdjustment)), 0) TotalProfit,
+
+
+
+		@FromMnth FromDate,
+
+		--'' LatestPickupDate,
+
+		@ToMnth ToDate
+
+		,FORMAT(B.ShippingDt, 'MM/yyyy') [Shipping Date Period]
+
+
+
+		,ISNULL(FORMAT(B.InvoiceDt, 'MM/yyyy'), '') [Post Date Period]
+
+
+
+        --B.BuySellNo [Wks No],
+
+
+
+        --B.TransportationNo [GROUP NO],
+
+
+
+        --b.TradeType [Trade-Type],
+
+
+
+		--B.ShippingDt [Ship Date],
+
+		--ShippingDt [-Hidden-ShipDate],
+
+        --B.InvoiceDt [Invoice Date],
+
+		--B.OrderDt [Order Date],
+
+
+
+  --      Case When B.ShippingDt = '01/01/1900' Then NULL Else B.ShippingDt End [{LC}SHIP DATE],
+
+		--Case When B.ShippingDt = '01/01/1900' Then NULL Else B.ShippingDt End [-Hidden-ShipDate],
+
+         --,Case When B.InvoiceDt = '01/01/1900' Then NULL Else B.InvoiceDt End [POST DATE]
+
+		--Case When B.OrderDt = '01/01/1900' Then NULL Else B.OrderDt End [REF. DATE],
+
+
+
+        --B.PickupNo [PICKUP NO],
+
+        --B.RelNo [RELEASE NO],
+
+        --B.ShipToID [SHIPTOID LOCATION],
+
+        --B.BookingNo [BOOKING NO],
+
+		--BS.ETS AS [Booking ETD],
+
+		--BS.ETA AS [Booking ETA],
+
+
+
+		--G.[Description] AS [Product],
+
+
+
+	  --  (SELECT TOP 1 CompanyNm FROM wksDelivery WITH(NOLOCK) INNER JOIN Counterparty WITH(NOLOCK) ON wksDelivery.VendorID = Counterparty.CpID
+
+	  --   INNER JOIN GLAccount ON wksDelivery.GLAcct = GLAccount.GLAcct AND GLAccount.Cat = 'EXPENSES' WHERE wksDelivery.BuySellNo = B.BuySellNo 
+
+		 --ORDER BY ISNULL(WksDelivery.isFreight,0) DESC)
+
+			--[Carrier],
+
+
+
+    	--refequipno as [EQUIPMENT NO],
+
+		--B.EqType As [EQUIPMENT TYPE],
+
+
+
+	    ,upper([dbo].[CnvShipStatus_Name](B.ShippingOK)) as [Logistics],
+
+		[dbo].[CnvWksStatus_Name](ISNULL(B.[Status],''),'') [Status]
+
+
+
+		--,B.CustID
+
+        --,C.CompanyNm [Customer/Receiver]
+
+
+
+		--,'-' As [TRAN-TYPE],
+
+        --, Vend.CompanyNm [Supplier]
+
+
+
+	  --  (SELECT TOP 1 Grade.Description FROM WksDetail WITH(NOLOCK) INNER JOIN GRADE WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID 
+
+			--WHERE WksDetail.BuySellNo = B.BuySellNo) [PRODUCT],
+
+
+
+		--b.RefPONo as [PO No],
+
+		--b.RefSONo as [SO No],
+
+
+
+		--SO.POReference AS [SO Reference],
+
+
+
+		,ISNULL(SUM(b.SalesAmt + b.SFreightChg), 0) [Sales Amount]
+
+		,COUNT(DISTINCT B.BUYSELLNO) AS LOADS
+
+
+
+		, STRING_AGG(CONVERT(NVARCHAR(max), ISNULL(TRIM(B.BUYSELLNO), 'N/A')), ',') WorkSheets
+
+		--b.PFreightChg [Expenses],
+
+		--b.PSupplierCost [Purchases],
+
+
+
+		--dbo.cw_RemoveTrailingZeros(Round(DBO.CONVERT_TO_UOM(IsNull(TotalWeightLbs, 0),'L','K'), 2), 2) [Weight KG],
+
+		--dbo.cw_RemoveTrailingZeros(Round(IsNull(TotalWeightLbs, 0), 0),0) [Weight Lbs],
+
+		--dbo.cw_RemoveTrailingZeros(Round(DBO.CONVERT_TO_UOM(IsNull(TotalWeightLbs, 0),'L','S'), 2), 2) [Weight Tons],
+
+
+
+		--TotalWeightLbs/2000 [Weight Tons],
+
+
+
+		--(SELECT Companynm FROM Counterparty where cpid = B.CustID) CustomerName,
+
+
+
+		--B.ClaimStatus AS [Claim Status],
+
+
+
+		--REPLACE(REPLACE(convert(varchar(max),B.Notes), CHAR(13), ''), CHAR(10), '') As [Notes],
+
+
+
+		--b.SAdjustment [Sales Adjustment],
+
+		--b.PAdjustment [Purchase Adjustment]
+
+
+
+		--PSupplierCost + PAdjustment [Total Purchases],
+
+
+
+		--SalesAmt + SFreightChg + SAdjustment [Total Sales]
+
+
+
+		-- SalesAmt + SFreightChg + SAdjustment - (PSupplierCost + PAdjustment) TotalNetProfit
+
+
+
+		--B.CustID as [-Hidden-CustID],
+
+		--B.COID as [-Hidden-COID],
+
+		--W.CompanyDesc [-Hidden-Dept],
+
+		--B.BuySellNo [-Hidden-BuySellNo],
+
+		--B.ShipToID [-Hidden-ShipToID],
+
+		--B.Mode,
+
+		--B.VendorID as [-Hidden-VendorID],
+
+		--B.ShipFromID [-Hidden-ShipFromID],
+
+		--PO.POReference as [-Hidden-POReference],
+
+		--PO.PriceBasis as [-Hidden-POShipTerms],
+
+		--SO.POReference as [-Hidden-SOReference],
+
+		--SO.PriceBasis as [-Hidden-SOShipTerms],
+
+
+
+		--,B.ShipToID [Ship To],
+
+		--ShipToAddress.City     as  [Ship To City],
+
+		--ShipToAddress.Region   as  [Ship To Region]
+
+		--,B.ShipFromID [Ship From]
+
+		--,ShipFromAddress.City   as  [Ship From City]
+
+		--,ShipFromAddress.Region as  [Ship From Region]
+
+
+
+		--FORMAT(B.ShippingTm, 'hh:mm tt') as [Ship Time],
+
+		--C.CompanyNm as [-Hidden-Receiver],
+
+		--V.CompanyNm as [-Hidden-Supplier],
+
+
+
+		--,UD.UserNm AS [User/Owner]
+
+
+
+FROM BuySell B WITH(NOLOCK) 
+
+	INNER JOIN Counterparty Vend WITH(NOLOCK) ON B.VendorID = Vend.CpID
+
+	INNER JOIN Counterparty C WITH(NOLOCK) ON B.CustID = C.CpID
+
+	LEFT JOIN [Address] A WITH(NOLOCK) ON A.CpID = '(INV)' and A.Type = B.ShipFromID
+
+	LEFT JOIN [CompanyInfo] W WITH(NOLOCK) ON W.COID = B.COID
+
+	left join po PO on PO.PONumber =  B.RefPONo
+
+	left join po SO on SO.PONumber =  B.RefSONo
+
+	left join Booksheet BS on BS.BookingNo =  B.BookingNo
+
+	left join Grade G on G.GradeID =  B.RefGradeID
+
+	LEFT JOIN [Address] ShipToAddress WITH(NOLOCK) ON ShipToAddress.CpID=B.CustID and ShipToAddress.Type = B.ShipToID
+
+	LEFT JOIN [Address] ShipFromAddress WITH(NOLOCK) ON ShipFromAddress.CpID=B.VendorID and ShipFromAddress.Type = B.ShipFromID
+
+	LEFT JOIN [UserDef] UD WITH(NOLOCK) ON UD.UserID = B.UserID
+
+
+
+				--	LEFT JOIN
+
+				--(
+
+	   --            select Company, [Index], [Index_Value], [Period] from #r23
+
+				--	) a2
+
+
+
+				--	ON IIF(TRIM(W.CompanyDesc) = 'RMR Philadelphia', 'RMR Philly', TRIM(W.CompanyDesc)) = TRIM(a2.Company)
+
+				--	AND TRIM(a1.[Period]) = TRIM(a2.[Period])
+
+				--    AND TRIM(a1.[Index]) = TRIM(a2.[Index]) 
+
+    --                WHERE [Transaction Type] <> 'Adjustment'
+
+	WHERE 
+
+	--LEFT(b.BuySellNo, 2) = 'PR'
+
+	--((@ToDt= '' and @FromDt = '') OR
+
+
+
+    -- ((@DateRange = 'INV'
+
+	--	AND B.InvoiceDt >= @FromMnth
+
+	--	AND B.InvoiceDt <= @ToMnth)
+
+
+
+	--OR (@DateRange = 'SHIP'
+
+	--	AND 
+
+
+
+	B.ShippingDt >= @FromMnth AND B.ShippingDt <= @ToMnth
+
+
+
+    AND ISNULL(B.PublicTradeID, 0) = 0
+
+
+
+	AND (ISNULL(B.IsAgency, 0) <> 1)
+
+
+
+
+
+	--AND UPPER([dbo].[CnvShipStatus_Name](B.ShippingOK)) = 'SHIPPED'
+
+
+
+	--AND UPPER([dbo].[CnvWksStatus_Name](ISNULL(B.[Status], ''), '')) = 'INVOICED'
+
+
+
+	--AND B.CustID IN ('(INV)', '(OTHER)')     
+
+	GROUP BY
+
+	Vend.CpID ,
+
+		Vend.companynm 
+
+		,B.CustID
+
+        ,C.CompanyNm ,
+
+		W.CompanyDesc , --[DEPT]
+
+		G.ProductGroupID ,
+
+		G.[Description],
+
+		G.GradeId ,
+
+
+
+		--[dbo].[CnvFromLbs](TotalWeightLbs, 'S') 
+
+		--,b.PSupplierCost + b.PAdjustment 
+
+		--,b.SalesAmt + b.SFreightChg + b.SAdjustment 
+
+		--,SalesAmt + b.SFreightChg + b.SAdjustment - (b.PSupplierCost + b.PAdjustment) 
+
+ 
+
+		--,
+
+		FORMAT(B.ShippingDt, 'MM/yyyy') 
+
+		,FORMAT(B.InvoiceDt, 'MM/yyyy') 
+
+		,upper([dbo].[CnvShipStatus_Name](B.ShippingOK))
+
+		,[dbo].[CnvWksStatus_Name](ISNULL(B.[Status],''),'')
+
+		--,b.SalesAmt + b.SFreightChg
+
+	ORDER BY W.CompanyDesc, Vend.CpID 
+
+
+
+IF @@ROWCOUNT = 0
+
+    BEGIN
+
+    EXEC msdb.dbo.sp_send_dbmail
+
+    @profile_name = 'Wilmington_Email',
+
+    @recipients = 'iraspin@wilmingtonpaper.com',
+
+    @body = 'Cietrade data for RMR Daily Metrics report for all dates is unavailable. Troubleshoot procedure
+
+	         rptPurchasingByGradeSupplier2BasedOnLoadManagerInquiry_EB_pbi in cdb_Wilmington database on WPGTESTSQL Server.',
+
+    @subject = 'Error in procedure rptPurchasingByGradeSupplier2BasedOnLoadManagerInquiry_EB_pbi (cdb_Wilmington) occurred',
+
+    @from_address = 'cdbrestore@wilmingtonpaper.com';
+
+	INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
+
+	--EXEC xp_cmdshell 'move \\wpgtestsql\c$\Users\Admin\RMRDailyMetricsOK.txt \\wpgtestsql\c$\Users\Admin\xxxRMRDailyMetricsOK.txt';
+
+	RETURN
+
+	END
+
+
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
+
+
+
+END

@@ -1,0 +1,5583 @@
+
+
+--EXEC UpdateTables
+
+
+
+CREATE PROCEDURE [dbo].[UpdateTables] AS
+
+
+
+BEGIN
+
+
+
+DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+DECLARE @RowCnt INTEGER;
+
+
+
+BEGIN TRY
+
+
+
+BEGIN TRANSACTION
+
+
+
+DELETE FROM [cdb_Wilmington].[dbo].[TableUpdateHistory]
+
+WHERE [date] = CAST(getdate() AS DATE)
+
+
+
+DELETE FROM [dbo].[AccessTokenStore]
+
+INSERT [dbo].[AccessTokenStore]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[AccessTokenStore]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('AccessTokenStore', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[AccountingCompany]
+
+INSERT [dbo].[AccountingCompany]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[AccountingCompany]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('AccountingCompany', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[AccountingCustomer]
+
+INSERT [dbo].[AccountingCustomer]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[AccountingCustomer]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('AccountingCustomer', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[AccountingVendor]
+
+INSERT [dbo].[AccountingVendor]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[AccountingVendor]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('AccountingVendor', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[AddInImage]
+
+INSERT [dbo].[AddInImage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[AddInImage]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('AddInImage', @@ROWCOUNT)
+
+
+
+--DELETE FROM [dbo].[Address]
+
+--12/26/23
+
+INSERT [dbo].[Address] ([Cpid],
+
+    [Type] ,
+
+	[Addr1] ,
+
+	[Addr2] ,
+
+	[Addr3] ,
+
+	[City] ,
+
+	[Region] ,
+
+	[PostalCd] ,
+
+	[Country] ,
+
+	[InvoiceAddr] ,
+
+	[TelephoneX] ,
+
+	[ContactX] ,
+
+	[Instructions] ,
+
+	[Notes] ,
+
+	[WarehouseID] ,
+
+	[FaxX] ,
+
+	[RemitToAddress],
+
+	[Directions] ,
+
+	[EDI_ShipToCode] ,
+
+	[EmailX] ,
+
+	[AvgBaleWtLBS] ,
+
+	[AllocID] ,
+
+	[SalesTaxCodeID],
+
+	[EDI_ShipFromCode],
+
+	[PriceRegionID],
+
+	[TaxID],
+
+	[MasterAccountID] ,
+
+	[ShipVia] ,
+
+	[ShipTerm] ,
+
+	[CRVCertType] ,
+
+	[CRVCertNum] ,
+
+	[AddressID] ,
+
+	[WarehouseGroup],
+
+	[FeedUpdate] ,
+
+	[InternalFreightCost],
+
+	[BillingEmailX],
+
+	[isBillingAddressOnly],
+
+	[BillingAddressType],
+
+	[Inactive] ,
+
+	[WarehouseCOID],
+
+	[UserDefined1] ,
+
+	[UserDefined2] ,
+
+	[CustomsCode] ,
+
+	[Addr4] ,
+
+	[DistributionMode] ,
+
+	[IsInvoiceAddress] ,
+
+	[FuelSurChgSellRate] ,
+
+	[FuelSurChgBuyRate] ,
+
+	[SharedSavPercent] ,
+
+	[UserDefined3] ,
+
+	[UserDefined4] ,
+
+	[Geocode] ,
+
+	[LoadingHours] )
+
+SELECT [Cpid],
+
+     [Type] ,
+
+	[Addr1] ,
+
+	[Addr2] ,
+
+	[Addr3] ,
+
+	[City] ,
+
+	[Region] ,
+
+	[PostalCd] ,
+
+	[Country] ,
+
+	[InvoiceAddr] ,
+
+	[TelephoneX] ,
+
+	[ContactX] ,
+
+	[Instructions] ,
+
+	[Notes] ,
+
+	[WarehouseID] ,
+
+	[FaxX] ,
+
+	[RemitToAddress],
+
+	[Directions] ,
+
+	[EDI_ShipToCode] ,
+
+	[EmailX] ,
+
+	[AvgBaleWtLBS] ,
+
+	[AllocID] ,
+
+	[SalesTaxCodeID],
+
+	[EDI_ShipFromCode],
+
+	[PriceRegionID],
+
+	[TaxID],
+
+	[MasterAccountID] ,
+
+	[ShipVia] ,
+
+	[ShipTerm] ,
+
+	[CRVCertType] ,
+
+	[CRVCertNum] ,
+
+	[AddressID] ,
+
+	[WarehouseGroup],
+
+	[FeedUpdate] ,
+
+	[InternalFreightCost],
+
+	[BillingEmailX],
+
+	[isBillingAddressOnly],
+
+	[BillingAddressType],
+
+	[Inactive] ,
+
+	[WarehouseCOID],
+
+	[UserDefined1] ,
+
+	[UserDefined2] ,
+
+	[CustomsCode] ,
+
+	[Addr4] ,
+
+	[DistributionMode] ,
+
+	[IsInvoiceAddress] ,
+
+	[FuelSurChgSellRate] ,
+
+	[FuelSurChgBuyRate] ,
+
+	[SharedSavPercent] ,
+
+	[UserDefined3] ,
+
+	[UserDefined4] ,
+
+	[Geocode] ,
+
+	[LoadingHours] 
+
+FROM [cdb_Wilmington_stage].[dbo].[Address] stg_a
+
+WHERE NOT EXISTS (SELECT a.* FROM [dbo].[Address] a WHERE a.cpid = stg_a.cpid and a.[type] = stg_a.[type])
+
+
+
+SELECT @RowCnt=COUNT(*) FROM [dbo].[Address]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Address', @RowCnt)
+
+
+
+DELETE FROM [dbo].[AgencyCash]
+
+INSERT [dbo].[AgencyCash]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[AgencyCash]
+
+
+
+DELETE FROM [dbo].[Agents]
+
+INSERT [dbo].[Agents]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Agents]
+
+
+
+DELETE FROM [dbo].[Alerts]
+
+INSERT [dbo].[Alerts]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Alerts]
+
+
+
+DELETE FROM [dbo].[AlertType]
+
+INSERT [dbo].[AlertType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[AlertType]
+
+
+
+DELETE FROM [dbo].[Allocation]
+
+INSERT [dbo].[Allocation]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Allocation]
+
+
+
+DELETE FROM [dbo].[AllocationDetails]
+
+INSERT [dbo].[AllocationDetails]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[AllocationDetails]
+
+
+
+DELETE FROM [dbo].[APBatchExport]
+
+INSERT [dbo].[APBatchExport]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[APBatchExport]
+
+
+
+DELETE FROM [dbo].[APPaymentDetails]
+
+INSERT [dbo].[APPaymentDetails]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[APPaymentDetails]
+
+
+
+DELETE FROM [dbo].[AppVersions]
+
+INSERT [dbo].[AppVersions]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[AppVersions]
+
+
+
+DELETE FROM [dbo].[ARBatchExport]
+
+INSERT [dbo].[ARBatchExport]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ARBatchExport]
+
+
+
+DELETE FROM [dbo].[BaleJob]
+
+INSERT [dbo].[BaleJob] ([BJobNo], [LotNo], [JobNo], [UserID], [StartDt])
+
+SELECT [BJobNo], [LotNo], [JobNo], [UserID], [StartDt]
+
+FROM [cdb_Wilmington_stage].[dbo].[BaleJob]
+
+
+
+DELETE FROM [dbo].[BaleRoute]
+
+INSERT [dbo].[BaleRoute]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BaleRoute]
+
+
+
+DELETE FROM [dbo].[BaleRoute_Wrk]
+
+INSERT [dbo].[BaleRoute_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BaleRoute_Wrk]
+
+
+
+DELETE FROM [dbo].[BaleRouteDetail]
+
+INSERT [dbo].[BaleRouteDetail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BaleRouteDetail]
+
+
+
+DELETE FROM [dbo].[BankAddresses]
+
+INSERT [dbo].[BankAddresses]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BankAddresses]
+
+
+
+DELETE FROM [dbo].[BarcodeLabel]
+
+INSERT [dbo].[BarcodeLabel]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BarcodeLabel]
+
+
+
+DELETE FROM [dbo].[BarcodeLabelClass]
+
+INSERT [dbo].[BarcodeLabelClass]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BarcodeLabelClass]
+
+
+
+DELETE FROM [dbo].[BatchExportLog]
+
+INSERT [dbo].[BatchExportLog]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BatchExportLog]
+
+
+
+DELETE FROM [dbo].[BillingCycle]
+
+INSERT [dbo].[BillingCycle]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BillingCycle]
+
+
+
+DELETE FROM [dbo].[BillingCycleName]
+
+INSERT [dbo].[BillingCycleName]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BillingCycleName]
+
+
+
+DELETE FROM [dbo].[BillingTerm]
+
+INSERT [dbo].[BillingTerm]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BillingTerm]
+
+
+
+DELETE FROM [dbo].[billingtermclass]
+
+INSERT [dbo].[billingtermclass]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[billingtermclass]
+
+
+
+DELETE FROM [dbo].[BillSheet]
+
+INSERT [dbo].[BillSheet]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BillSheet]
+
+
+
+DELETE FROM [dbo].[BillSheetDetail]
+
+INSERT [dbo].[BillSheetDetail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BillSheetDetail]
+
+
+
+DELETE FROM [dbo].[Booking_Expense]
+
+INSERT [dbo].[Booking_Expense]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Booking_Expense]
+
+
+
+DELETE FROM [dbo].[BookingDept]
+
+INSERT [dbo].[BookingDept]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BookingDept]
+
+
+
+DELETE FROM [dbo].[BookSheet]
+
+INSERT [dbo].[BookSheet] ([BookSheetID],
+
+	[BookDate],
+
+	[ShipperRef],
+
+	[ReceiptPlace],
+
+	[LoadPort],
+
+	[PortOfDischg] ,
+
+	[Carrier],
+
+	[Vessel],
+
+	[VoyageNo],
+
+	[CutOffDate],
+
+	[ETS],
+
+	[ETA],
+
+	[BookingNo],
+
+	[BookedWith],
+
+	[Rate],
+
+	[PickupDeliv] ,
+
+	[ContainerQty],
+
+	[ContainerSize] ,
+
+	[Comments] ,
+
+	[PONumber],
+
+	[FreightFwdr],
+
+	[UserID] ,
+
+	[RolledFrom_Booking],
+
+	[BuySellNoRef],
+
+	[Trucker],
+
+	[GradeDesc],
+
+	[ParentBookNo] ,
+
+	[TotalWeight] ,
+
+	[TotalWeightUOM] ,
+
+	[PlaceOfDeliv] ,
+
+	[UserNotes] ,
+
+	[BookingDept] ,
+
+	[BookingDeptStatus],
+
+	[FeederVessel],
+
+	[DocCutOffDate] ,
+
+	[isBreakBulk],
+
+	[FreightRateUOM],
+
+	[MaxWeight],
+
+	[MinWeight],
+
+	[RcvdConfirmDt],
+
+	[QuoteRef],
+
+	[ContainerRef],
+
+	[EarliestReturnDt],
+
+	[TimeZone],
+
+	[CargoCode],
+
+	[TerminalCode],
+
+	[LloydsNo],
+
+	[FreightRateID],
+
+	[VGMCutOffDate],
+
+	[UserDefined1],
+
+	[ShippingLineRemarks] )
+
+SELECT [BookSheetID],
+
+	[BookDate],
+
+	[ShipperRef],
+
+	[ReceiptPlace],
+
+	[LoadPort],
+
+	[PortOfDischg] ,
+
+	[Carrier],
+
+	[Vessel],
+
+	[VoyageNo],
+
+	[CutOffDate],
+
+	[ETS],
+
+	[ETA],
+
+	[BookingNo],
+
+	[BookedWith],
+
+	[Rate],
+
+	[PickupDeliv] ,
+
+	[ContainerQty],
+
+	[ContainerSize] ,
+
+	[Comments] ,
+
+	[PONumber],
+
+	[FreightFwdr],
+
+	[UserID] ,
+
+	[RolledFrom_Booking],
+
+	[BuySellNoRef],
+
+	[Trucker],
+
+	[GradeDesc],
+
+	[ParentBookNo] ,
+
+	[TotalWeight] ,
+
+	[TotalWeightUOM] ,
+
+	[PlaceOfDeliv] ,
+
+	[UserNotes] ,
+
+	[BookingDept] ,
+
+	[BookingDeptStatus],
+
+	[FeederVessel],
+
+	[DocCutOffDate] ,
+
+	[isBreakBulk],
+
+	[FreightRateUOM],
+
+	[MaxWeight],
+
+	[MinWeight],
+
+	[RcvdConfirmDt],
+
+	[QuoteRef],
+
+	[ContainerRef],
+
+	[EarliestReturnDt],
+
+	[TimeZone],
+
+	[CargoCode],
+
+	[TerminalCode],
+
+	[LloydsNo],
+
+	[FreightRateID],
+
+	[VGMCutOffDate],
+
+	[UserDefined1],
+
+	[ShippingLineRemarks] 
+
+FROM [cdb_Wilmington_stage].[dbo].[BookSheet]
+
+
+
+DELETE FROM [dbo].[BookSheetComment]
+
+INSERT [dbo].[BookSheetComment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BookSheetComment]
+
+
+
+DELETE FROM [dbo].[BookSheetInstructions]
+
+INSERT [dbo].[BookSheetInstructions]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BookSheetInstructions]
+
+
+
+DELETE FROM [dbo].[BrainTreeExpiredCard]
+
+INSERT [dbo].[BrainTreeExpiredCard]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BrainTreeExpiredCard]
+
+
+
+DELETE FROM [dbo].[BrainTreeSentEmail]
+
+INSERT [dbo].[BrainTreeSentEmail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BrainTreeSentEmail]
+
+
+
+DELETE FROM [dbo].[Brand]
+
+INSERT [dbo].[Brand]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Brand]
+
+
+
+DELETE FROM [dbo].[Budget]
+
+INSERT [dbo].[Budget]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Budget]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Budget', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[Budget_Wrk]
+
+INSERT [dbo].[Budget_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Budget_Wrk]
+
+
+
+DELETE FROM [dbo].[BudgetGroup]
+
+INSERT [dbo].[BudgetGroup]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BudgetGroup]
+
+
+
+DELETE FROM [dbo].[Bulletin]
+
+INSERT [dbo].[Bulletin]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Bulletin]
+
+
+
+--DELETE FROM [dbo].[BuySell]
+
+--12/26/23
+
+INSERT [dbo].[BuySell] (
+
+[BuySellNo] ,
+
+	[UserID] ,
+
+	[ShippingDt],
+
+	[ClosePeriodDt] ,
+
+	[InvoiceDt] ,
+
+	[CustID],
+
+	[ShipToID],
+
+	[RelNo] ,
+
+	[GradingID],
+
+	[VendorID],
+
+	[ShipFromID],
+
+	[MinWt],
+
+	[ReferrerNo1],
+
+	[Rate1] ,
+
+	[RChg1],
+
+	[ReferrerNo2],
+
+	[Rate2],
+
+	[RChg2] ,
+
+	[SalesAmt] ,
+
+	[SAdjustment] ,
+
+	[SFreightChg] ,
+
+	[SPayments] ,
+
+	[SBalanceDue] ,
+
+	[PSupplierCost] ,
+
+	[PFreightChg] ,
+
+	[PAdjustment] ,
+
+	[Commission1] ,
+
+	[Commission2] ,
+
+	[Completed] ,
+
+	[CompletedDt] ,
+
+	[Approved] ,
+
+	[Rejected],
+
+	[RejectedDt] ,
+
+	[RejectType],
+
+	[Notes] ,
+
+	[Invoiced] ,
+
+	[InvoicePrintDt] ,
+
+	[InvoiceNote] ,
+
+	[InvoiceHold] ,
+
+	[ShippingOK],
+
+	[ShippingNotes] ,
+
+	[Problem] ,
+
+	[ProblemNotes] ,
+
+	[PickupNo] ,
+
+	[Undisposed] ,
+
+	[CommPerTon] ,
+
+	[CommPerTon2] ,
+
+	[COID] ,
+
+	[AltCoName] ,
+
+	[AltCoAddr1] ,
+
+	[AltCoAddr2],
+
+	[AltCoCity] ,
+
+	[AltCoRegion],
+
+	[AltCoPostalCd],
+
+	[AltCoCtry] ,
+
+	[AltCoPhone] ,
+
+	[AltCoFax] ,
+
+	[AltCoEmail],
+
+	[DocReviewed],
+
+	[Terms] ,
+
+	[CurrencyCd] ,
+
+	[FxInvoiceAmt] ,
+
+	[FxSAdjustment] ,
+
+	[FxPayments] ,
+
+	[FxBalanceDue] ,
+
+	[PCurrencyCd],
+
+	[FxSupplierCost] ,
+
+	[Claim] ,
+
+	[OrderDt],
+
+	[TradeType] ,
+
+	[InvGrouping],
+
+	[PriceBasis] ,
+
+	[ReceivedWeight] ,
+
+	[LightLoadChg] ,
+
+	[IsEDI],
+
+	--[EDI_datetime] ,
+
+	[EDI_SourceFile] ,
+
+	[TotalWeightLbs] ,
+
+	[InternalInterestRate] ,
+
+	[ControlNo] ,
+
+	[TareWt] ,
+
+	[TareDt] ,
+
+	[TareOper] ,
+
+	[GrossWt] ,
+
+	[GrossDt] ,
+
+	[GrossOper] ,
+
+	[NetWt] ,
+
+	[NetDt] ,
+
+	[ExFeed] ,
+
+	[FXRate] ,
+
+	[PFxRate] ,
+
+	[DueDt] ,
+
+	[CntrSheetID] ,
+
+	[SalesTaxCodeID],
+
+	[SalesTaxAmt] ,
+
+	[FXSalesTaxAmt] ,
+
+	[BookingNo] ,
+
+	[TrafficDept],
+
+	[MarineInsNo] ,
+
+	[IsRecurring] ,
+
+	[IsManualTare] ,
+
+	[IsManualGross],
+
+	[cieWhseType] ,
+
+	[IsAgency],
+
+	[ARTermQualifier] ,
+
+	[ARTermDesc] ,
+
+	[IntInterestSpread] ,
+
+	[IntInterestAccrual] ,
+
+	[IntInterestClosing] ,
+
+	[IntInterest] ,
+
+	[DBAAddrID],
+
+	[MillRcvNo] ,
+
+	[isMarkedForApproval] ,
+
+	[ExportBatchNo],
+
+	[IntInterestDelay] ,
+
+	[SFxContractNo] ,
+
+	[PFxContractNo] ,
+
+	[BLNo] ,
+
+	[PPFeed],
+
+	[DescOfGoods] ,
+
+	[VatNo] ,
+
+	[IntInterestAdjDt] ,
+
+	[IntInterestAdjAmt] ,
+
+	[IntInterestAdjRef],
+
+	[CreditHold] ,
+
+	[RefNotes] ,
+
+	[AlternateCustNm] ,
+
+	[ReceiptPlace] ,
+
+	[LoadPort] ,
+
+	[PortOfDischg] ,
+
+	[PlaceOfDeliv] ,
+
+	[COID_DueTo],
+
+	[CertType] ,
+
+	[DR6],
+
+	[WksVessel] ,
+
+	[IntInterestDueDt] ,
+
+	[RefDt] ,
+
+	[PackingListNotes],
+
+	[status]  ,
+
+	[CustomTax] ,
+
+	[SalesTaxAdjAmt] ,
+
+	[FxSalesTaxAdjAmt] ,
+
+	[ShippingTm]  ,
+
+	[RefSONo] ,
+
+	[RefPONo]  ,
+
+	[RefEquipNo]  ,
+
+	[RefSealNo]  ,
+
+	[RefGradeID] ,
+
+	[RemitID]  ,
+
+	[TicketType]  ,
+
+	[ScaleTicketNo],
+
+	[VesselID]  ,
+
+	[BunkerPort]  ,
+
+	[ReverseBatchNo]  ,
+
+	[FactorID] ,
+
+	[bIsLotNoAssigned]  ,
+
+	[IsInvAdj]  ,
+
+	[EqType]  ,
+
+	[JobNo],
+
+	[BaleRouteID]  ,
+
+	[WarehouseStatus]  ,
+
+	[StatementNo],
+
+	[PublicTradeID] ,
+
+	[RiskCover]  ,
+
+	[DocTrackID]  ,
+
+	[RefFreightRate] ,
+
+	[RefFreightCarrier]  ,
+
+	[IsOffset]  ,
+
+	[APBatchNo] ,
+
+	[ARTrkPaymentAmt] ,
+
+	[ARTrkPaymentDate] ,
+
+	[ARTrkPaymentRef]  ,
+
+	[ARTrkFxPaymentAmt] ,
+
+	[isBlindBOL] ,
+
+	[BlindBOL]  ,
+
+	[PickupInstructions]  ,
+
+	[AcctingInvoiceNo] ,
+
+	[PrintShippingIntrucOnBOL]  ,
+
+	[ScaleGross]  ,
+
+	[ScaleGrossTime] ,
+
+	[ScaleTare]  ,
+
+	[ScaleTareTime],
+
+	[ScaleNet]  ,
+
+	[ClaimStatus] ,
+
+	[RecurringInfo]  ,
+
+	[RecurringInvoiceID] ,
+
+	[VGM]  ,
+
+	[EqTareWt]  ,
+
+	[IsInvoiceBooked]  ,
+
+	[ContainerUOM]  ,
+
+	[IsContainer],
+
+	[PrintShipInstOnRcvTkt],
+
+	[AesReturnedCode]  ,
+
+	[UserDefined1]  ,
+
+	[UserDefined2]  ,
+
+	[IsBillingSheet] ,
+
+	[Driver]  ,
+
+	[PostedInAccting]  ,
+
+	[UserDefined3]  ,
+
+	[TransportationNo] ,
+
+	[Mode]  ,
+
+	[Uncertified],
+
+	[IsBulk] ,
+
+	[EquipmentID]  ,
+
+	[EmailSent]  ,
+
+	[FreightRef]
+
+)
+
+SELECT [BuySellNo] ,
+
+	[UserID] ,
+
+	[ShippingDt],
+
+	[ClosePeriodDt] ,
+
+	[InvoiceDt] ,
+
+	[CustID],
+
+	[ShipToID],
+
+	[RelNo] ,
+
+	[GradingID],
+
+	[VendorID],
+
+	[ShipFromID],
+
+	[MinWt],
+
+	[ReferrerNo1],
+
+	[Rate1] ,
+
+	[RChg1],
+
+	[ReferrerNo2],
+
+	[Rate2],
+
+	[RChg2] ,
+
+	[SalesAmt] ,
+
+	[SAdjustment] ,
+
+	[SFreightChg] ,
+
+	[SPayments] ,
+
+	[SBalanceDue] ,
+
+	[PSupplierCost] ,
+
+	[PFreightChg] ,
+
+	[PAdjustment] ,
+
+	[Commission1] ,
+
+	[Commission2] ,
+
+	[Completed] ,
+
+	[CompletedDt] ,
+
+	[Approved] ,
+
+	[Rejected],
+
+	[RejectedDt] ,
+
+	[RejectType],
+
+	[Notes] ,
+
+	[Invoiced] ,
+
+	[InvoicePrintDt] ,
+
+	[InvoiceNote] ,
+
+	[InvoiceHold] ,
+
+	[ShippingOK],
+
+	[ShippingNotes] ,
+
+	[Problem] [bit],
+
+	[ProblemNotes] ,
+
+	[PickupNo] ,
+
+	[Undisposed] ,
+
+	[CommPerTon] ,
+
+	[CommPerTon2] ,
+
+	[COID] ,
+
+	[AltCoName] ,
+
+	[AltCoAddr1] ,
+
+	[AltCoAddr2],
+
+	[AltCoCity] ,
+
+	[AltCoRegion],
+
+	[AltCoPostalCd],
+
+	[AltCoCtry] ,
+
+	[AltCoPhone] ,
+
+	[AltCoFax] ,
+
+	[AltCoEmail]L,
+
+	[DocReviewed],
+
+	[Terms] ,
+
+	[CurrencyCd] ,
+
+	[FxInvoiceAmt] ,
+
+	[FxSAdjustment] ,
+
+	[FxPayments] ,
+
+	[FxBalanceDue] ,
+
+	[PCurrencyCd],
+
+	[FxSupplierCost] ,
+
+	[Claim] ,
+
+	[OrderDt],
+
+	[TradeType] ,
+
+	[InvGrouping],
+
+	[PriceBasis] ,
+
+	[ReceivedWeight] ,
+
+	[LightLoadChg] ,
+
+	[IsEDI],
+
+	--[EDI_datetime] ,
+
+	[EDI_SourceFile] ,
+
+	[TotalWeightLbs] ,
+
+	[InternalInterestRate] ,
+
+	[ControlNo] ,
+
+	[TareWt] ,
+
+	[TareDt] ,
+
+	[TareOper] ,
+
+	[GrossWt] ,
+
+	[GrossDt] ,
+
+	[GrossOper] ,
+
+	[NetWt] ,
+
+	[NetDt] ,
+
+	[ExFeed] ,
+
+	[FXRate] ,
+
+	[PFxRate] ,
+
+	[DueDt] ,
+
+	[CntrSheetID] ,
+
+	[SalesTaxCodeID],
+
+	[SalesTaxAmt] ,
+
+	[FXSalesTaxAmt] ,
+
+	[BookingNo] ,
+
+	[TrafficDept],
+
+	[MarineInsNo] ,
+
+	[IsRecurring] ,
+
+	[IsManualTare] ,
+
+	[IsManualGross],
+
+	[cieWhseType] ,
+
+	[IsAgency],
+
+	[ARTermQualifier] ,
+
+	[ARTermDesc] ,
+
+	[IntInterestSpread] ,
+
+	[IntInterestAccrual] ,
+
+	[IntInterestClosing] ,
+
+	[IntInterest] ,
+
+	[DBAAddrID],
+
+	[MillRcvNo] ,
+
+	[isMarkedForApproval] ,
+
+	[ExportBatchNo],
+
+	[IntInterestDelay] ,
+
+	[SFxContractNo] ,
+
+	[PFxContractNo] ,
+
+	[BLNo] ,
+
+	[PPFeed],
+
+	[DescOfGoods] ,
+
+	[VatNo] ,
+
+	[IntInterestAdjDt] ,
+
+	[IntInterestAdjAmt] ,
+
+	[IntInterestAdjRef],
+
+	[CreditHold],
+
+	[RefNotes] ,
+
+	[AlternateCustNm] ,
+
+	[ReceiptPlace] ,
+
+	[LoadPort] ,
+
+	[PortOfDischg] ,
+
+	[PlaceOfDeliv] ,
+
+	[COID_DueTo],
+
+	[CertType] ,
+
+	[DR6],
+
+	[WksVessel] ,
+
+	[IntInterestDueDt] ,
+
+	[RefDt] ,
+
+	[PackingListNotes],
+
+	[status]  ,
+
+	[CustomTax] ,
+
+	[SalesTaxAdjAmt] ,
+
+	[FxSalesTaxAdjAmt] ,
+
+	[ShippingTm]  ,
+
+	[RefSONo] ,
+
+	[RefPONo]  ,
+
+	[RefEquipNo]  ,
+
+	[RefSealNo]  ,
+
+	[RefGradeID] ,
+
+	[RemitID]  ,
+
+	[TicketType]  ,
+
+	[ScaleTicketNo],
+
+	[VesselID]  ,
+
+	[BunkerPort]  ,
+
+	[ReverseBatchNo]  ,
+
+	[FactorID] ,
+
+	[bIsLotNoAssigned]  ,
+
+	[IsInvAdj]  ,
+
+	[EqType]  ,
+
+	[JobNo],
+
+	[BaleRouteID]  ,
+
+	[WarehouseStatus]  ,
+
+	[StatementNo],
+
+	[PublicTradeID] ,
+
+	[RiskCover]  ,
+
+	[DocTrackID]  ,
+
+	[RefFreightRate] ,
+
+	[RefFreightCarrier]  ,
+
+	[IsOffset]  ,
+
+	[APBatchNo] ,
+
+	[ARTrkPaymentAmt] ,
+
+	[ARTrkPaymentDate] ,
+
+	[ARTrkPaymentRef]  ,
+
+	[ARTrkFxPaymentAmt] ,
+
+	[isBlindBOL] ,
+
+	[BlindBOL]  ,
+
+	[PickupInstructions]  ,
+
+	[AcctingInvoiceNo] ,
+
+	[PrintShippingIntrucOnBOL]  ,
+
+	[ScaleGross]  ,
+
+	[ScaleGrossTime] ,
+
+	[ScaleTare]  ,
+
+	[ScaleTareTime],
+
+	[ScaleNet]  ,
+
+	[ClaimStatus] ,
+
+	[RecurringInfo]  ,
+
+	[RecurringInvoiceID] ,
+
+	[VGM]  ,
+
+	[EqTareWt]  ,
+
+	[IsInvoiceBooked]  ,
+
+	[ContainerUOM]  ,
+
+	[IsContainer],
+
+	[PrintShipInstOnRcvTkt],
+
+	[AesReturnedCode]  ,
+
+	[UserDefined1]  ,
+
+	[UserDefined2]  ,
+
+	[IsBillingSheet] ,
+
+	[Driver]  ,
+
+	[PostedInAccting]  ,
+
+	[UserDefined3]  ,
+
+	[TransportationNo] ,
+
+	[Mode]  ,
+
+	[Uncertified],
+
+	[IsBulk] ,
+
+	[EquipmentID]  ,
+
+	[EmailSent]  ,
+
+	[FreightRef]  
+
+FROM [cdb_Wilmington_stage].[dbo].[BuySell] stg
+
+WHERE NOT EXISTS (SELECT bs.buysellno from [dbo].[BuySell] bs where bs.buysellno = stg.BuySellNo)
+
+
+
+SELECT @RowCnt=COUNT(*) FROM [dbo].[BuySell]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('BuySell', @RowCnt)
+
+
+
+DELETE FROM [dbo].[BuySell_LotExpAlloc]
+
+INSERT [dbo].[BuySell_LotExpAlloc]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[BuySell_LotExpAlloc]
+
+
+
+DELETE FROM [dbo].[CashDisbursementDetails]
+
+INSERT [dbo].[CashDisbursementDetails]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CashDisbursementDetails]
+
+
+
+DELETE FROM [dbo].[CashDisbursements]
+
+INSERT [dbo].[CashDisbursements]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CashDisbursements]
+
+
+
+DELETE FROM [dbo].[CashDisbursements_Wrk]
+
+INSERT [dbo].[CashDisbursements_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CashDisbursements_Wrk]
+
+
+
+DELETE FROM [dbo].[Certification]
+
+INSERT [dbo].[Certification]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Certification]
+
+
+
+DELETE FROM [dbo].[CertificationType]
+
+INSERT [dbo].[CertificationType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CertificationType]
+
+
+
+DELETE FROM [dbo].[Checks]
+
+INSERT [dbo].[Checks]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Checks]
+
+
+
+DELETE FROM [dbo].[CheckSetup]
+
+INSERT [dbo].[CheckSetup]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CheckSetup]
+
+
+
+DELETE FROM [dbo].[CieCamera_Tickets]
+
+INSERT [dbo].[CieCamera_Tickets]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CieCamera_Tickets]
+
+
+
+DELETE FROM [dbo].[cieDispatch_Staging]
+
+INSERT [dbo].[cieDispatch_Staging]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cieDispatch_Staging]
+
+
+
+DELETE FROM [dbo].[ClaimStatus]
+
+INSERT [dbo].[ClaimStatus]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ClaimStatus]
+
+
+
+DELETE FROM [dbo].[ClaimStatus]
+
+INSERT [dbo].[ClaimStatus]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ClaimStatus]
+
+
+
+DELETE FROM [dbo].[XlsUploads]
+
+INSERT [dbo].[XlsUploads]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[XlsUploads]
+
+
+
+
+
+DELETE FROM [dbo].[Collateral]
+
+INSERT [dbo].[Collateral]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Collateral]
+
+
+
+DELETE FROM [dbo].[colors]
+
+INSERT [dbo].[colors]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[colors]
+
+
+
+DELETE FROM [dbo].[CommInvoiceNotes]
+
+INSERT [dbo].[CommInvoiceNotes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CommInvoiceNotes]
+
+
+
+DELETE FROM [dbo].[CommInvoicePackNotes]
+
+INSERT [dbo].[CommInvoicePackNotes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CommInvoicePackNotes]
+
+
+
+DELETE FROM [dbo].[CommInvoiceRemitTo]
+
+INSERT [dbo].[CommInvoiceRemitTo]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CommInvoiceRemitTo]
+
+
+
+DELETE FROM [dbo].[CompanyInfo_Whse]
+
+INSERT [dbo].[CompanyInfo_Whse]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CompanyInfo_Whse]
+
+
+
+--DELETE FROM [dbo].[CompanyInfo]
+
+--12/26/23
+
+INSERT [dbo].[CompanyInfo] (
+
+[COID],
+
+	[CompanyNm] ,
+
+	[CompanyDesc] ,
+
+	[CompanyAddr1] ,
+
+	[CompanyAddr2] ,
+
+	[CompanyCity],
+
+	[CompanyRegion] ,
+
+	[CompanyPostalCd],
+
+	[CompanyCtry] ,
+
+	[CompanyPhone] ,
+
+	[CompanyFax] ,
+
+	[CompanyEmail] ,
+
+	[ShippingDisclaimer],
+
+	[OrderInstruction] ,
+
+	[InvoiceDisclaimer] ,
+
+	[LogoPath] ,
+
+	[LogoWidth] ,
+
+	[LogoHeight] ,
+
+	[BankName] ,
+
+	[AcctNo],
+
+	[ABANo] ,
+
+	[RemitInfo] ,
+
+	[AcctingCompanyID] ,
+
+	[PurchInstruction],
+
+	--[LogoImage] [image] ,
+
+	[LogoSize] ,
+
+	[ReleaseNotes],
+
+	[INTTRA_ID] ,
+
+	[InvoicePrefix],
+
+	[PrintCompanyNm],
+
+	[RemitID],
+
+	[VatNo] ,
+
+	[IsDeptLocked],
+
+	--[AltLogoImage] [image] NULL,
+
+	[VendClassID],
+
+	[PublicTradeDisclaimer],
+
+	[TimeZoneNm] ,
+
+	[EnableAR] ,
+
+	[CashGLAcct],
+
+	[CheckGLAcct],
+
+	[DepartmentSeqID] ,
+
+	[QBOAPAcctID],
+
+	[QBOAPAccrualID],
+
+	[QBOisMultiCurrency] 
+
+)
+
+SELECT[COID],
+
+	[CompanyNm] ,
+
+	[CompanyDesc] ,
+
+	[CompanyAddr1] ,
+
+	[CompanyAddr2] ,
+
+	[CompanyCity],
+
+	[CompanyRegion] ,
+
+	[CompanyPostalCd],
+
+	[CompanyCtry] ,
+
+	[CompanyPhone] ,
+
+	[CompanyFax] ,
+
+	[CompanyEmail] ,
+
+	[ShippingDisclaimer],
+
+	[OrderInstruction] ,
+
+	[InvoiceDisclaimer] ,
+
+	[LogoPath] ,
+
+	[LogoWidth] ,
+
+	[LogoHeight] ,
+
+	[BankName] ,
+
+	[AcctNo],
+
+	[ABANo] ,
+
+	[RemitInfo] ,
+
+	[AcctingCompanyID] ,
+
+	[PurchInstruction],
+
+	--[LogoImage] [image] ,
+
+	[LogoSize] ,
+
+	[ReleaseNotes],
+
+	[INTTRA_ID] ,
+
+	[InvoicePrefix],
+
+	[PrintCompanyNm],
+
+	[RemitID],
+
+	[VatNo] ,
+
+	[IsDeptLocked],
+
+	--[AltLogoImage] [image] NULL,
+
+	[VendClassID],
+
+	[PublicTradeDisclaimer],
+
+	[TimeZoneNm] ,
+
+	[EnableAR] ,
+
+	[CashGLAcct],
+
+	[CheckGLAcct],
+
+	[DepartmentSeqID] ,
+
+	[QBOAPAcctID],
+
+	[QBOAPAccrualID],
+
+	[QBOisMultiCurrency]  
+
+FROM [cdb_Wilmington_stage].[dbo].[CompanyInfo] stg_ci
+
+WHERE NOT EXISTS (SELECT ci.COID  FROM [dbo].[CompanyInfo] ci where stg_ci.COID = ci.COID)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[CompanyInfo] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('CompanyInfo', @RowCnt)
+
+
+
+DELETE FROM [dbo].[Condition]
+
+INSERT [dbo].[Condition]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Condition]
+
+
+
+--DELETE FROM [dbo].[Contact]
+
+--12/26/23
+
+INSERT [dbo].[Contact]
+
+SELECT stg_c.* FROM [cdb_Wilmington_stage].[dbo].[Contact] stg_c
+
+WHERE NOT EXISTS (SELECT c.* FROM [dbo].[Contact] c WHERE c.ct_id = stg_c.ct_id)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[Contact] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Contact', @RowCnt)
+
+
+
+DELETE FROM [dbo].[ContactRole]
+
+INSERT [dbo].[ContactRole]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ContactRole]
+
+
+
+DELETE FROM [dbo].[ContactRoleAssignment]
+
+INSERT [dbo].[ContactRoleAssignment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ContactRoleAssignment]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('ContactRoleAssignment', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[Container]
+
+INSERT [dbo].[Container]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Container]
+
+
+
+DELETE FROM [dbo].[ContainerContents]
+
+INSERT [dbo].[ContainerContents]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ContainerContents]
+
+
+
+DELETE FROM [dbo].[ContainerContentsWrk]
+
+INSERT [dbo].[ContainerContentsWrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ContainerContentsWrk]
+
+
+
+DELETE FROM [dbo].[ConvertingAllocation]
+
+INSERT [dbo].[ConvertingAllocation]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingAllocation]
+
+
+
+DELETE FROM [dbo].[ConvertingEquipment]
+
+INSERT [dbo].[ConvertingEquipment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingEquipment]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Equipment', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[ConvertingEquipment_Cost]
+
+INSERT [dbo].[ConvertingEquipment_Cost]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingEquipment_Cost]
+
+
+
+DELETE FROM [dbo].[ConvertingExpenseStage]
+
+INSERT [dbo].[ConvertingExpenseStage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingExpenseStage]
+
+
+
+DELETE FROM [dbo].[ConvertingInputStage]
+
+INSERT [dbo].[ConvertingInputStage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingInputStage]
+
+
+
+DELETE FROM [dbo].[ConvertingJob]
+
+INSERT [dbo].[ConvertingJob] ([JobNo],
+
+	[CoID] ,
+
+	[Description],
+
+	[JobDate],
+
+	[OperatorNm],
+
+	[WasteQty],
+
+	[BuySellNo],
+
+	[UserID],
+
+	[TradeType],
+
+	[Equipment],
+
+	[StartTime],
+
+	[EndTime] ,
+
+	[Status] ,
+
+	[OutputUOM],
+
+	[Notes],
+
+	[SupplierID],
+
+	[WarehouseNm] ,
+
+	[PostDt],
+
+	[Instructions],
+
+	[Disclaimer],
+
+	[RefCarrierCPID] ,
+
+	[RefConvertingCPID],
+
+	[DeliveryAddress] ,
+
+	[PickupAddress],
+
+	[WarehouseStatus],
+
+	[BuyRep] ,
+
+	[UserDefined1] ,
+
+	[UserDefined2] )
+
+SELECT [JobNo],
+
+	[CoID] ,
+
+	[Description],
+
+	[JobDate],
+
+	[OperatorNm],
+
+	[WasteQty],
+
+	[BuySellNo],
+
+	[UserID],
+
+	[TradeType],
+
+	[Equipment],
+
+	[StartTime],
+
+	[EndTime] ,
+
+	[Status] ,
+
+	[OutputUOM],
+
+	[Notes],
+
+	[SupplierID],
+
+	[WarehouseNm] ,
+
+	[PostDt],
+
+	[Instructions],
+
+	[Disclaimer],
+
+	[RefCarrierCPID] ,
+
+	[RefConvertingCPID],
+
+	[DeliveryAddress] ,
+
+	[PickupAddress],
+
+	[WarehouseStatus],
+
+	[BuyRep] ,
+
+	[UserDefined1] ,
+
+	[UserDefined2]  
+
+FROM [cdb_Wilmington_stage].[dbo].[ConvertingJob]
+
+
+
+DELETE FROM [dbo].[ConvertingJob_Expenses]
+
+INSERT [dbo].[ConvertingJob_Expenses]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingJob_Expenses]
+
+
+
+DELETE FROM [dbo].[ConvertingJob_InstructDesc]
+
+INSERT [dbo].[ConvertingJob_InstructDesc]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingJob_InstructDesc]
+
+
+
+DELETE FROM [dbo].[ConvertingJob_ProdDesc]
+
+INSERT [dbo].[ConvertingJob_ProdDesc]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingJob_ProdDesc]
+
+
+
+DELETE FROM [dbo].[ConvertingJob_Source]
+
+INSERT [dbo].[ConvertingJob_Source]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingJob_Source]
+
+
+
+DELETE FROM [dbo].[ConvertingOutputStage]
+
+INSERT [dbo].[ConvertingOutputStage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingOutputStage]
+
+
+
+DELETE FROM [dbo].[ConvertingType]
+
+INSERT [dbo].[ConvertingType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ConvertingType]
+
+
+
+--DELETE FROM [dbo].[CounterParty]
+
+--12/26/23
+
+INSERT [dbo].[CounterParty]
+
+SELECT stg_cp.* FROM [cdb_Wilmington_stage].[dbo].[CounterParty] stg_cp
+
+WHERE NOT EXISTS (SELECT cp.CPID FROM [dbo].[CounterParty] cp where stg_cp.CpID = stg_cp.CpID)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[Counterparty] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('CounterParty', @RowCnt)
+
+
+
+DELETE FROM [dbo].[Counterparty_AvgBaleWt]
+
+INSERT [dbo].[Counterparty_AvgBaleWt]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Counterparty_AvgBaleWt]
+
+
+
+DELETE FROM [dbo].[Counterparty_Certification]
+
+INSERT [dbo].[Counterparty_Certification]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Counterparty_Certification]
+
+
+
+DELETE FROM [dbo].[Counterparty_Charge]
+
+INSERT [dbo].[Counterparty_Charge]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Counterparty_Charge]
+
+
+
+DELETE FROM [dbo].[Counterparty_ProductsOfInterest]
+
+INSERT [dbo].[Counterparty_ProductsOfInterest]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Counterparty_ProductsOfInterest]
+
+
+
+DELETE FROM [dbo].[Counterparty_Referrer]
+
+INSERT [dbo].[Counterparty_Referrer]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Counterparty_Referrer]
+
+
+
+DELETE FROM [dbo].[CounterpartyDepts]
+
+INSERT [dbo].[CounterpartyDepts]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CounterpartyDepts]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('CounterpartyDepts', @@ROWCOUNT)
+
+
+
+
+
+DELETE FROM [dbo].[CounterpartyEquipment]
+
+INSERT [dbo].[CounterpartyEquipment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CounterpartyEquipment]
+
+
+
+DELETE FROM [dbo].[CounterpartyGradeCodes]
+
+INSERT [dbo].[CounterpartyGradeCodes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CounterpartyGradeCodes]
+
+
+
+DELETE FROM [dbo].[Country_Master]
+
+INSERT [dbo].[Country_Master]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Country_Master]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Country_Master', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[Country]
+
+INSERT [dbo].[Country]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Country]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Country', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[CoverLetters]
+
+INSERT [dbo].[CoverLetters]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CoverLetters]
+
+
+
+DELETE FROM [dbo].[Credit]
+
+INSERT [dbo].[Credit]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Credit]
+
+
+
+DELETE FROM [dbo].[CreditAlert]
+
+INSERT [dbo].[CreditAlert]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CreditAlert]
+
+
+
+DELETE FROM [dbo].[CreditRating]
+
+INSERT [dbo].[CreditRating]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CreditRating]
+
+
+
+DELETE FROM [dbo].[CRMAttachment]
+
+INSERT [dbo].[CRMAttachment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CRMAttachment]
+
+
+
+DELETE FROM [dbo].[CRMAttachment_Wrk]
+
+INSERT [dbo].[CRMAttachment_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CRMAttachment_Wrk]
+
+
+
+DELETE FROM [dbo].[CRMNote]
+
+INSERT [dbo].[CRMNote]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CRMNote]
+
+
+
+DELETE FROM [dbo].[CRMOpportunity]
+
+INSERT [dbo].[CRMOpportunity]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CRMOpportunity]
+
+
+
+DELETE FROM [dbo].[CRMTask]
+
+INSERT [dbo].[CRMTask]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CRMTask]
+
+
+
+DELETE FROM [dbo].[CRMTaskCategory]
+
+INSERT [dbo].[CRMTaskCategory]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CRMTaskCategory]
+
+
+
+DELETE FROM [dbo].[CRVGrade]
+
+INSERT [dbo].[CRVGrade]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CRVGrade]
+
+
+
+DELETE FROM [dbo].[CRVManualDR6]
+
+INSERT [dbo].[CRVManualDR6]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CRVManualDR6]
+
+
+
+DELETE FROM [dbo].[Currency]
+
+INSERT [dbo].[Currency]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Currency]
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Currency', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[CurrencyRate]
+
+INSERT [dbo].[CurrencyRate]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CurrencyRate]
+
+
+
+DELETE FROM [dbo].[cw_ContainerShippingContainer_wrk]
+
+INSERT [dbo].[cw_ContainerShippingContainer_wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cw_ContainerShippingContainer_wrk]
+
+
+
+DELETE FROM [dbo].[cw_ContainerShippingExpense_wrk]
+
+INSERT [dbo].[cw_ContainerShippingExpense_wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cw_ContainerShippingExpense_wrk]
+
+
+
+DELETE FROM [dbo].[cw_ContainerShippingProducts_wrk]
+
+INSERT [dbo].[cw_ContainerShippingProducts_wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cw_ContainerShippingProducts_wrk]
+
+
+
+DELETE FROM [dbo].[CWARExport]
+
+INSERT [dbo].[CWARExport]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[CWARExport]
+
+
+
+DELETE FROM [dbo].[cwFavorites]
+
+INSERT [dbo].[cwFavorites]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cwFavorites]
+
+
+
+DELETE FROM [dbo].[cwFavoritesMaster]
+
+INSERT [dbo].[cwFavoritesMaster]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cwFavoritesMaster]
+
+
+
+DELETE FROM [dbo].[cwSettings]
+
+INSERT [dbo].[cwSettings]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cwSettings]
+
+
+
+DELETE FROM [dbo].[cwSettingsMaster]
+
+INSERT [dbo].[cwSettingsMaster]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cwSettingsMaster]
+
+
+
+DELETE FROM [dbo].[cwUserSetting]
+
+INSERT [dbo].[cwUserSetting]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cwUserSetting]
+
+
+
+DELETE FROM [dbo].[cwUserSettingMaster]
+
+INSERT [dbo].[cwUserSettingMaster]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[cwUserSettingMaster]
+
+
+
+DELETE FROM [dbo].[DashboardOrder]
+
+INSERT [dbo].[DashboardOrder]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DashboardOrder]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('DashboardOrder', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[DBAAddress]
+
+INSERT [dbo].[DBAAddress]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DBAAddress]
+
+
+
+DELETE FROM [dbo].[DispatchCustomer]
+
+INSERT [dbo].[DispatchCustomer]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DispatchCustomer]
+
+
+
+DELETE FROM [dbo].[DispatchJob]
+
+INSERT [dbo].[DispatchJob]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DispatchJob]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('DispatchJob', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[DispatchSchedule]
+
+INSERT [dbo].[DispatchSchedule]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DispatchSchedule]
+
+
+
+DELETE FROM [dbo].[Division]
+
+INSERT [dbo].[Division]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Division]
+
+
+
+DELETE FROM [dbo].[DocDestDiscl]
+
+INSERT [dbo].[DocDestDiscl]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocDestDiscl]
+
+
+
+DELETE FROM [dbo].[DocEventType]
+
+INSERT [dbo].[DocEventType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocEventType]
+
+
+
+DELETE FROM [dbo].[DocFingerPrint]
+
+INSERT [dbo].[DocFingerPrint]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocFingerPrint]
+
+
+
+DELETE FROM [dbo].[Docs]
+
+INSERT [dbo].[Docs]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Docs]
+
+
+
+DELETE FROM [dbo].[DocSetEvents]
+
+INSERT [dbo].[DocSetEvents]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocSetEvents]
+
+
+
+DELETE FROM [dbo].[DocSetType]
+
+INSERT [dbo].[DocSetType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocSetType]
+
+
+
+DELETE FROM [dbo].[DocSigns]
+
+INSERT [dbo].[DocSigns]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocSigns]
+
+
+
+DELETE FROM [dbo].[DocTrackDetail]
+
+INSERT [dbo].[DocTrackDetail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocTrackDetail]
+
+
+
+DELETE FROM [dbo].[DocTrackHeader]
+
+INSERT [dbo].[DocTrackHeader]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocTrackHeader]
+
+
+
+DELETE FROM [dbo].[DocumentDefFields]
+
+INSERT [dbo].[DocumentDefFields]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocumentDefFields]
+
+
+
+DELETE FROM [dbo].[DocumentDefType]
+
+INSERT [dbo].[DocumentDefType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocumentDefType]
+
+
+
+DELETE FROM [dbo].[DocumentHeader]
+
+INSERT [dbo].[DocumentHeader]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocumentHeader]
+
+
+
+DELETE FROM [dbo].[DocumentImage]
+
+INSERT [dbo].[DocumentImage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocumentImage]
+
+
+
+DELETE FROM [dbo].[DocumentType]
+
+INSERT [dbo].[DocumentType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocumentType]
+
+
+
+DELETE FROM [dbo].[DocumentValues]
+
+INSERT [dbo].[DocumentValues]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocumentValues]
+
+
+
+DELETE FROM [dbo].[DocVals]
+
+INSERT [dbo].[DocVals]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocVals]
+
+
+
+DELETE FROM [dbo].[DocValues]
+
+INSERT [dbo].[DocValues]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[DocValues]
+
+
+
+DELETE FROM [dbo].[Domestic_Ports]
+
+INSERT [dbo].[Domestic_Ports]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Domestic_Ports]
+
+
+
+DELETE FROM [dbo].[Drivers]
+
+INSERT [dbo].[Drivers]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Drivers]
+
+
+
+DELETE FROM [dbo].[EDI_ErrorLog]
+
+INSERT [dbo].[EDI_ErrorLog]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EDI_ErrorLog]
+
+
+
+DELETE FROM [dbo].[EDI_Log]
+
+INSERT [dbo].[EDI_Log]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EDI_Log]
+
+
+
+DELETE FROM [dbo].[EmailDropbox]
+
+INSERT [dbo].[EmailDropbox]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EmailDropbox]
+
+
+
+DELETE FROM [dbo].[EmaiList]
+
+INSERT [dbo].[EmaiList]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EmaiList]
+
+
+
+DELETE FROM [dbo].[EmaiListAssignment]
+
+INSERT [dbo].[EmaiListAssignment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EmaiListAssignment]
+
+
+
+DELETE FROM [dbo].[EmailLog]
+
+INSERT [dbo].[EmailLog]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EmailLog]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('EmailLog', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[EmailServiceNotification]
+
+INSERT [dbo].[EmailServiceNotification]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EmailServiceNotification]
+
+
+
+DELETE FROM [dbo].[EmailTemplates]
+
+INSERT [dbo].[EmailTemplates]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EmailTemplates]
+
+
+
+DELETE FROM [dbo].[Equipment]
+
+INSERT [dbo].[Equipment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Equipment]
+
+
+
+DELETE FROM [dbo].[Equipment_Location]
+
+INSERT [dbo].[Equipment_Location]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Equipment_Location]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Equipment_Location', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[EquipmentType]
+
+INSERT [dbo].[EquipmentType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EquipmentType]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('EquipmentType', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[EScaleSettings]
+
+INSERT [dbo].[EScaleSettings]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EScaleSettings]
+
+
+
+DELETE FROM [dbo].[EventType]
+
+INSERT [dbo].[EventType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[EventType]
+
+
+
+DELETE FROM [dbo].[ExpenseAlloc_Detail]
+
+INSERT [dbo].[ExpenseAlloc_Detail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ExpenseAlloc_Detail]
+
+
+
+DELETE FROM [dbo].[ExpenseAlloc_Detail_Wrk]
+
+INSERT [dbo].[ExpenseAlloc_Detail_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ExpenseAlloc_Detail_Wrk]
+
+
+
+DELETE FROM [dbo].[ExpenseAlloc_LotGLDetail]
+
+INSERT [dbo].[ExpenseAlloc_LotGLDetail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ExpenseAlloc_LotGLDetail]
+
+
+
+DELETE FROM [dbo].[ExpenseAlloc_LotGLDetail_Wrk]
+
+INSERT [dbo].[ExpenseAlloc_LotGLDetail_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ExpenseAlloc_LotGLDetail_Wrk]
+
+
+
+DELETE FROM [dbo].[ExpenseAlloc_Source]
+
+INSERT [dbo].[ExpenseAlloc_Source]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ExpenseAlloc_Source]
+
+
+
+DELETE FROM [dbo].[ExpenseAlloc_Source_Wrk]
+
+INSERT [dbo].[ExpenseAlloc_Source_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ExpenseAlloc_Source_Wrk]
+
+
+
+DELETE FROM [dbo].[ExpenseAlloc_SourceBulk]
+
+INSERT [dbo].[ExpenseAlloc_SourceBulk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ExpenseAlloc_SourceBulk]
+
+
+
+DELETE FROM [dbo].[ExpenseAlloc_SourceBulk_Wrk]
+
+INSERT [dbo].[ExpenseAlloc_SourceBulk_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ExpenseAlloc_SourceBulk_Wrk]
+
+
+
+--DELETE FROM [dbo].[ExpenseAllocation]
+
+--12/26/23
+
+INSERT [dbo].[ExpenseAllocation]
+
+SELECT stg_ea.* FROM [cdb_Wilmington_stage].[dbo].[ExpenseAllocation] stg_ea
+
+WHERE NOT EXISTS (SELECT ea.transno from [dbo].[ExpenseAllocation] ea where ea.TransNo = stg_ea.TransNo) 
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[ExpenseAllocation] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('ExpenseAllocation', @RowCnt)
+
+
+
+
+
+DELETE FROM [dbo].[Factor]
+
+INSERT [dbo].[Factor]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Factor]
+
+
+
+DELETE FROM [dbo].[FactorInvoices]
+
+INSERT [dbo].[FactorInvoices]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[FactorInvoices]
+
+
+
+DELETE FROM [dbo].[Finish]
+
+INSERT [dbo].[Finish]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Finish]
+
+
+
+DELETE FROM [dbo].[Foreign_Ports]
+
+INSERT [dbo].[Foreign_Ports]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Foreign_Ports]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Foreign_Ports', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[FreightHistory_External]
+
+INSERT [dbo].[FreightHistory_External]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[FreightHistory_External]
+
+
+
+DELETE FROM [dbo].[FreightRate]
+
+INSERT [dbo].[FreightRate]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[FreightRate]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('FreightRate', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[FreightRate_Ocean]
+
+INSERT [dbo].[FreightRate_Ocean]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[FreightRate_Ocean]
+
+
+
+DELETE FROM [dbo].[FreightTypes]
+
+INSERT [dbo].[FreightTypes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[FreightTypes]
+
+
+
+DELETE FROM [dbo].[Freightview_Tracking]
+
+INSERT [dbo].[Freightview_Tracking]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Freightview_Tracking]
+
+
+
+DELETE FROM [dbo].[FuelSurchargeType]
+
+INSERT [dbo].[FuelSurchargeType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[FuelSurchargeType]
+
+
+
+DELETE FROM [dbo].[FxContracts]
+
+INSERT [dbo].[FxContracts]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[FxContracts]
+
+
+
+DELETE FROM [dbo].[GenerateWorksheet_Wrk]
+
+INSERT [dbo].[GenerateWorksheet_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[GenerateWorksheet_Wrk]
+
+
+
+--DELETE FROM [dbo].[GLAccount]
+
+--12/26/23
+
+INSERT [dbo].[GLAccount]
+
+SELECT stg_gla.* FROM [cdb_Wilmington_stage].[dbo].[GLAccount] stg_gla
+
+WHERE NOT EXISTS (SELECT gla.* FROM [dbo].[GLAccount] gla WHERE gla.GLAcct = stg_gla.GLAcct and gla.Cat = stg_gla.Cat)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[GLAccount]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('GLAccount', @RowCnt)
+
+
+
+DELETE FROM [dbo].[GLDescriptions]
+
+INSERT [dbo].[GLDescriptions]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[GLDescriptions]
+
+
+
+DELETE FROM [dbo].[GlobalRegion]
+
+INSERT [dbo].[GlobalRegion]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[GlobalRegion]
+
+
+
+--DELETE FROM [dbo].[GPLedger]
+
+--12/26/23
+
+INSERT [dbo].[GPLedger]
+
+SELECT stg_gpl.* FROM [cdb_Wilmington_stage].[dbo].[GPLedger] stg_gpl
+
+WHERE NOT EXISTS (SELECT gpl.* FROM [dbo].[GPLedger] gpl WHERE gpl.LedgerID = stg_gpl.LedgerID)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[GPLedger] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('GPLedger', @RowCnt)
+
+
+
+--DELETE FROM [dbo].[Grade]
+
+--12/26/23
+
+INSERT [dbo].[Grade]
+
+SELECT stg_g.* FROM [cdb_Wilmington_stage].[dbo].[Grade] stg_g
+
+WHERE NOT EXISTS (SELECT g.* FROM [dbo].[Grade] g WHERE g.[Description] = stg_g.[Description])
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[Grade] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Grade', @RowCnt)
+
+
+
+
+
+DELETE FROM [dbo].[Grade_AltCodes]
+
+INSERT [dbo].[Grade_AltCodes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Grade_AltCodes]
+
+
+
+DELETE FROM [dbo].[GradeImportTable]
+
+INSERT [dbo].[GradeImportTable]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[GradeImportTable]
+
+
+
+DELETE FROM [dbo].[Grades_Default]
+
+INSERT [dbo].[Grades_Default]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Grades_Default]
+
+
+
+DELETE FROM [dbo].[Grading]
+
+INSERT [dbo].[Grading]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Grading]
+
+
+
+DELETE FROM [dbo].[Grading_bkp]
+
+INSERT [dbo].[Grading_bkp]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Grading_bkp]
+
+
+
+DELETE FROM [dbo].[Grading_Wrk]
+
+INSERT [dbo].[Grading_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Grading_Wrk]
+
+
+
+DELETE FROM [dbo].[GradingExpense_wrk]
+
+INSERT [dbo].[GradingExpense_wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[GradingExpense_wrk]
+
+
+
+DELETE FROM [dbo].[Grain]
+
+INSERT [dbo].[Grain]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Grain]
+
+
+
+DELETE FROM [dbo].[GroupInvoice]
+
+INSERT [dbo].[GroupInvoice]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[GroupInvoice]
+
+
+
+DELETE FROM [dbo].[GroupPermissions]
+
+INSERT [dbo].[GroupPermissions]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[GroupPermissions]
+
+
+
+DELETE FROM [dbo].[GroupProfile]
+
+INSERT [dbo].[GroupProfile]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[GroupProfile]
+
+
+
+DELETE FROM [dbo].[GroupTransportation]
+
+INSERT [dbo].[GroupTransportation]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[GroupTransportation]
+
+
+
+DELETE FROM [dbo].[HaulerContract]
+
+INSERT [dbo].[HaulerContract]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[HaulerContract]
+
+
+
+DELETE FROM [dbo].[HaulerContractPriceEscalation]
+
+INSERT [dbo].[HaulerContractPriceEscalation]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[HaulerContractPriceEscalation]
+
+
+
+DELETE FROM [dbo].[ImageTemp]
+
+INSERT [dbo].[ImageTemp]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ImageTemp]
+
+
+
+DELETE FROM [dbo].[imagetype]
+
+INSERT [dbo].[imagetype]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[imagetype]
+
+
+
+DELETE FROM [dbo].[ImportBulkReceiptsStageTable]
+
+INSERT [dbo].[ImportBulkReceiptsStageTable]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ImportBulkReceiptsStageTable]
+
+
+
+DELETE FROM [dbo].[Industry]
+
+INSERT [dbo].[Industry]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Industry]
+
+
+
+DELETE FROM [dbo].[InProcessShipment]
+
+INSERT [dbo].[InProcessShipment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InProcessShipment]
+
+
+
+DELETE FROM [dbo].[InputJob]
+
+INSERT [dbo].[InputJob]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InputJob]
+
+
+
+DELETE FROM [dbo].[InputJobItem]
+
+INSERT [dbo].[InputJobItem]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InputJobItem]
+
+
+
+DELETE FROM [dbo].[InsuranceAgents]
+
+INSERT [dbo].[InsuranceAgents]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InsuranceAgents]
+
+
+
+DELETE FROM [dbo].[InterCompanyDef]
+
+INSERT [dbo].[InterCompanyDef]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InterCompanyDef]
+
+
+
+DELETE FROM [dbo].[InterestRate]
+
+INSERT [dbo].[InterestRate]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InterestRate]
+
+
+
+DELETE FROM [dbo].[InterestType]
+
+INSERT [dbo].[InterestType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InterestType]
+
+
+
+DELETE FROM [dbo].[INTTRA_ContainerCode]
+
+INSERT [dbo].[INTTRA_ContainerCode]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[INTTRA_ContainerCode]
+
+
+
+DELETE FROM [dbo].[INTTRA_DocumentsInfo]
+
+INSERT [dbo].[INTTRA_DocumentsInfo]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[INTTRA_DocumentsInfo]
+
+
+
+DELETE FROM [dbo].[INTTRA_Log]
+
+INSERT [dbo].[INTTRA_Log]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[INTTRA_Log]
+
+
+
+DELETE FROM [dbo].[INTTRA_PortUNCode]
+
+INSERT [dbo].[INTTRA_PortUNCode]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[INTTRA_PortUNCode]
+
+
+
+DELETE FROM [dbo].[INTTRA_SCAC]
+
+INSERT [dbo].[INTTRA_SCAC]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[INTTRA_SCAC]
+
+
+
+DELETE FROM [dbo].[INTTRA_Settings]
+
+INSERT [dbo].[INTTRA_Settings]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[INTTRA_Settings]
+
+
+
+DELETE FROM [dbo].[INTTRA_UnitTypeCode]
+
+INSERT [dbo].[INTTRA_UnitTypeCode]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[INTTRA_UnitTypeCode]
+
+
+
+DELETE FROM [dbo].[InttraUser]
+
+INSERT [dbo].[InttraUser]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InttraUser]
+
+
+
+DELETE FROM [dbo].[InvAdj_Wrk]
+
+INSERT [dbo].[InvAdj_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InvAdj_Wrk]
+
+
+
+DELETE FROM [dbo].[InvClass]
+
+INSERT [dbo].[InvClass]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InvClass]
+
+
+
+DELETE FROM [dbo].[Inventory]
+
+INSERT [dbo].[Inventory]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Inventory]
+
+
+
+DELETE FROM [dbo].[Inventory_PhysicalJob]
+
+INSERT [dbo].[Inventory_PhysicalJob]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Inventory_PhysicalJob]
+
+
+
+DELETE FROM [dbo].[Inventory_PhysicalJobCount]
+
+INSERT [dbo].[Inventory_PhysicalJobCount]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Inventory_PhysicalJobCount]
+
+
+
+DELETE FROM [dbo].[InventoryAC]
+
+INSERT [dbo].[InventoryAC]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryAC]
+
+
+
+DELETE FROM [dbo].[InventoryAC_Alloc]
+
+INSERT [dbo].[InventoryAC_Alloc]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryAC_Alloc]
+
+
+
+DELETE FROM [dbo].[InventoryAdjustment]
+
+INSERT [dbo].[InventoryAdjustment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryAdjustment]
+
+
+
+DELETE FROM [dbo].[InventoryBaleItem]
+
+INSERT [dbo].[InventoryBaleItem]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryBaleItem]
+
+
+
+DELETE FROM [dbo].[InventoryDeleteStage]
+
+INSERT [dbo].[InventoryDeleteStage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryDeleteStage]
+
+
+
+DELETE FROM [dbo].[InventoryLedger]
+
+INSERT [dbo].[InventoryLedger]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryLedger]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('InventoryLedger', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[InventoryOrderItemWrk]
+
+INSERT [dbo].[InventoryOrderItemWrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryOrderItemWrk]
+
+
+DELETE FROM [dbo].[InventoryShipExpenses]
+
+INSERT [dbo].[InventoryShipExpenses]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryShipExpenses]
+
+
+
+DELETE FROM [dbo].[InventoryShipPackListWrk]
+
+INSERT [dbo].[InventoryShipPackListWrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryShipPackListWrk]
+
+
+
+DELETE FROM [dbo].[InventorySubLots]
+
+INSERT [dbo].[InventorySubLots]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventorySubLots]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('InventorySubLots', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[InventoryValue]
+
+INSERT [dbo].[InventoryValue]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InventoryValue]
+
+
+
+DELETE FROM [dbo].[InvoiceBatch]
+
+INSERT [dbo].[InvoiceBatch]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InvoiceBatch]
+
+
+
+DELETE FROM [dbo].[InvoiceRemit]
+
+INSERT [dbo].[InvoiceRemit]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InvoiceRemit]
+
+
+
+DELETE FROM [dbo].[InvRcvCreatedByImport]
+
+INSERT [dbo].[InvRcvCreatedByImport]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InvRcvCreatedByImport]
+
+
+
+DELETE FROM [dbo].[InvRcvDetail_wrk]
+
+INSERT [dbo].[InvRcvDetail_wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InvRcvDetail_wrk]
+
+
+
+DELETE FROM [dbo].[InvRcvExpense_wrk]
+
+INSERT [dbo].[InvRcvExpense_wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[InvRcvExpense_wrk]
+
+
+
+DELETE FROM [dbo].[JobType]
+
+INSERT [dbo].[JobType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[JobType]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('JobType', @@ROWCOUNT)
+
+
+
+
+
+DELETE FROM [dbo].[LangTranslation]
+
+INSERT [dbo].[LangTranslation]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[LangTranslation]
+
+
+
+DELETE FROM [dbo].[LC]
+
+INSERT [dbo].[LC]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[LC]
+
+
+
+DELETE FROM [dbo].[LCBank]
+
+INSERT [dbo].[LCBank]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[LCBank]
+
+
+
+DELETE FROM [dbo].[LCBankBackup]
+
+INSERT [dbo].[LCBankBackup]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[LCBankBackup]
+
+
+
+DELETE FROM [dbo].[LCCertificates]
+
+INSERT [dbo].[LCCertificates]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[LCCertificates]
+
+
+
+DELETE FROM [dbo].[LCInsurances]
+
+INSERT [dbo].[LCInsurances]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[LCInsurances]
+
+
+
+DELETE FROM [dbo].[LCtemp]
+
+INSERT [dbo].[LCtemp]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[LCtemp]
+
+
+
+DELETE FROM [dbo].[LCType]
+
+INSERT [dbo].[LCType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[LCType]
+
+
+
+DELETE FROM [dbo].[M_Words]
+
+INSERT [dbo].[M_Words]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[M_Words]
+
+
+
+DELETE FROM [dbo].[MeltIndex]
+
+INSERT [dbo].[MeltIndex]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[MeltIndex]
+
+
+
+DELETE FROM [dbo].[MetaWks]
+
+INSERT [dbo].[MetaWks]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[MetaWks]
+
+
+
+DELETE FROM [dbo].[Mill]
+
+INSERT [dbo].[Mill]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Mill]
+
+
+
+DELETE FROM [dbo].[MobileAppUsers]
+
+INSERT [dbo].[MobileAppUsers]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[MobileAppUsers]
+
+
+
+DELETE FROM [dbo].[NoteTemplate]
+
+INSERT [dbo].[NoteTemplate]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[NoteTemplate]
+
+
+
+DELETE FROM [dbo].[NoteTemplate1218]
+
+INSERT [dbo].[NoteTemplate1218]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[NoteTemplate1218]
+
+
+
+DELETE FROM [dbo].[OceanFreightRate_Expense]
+
+INSERT [dbo].[OceanFreightRate_Expense]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[OceanFreightRate_Expense]
+
+
+
+DELETE FROM [dbo].[OceanFreightRate_Expense_Wrk]
+
+INSERT [dbo].[OceanFreightRate_Expense_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[OceanFreightRate_Expense_Wrk]
+
+
+
+DELETE FROM [dbo].[Options]
+
+INSERT [dbo].[Options]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Options]
+
+
+
+DELETE FROM [dbo].[Payable_Stage]
+
+INSERT [dbo].[Payable_Stage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Payable_Stage]
+
+
+
+--DELETE FROM [dbo].[Payables]
+
+--12/26/23
+
+INSERT [dbo].[Payables]
+
+SELECT stg_p.* FROM [cdb_Wilmington_stage].[dbo].[Payables] stg_p
+
+WHERE NOT EXISTS (SELECT p.* FROM [dbo].[Payables] p where p.PayableID = stg_p.PayableID)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[Payables] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Payables', @RowCnt)
+
+
+
+DELETE FROM [dbo].[PayablesBatch]
+
+INSERT [dbo].[PayablesBatch]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PayablesBatch]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('PayablesBatch', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[PayablesBatch_Detail]
+
+INSERT [dbo].[PayablesBatch_Detail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PayablesBatch_Detail]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('PayablesBatch_Detail', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[PayablesSalesTax]
+
+INSERT [dbo].[PayablesSalesTax]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PayablesSalesTax]
+
+
+
+DELETE FROM [dbo].[PayableTraceLog]
+
+INSERT [dbo].[PayableTraceLog]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PayableTraceLog]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('PayableTraceLog', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[PendingContainers]
+
+INSERT [dbo].[PendingContainers]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PendingContainers]
+
+
+
+DELETE FROM [dbo].[PendingShipments]
+
+INSERT [dbo].[PendingShipments]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PendingShipments]
+
+
+
+DELETE FROM [dbo].[PickupTypes]
+
+INSERT [dbo].[PickupTypes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PickupTypes]
+
+
+
+DELETE FROM [dbo].[Placeholders]
+
+INSERT [dbo].[Placeholders]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Placeholders]
+
+
+
+DELETE FROM [dbo].[PlasticsForm]
+
+INSERT [dbo].[PlasticsForm]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PlasticsForm]
+
+
+
+DELETE FROM [dbo].[PlasticsGrade]
+
+INSERT [dbo].[PlasticsGrade]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PlasticsGrade]
+
+
+
+--DELETE FROM [dbo].[PO]
+
+--12/26/23
+
+INSERT [dbo].[PO]
+
+SELECT stg_po.* FROM [cdb_Wilmington_stage].[dbo].[PO] stg_po
+
+WHERE NOT EXISTS (SELECT po.* FROM [dbo].[PO] po WHERE po.ponumber = stg_po.ponumber)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[PO] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('PO', @RowCnt)
+
+
+
+DELETE FROM [dbo].[POAdjustments]
+
+INSERT [dbo].[POAdjustments]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POAdjustments]
+
+
+
+DELETE FROM [dbo].[POBooking]
+
+INSERT [dbo].[POBooking]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POBooking]
+
+
+
+DELETE FROM [dbo].[POBooking_Wrk]
+
+INSERT [dbo].[POBooking_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POBooking_Wrk]
+
+
+
+DELETE FROM [dbo].[POCharge]
+
+INSERT [dbo].[POCharge]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POCharge]
+
+
+
+DELETE FROM [dbo].[POContractTitle]
+
+INSERT [dbo].[POContractTitle]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POContractTitle]
+
+
+
+--DELETE FROM [dbo].[PODetail]
+
+--12/26/23
+
+INSERT [dbo].[PODetail]
+
+SELECT stg_pod.* FROM [cdb_Wilmington_stage].[dbo].[PODetail] stg_pod
+
+WHERE NOT EXISTS (SELECT pod.* FROM [dbo].[PODetail] pod WHERE pod.PO_ID = stg_pod.PO_ID)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[PODetail] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('PODetail', @RowCnt)
+
+
+
+DELETE FROM [dbo].[PODetail_Wrk]
+
+INSERT [dbo].[PODetail_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PODetail_Wrk]
+
+
+
+DELETE FROM [dbo].[PODocument]
+
+INSERT [dbo].[PODocument]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PODocument]
+
+
+
+DELETE FROM [dbo].[PODocumentBLMemoNotes]
+
+INSERT [dbo].[PODocumentBLMemoNotes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PODocumentBLMemoNotes]
+
+
+
+DELETE FROM [dbo].[PODocumentLCCLNotes]
+
+INSERT [dbo].[PODocumentLCCLNotes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PODocumentLCCLNotes]
+
+
+
+DELETE FROM [dbo].[PODocumentList]
+
+INSERT [dbo].[PODocumentList]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PODocumentList]
+
+
+
+DELETE FROM [dbo].[PODocumentNotes]
+
+INSERT [dbo].[PODocumentNotes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PODocumentNotes]
+
+
+
+DELETE FROM [dbo].[PODocumentSalesNotes]
+
+INSERT [dbo].[PODocumentSalesNotes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PODocumentSalesNotes]
+
+
+
+DELETE FROM [dbo].[POInstruction]
+
+INSERT [dbo].[POInstruction]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POInstruction]
+
+
+
+DELETE FROM [dbo].[Ports]
+
+INSERT [dbo].[Ports]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Ports]
+
+
+
+DELETE FROM [dbo].[POSalesReps]
+
+INSERT [dbo].[POSalesReps]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POSalesReps]
+
+
+
+DELETE FROM [dbo].[POSalesReps_Wrk]
+
+INSERT [dbo].[POSalesReps_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POSalesReps_Wrk]
+
+
+
+DELETE FROM [dbo].[POShippingLineRemarks]
+
+INSERT [dbo].[POShippingLineRemarks]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POShippingLineRemarks]
+
+
+
+DELETE FROM [dbo].[POShipTo]
+
+INSERT [dbo].[POShipTo]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POShipTo]
+
+
+
+DELETE FROM [dbo].[PRALog]
+
+INSERT [dbo].[PRALog]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PRALog]
+
+
+
+DELETE FROM [dbo].[PrepayLedger]
+
+INSERT [dbo].[PrepayLedger]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PrepayLedger]
+
+
+
+DELETE FROM [dbo].[PriceFormula]
+
+INSERT [dbo].[PriceFormula]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PriceFormula]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('PriceFormula', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[PriceIndex]
+
+INSERT [dbo].[PriceIndex]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PriceIndex]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('PriceIndex', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[PriceIndexDetail]
+
+INSERT [dbo].[PriceIndexDetail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PriceIndexDetail]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('PriceIndexDetail', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[PriceRegion]
+
+INSERT [dbo].[PriceRegion]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PriceRegion]
+
+
+
+DELETE FROM [dbo].[ProcessJob]
+
+INSERT [dbo].[ProcessJob]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ProcessJob]
+
+
+
+DELETE FROM [dbo].[ProcessJobDetail]
+
+INSERT [dbo].[ProcessJobDetail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ProcessJobDetail]
+
+
+
+DELETE FROM [dbo].[ProcessJobDetailStage]
+
+INSERT [dbo].[ProcessJobDetailStage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ProcessJobDetailStage]
+
+
+
+DELETE FROM [dbo].[ProductCategory]
+
+INSERT [dbo].[ProductCategory]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ProductCategory]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('ProductCategory', @@ROWCOUNT)
+
+
+
+
+
+DELETE FROM [dbo].[ProductClass]
+
+INSERT [dbo].[ProductClass]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ProductClass]
+
+
+
+DELETE FROM [dbo].[ProductGroup]
+
+INSERT [dbo].[ProductGroup]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ProductGroup]
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('ProductGroup', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[ProspectType]
+
+INSERT [dbo].[ProspectType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ProspectType]
+
+
+
+DELETE FROM [dbo].[PublicPriceListDetail]
+
+INSERT [dbo].[PublicPriceListDetail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PublicPriceListDetail]
+
+
+
+DELETE FROM [dbo].[PublicPriceList]
+
+INSERT [dbo].[PublicPriceList]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PublicPriceList]
+
+
+
+DELETE FROM [dbo].[PublicTrade_Payable_Wrk]
+
+INSERT [dbo].[PublicTrade_Payable_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PublicTrade_Payable_Wrk]
+
+
+
+DELETE FROM [dbo].[PublicTrade_Wrk]
+
+INSERT [dbo].[PublicTrade_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PublicTrade_Wrk]
+
+
+
+DELETE FROM [dbo].[PublicTradeCustomer]
+
+INSERT [dbo].[PublicTradeCustomer]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PublicTradeCustomer]
+
+
+
+DELETE FROM [dbo].[PublicTradeDetail]
+
+INSERT [dbo].[PublicTradeDetail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PublicTradeDetail]
+
+
+
+DELETE FROM [dbo].[PublicTradePayment]
+
+INSERT [dbo].[PublicTradePayment]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PublicTradePayment]
+
+
+
+DELETE FROM [dbo].[PublicTrade]
+
+INSERT [dbo].[PublicTrade] ( [TradeID] ,
+
+	[PTCustID] ,
+
+	[COID],
+
+	[TradeType],
+
+	[WarehouseID],
+
+	[TagNo] ,
+
+	[TagState] ,
+
+	[VehicleMake],
+
+	[VehicleModel] ,
+
+	[UserID] ,
+
+	[PaymentAmt] ,
+
+	[TicketWeight] ,
+
+	[WtUOM],
+
+	[Notes],
+
+	[ReceiveDt] ,
+
+	[Status],
+
+	[Reference] )
+
+SELECT [TradeID] ,
+
+	[PTCustID] ,
+
+	[COID],
+
+	[TradeType],
+
+	[WarehouseID],
+
+	[TagNo] ,
+
+	[TagState] ,
+
+	[VehicleMake],
+
+	[VehicleModel] ,
+
+	[UserID] ,
+
+	[PaymentAmt] ,
+
+	[TicketWeight] ,
+
+	[WtUOM],
+
+	[Notes],
+
+	[ReceiveDt] ,
+
+	[Status],
+
+	[Reference] 
+
+FROM [cdb_Wilmington_stage].[dbo].[PublicTrade]
+
+
+
+
+
+
+
+DELETE FROM [dbo].[PurchaseOrder_Wrk]
+
+INSERT [dbo].[PurchaseOrder_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[PurchaseOrder_Wrk]
+
+
+
+DELETE FROM [dbo].[QBOCompany]
+
+INSERT [dbo].[QBOCompany]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[QBOCompany]
+
+
+
+DELETE FROM [dbo].[QBOCustomerImport]
+
+INSERT [dbo].[QBOCustomerImport]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[QBOCustomerImport]
+
+
+
+DELETE FROM [dbo].[ReasonCode]
+
+INSERT [dbo].[ReasonCode]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReasonCode]
+
+
+
+DELETE FROM [dbo].[Receipt]
+
+INSERT [dbo].[Receipt]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Receipt]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Receipt', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[ReceiptBatch]
+
+INSERT [dbo].[ReceiptBatch]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReceiptBatch]
+
+
+
+DELETE FROM [dbo].[ReceiptPartialStage]
+
+INSERT [dbo].[ReceiptPartialStage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReceiptPartialStage]
+
+
+
+DELETE FROM [dbo].[ReceiptStage]
+
+INSERT [dbo].[ReceiptStage]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReceiptStage]
+
+
+
+DELETE FROM [dbo].[Receiving]
+
+INSERT [dbo].[Receiving]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Receiving]
+
+
+
+DELETE FROM [dbo].[Receiving_Wrk]
+
+INSERT [dbo].[Receiving_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Receiving_Wrk]
+
+
+
+DELETE FROM [dbo].[RecurringInvoice]
+
+INSERT [dbo].[RecurringInvoice]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RecurringInvoice]
+
+
+
+DELETE FROM [dbo].[RecyProfitDef]
+
+INSERT [dbo].[RecyProfitDef]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RecyProfitDef]
+
+
+
+DELETE FROM [dbo].[RecyProfitDef_SoldAs]
+
+INSERT [dbo].[RecyProfitDef_SoldAs]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RecyProfitDef_SoldAs]
+
+
+
+--DELETE FROM [dbo].[RecyProfitDef_SoldAs2]
+
+--INSERT [dbo].[RecyProfitDef_SoldAs2]
+
+--SELECT * FROM [cdb_Wilmington_stage].[dbo].[RecyProfitDef_SoldAs2]
+
+
+
+DELETE FROM [dbo].[RecyProfitRules]
+
+INSERT [dbo].[RecyProfitRules]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RecyProfitRules]
+
+
+
+DELETE FROM [dbo].[RecyProfitRules_Disposal]
+
+INSERT [dbo].[RecyProfitRules_Disposal]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RecyProfitRules_Disposal]
+
+
+
+DELETE FROM [dbo].[RecyProfitRules_Freight]
+
+INSERT [dbo].[RecyProfitRules_Freight]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RecyProfitRules_Freight]
+
+
+
+DELETE FROM [dbo].[Referrer]
+
+INSERT [dbo].[Referrer]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Referrer]
+
+
+
+DELETE FROM [dbo].[Region]
+
+INSERT [dbo].[Region]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Region]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('Region', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[RegionBkup]
+
+INSERT [dbo].[RegionBkup]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RegionBkup]
+
+
+
+DELETE FROM [dbo].[Release]
+
+INSERT [dbo].[Release]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Release]
+
+
+
+DELETE FROM [dbo].[ReleaseNotes]
+
+INSERT [dbo].[ReleaseNotes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReleaseNotes]
+
+
+
+DELETE FROM [dbo].[ReminderPreferences]
+
+INSERT [dbo].[ReminderPreferences]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReminderPreferences]
+
+
+
+DELETE FROM [dbo].[ReportGroup]
+
+INSERT [dbo].[ReportGroup]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReportGroup]
+
+
+
+DELETE FROM [dbo].[ReserveStageSOIntoInvShip]
+
+INSERT [dbo].[ReserveStageSOIntoInvShip]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReserveStageSOIntoInvShip]
+
+
+
+DELETE FROM [dbo].[ReverseBillingBatch]
+
+INSERT [dbo].[ReverseBillingBatch]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReverseBillingBatch]
+
+
+
+DELETE FROM [dbo].[ReverseBillingStatement]
+
+INSERT [dbo].[ReverseBillingStatement]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ReverseBillingStatement]
+
+
+
+DELETE FROM [dbo].[RiskCover]
+
+INSERT [dbo].[RiskCover]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RiskCover]
+
+
+
+DELETE FROM [dbo].[Route]
+
+INSERT [dbo].[Route]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Route]
+
+
+
+DELETE FROM [dbo].[RT_CMS_OUTBOUND]
+
+INSERT [dbo].[RT_CMS_OUTBOUND]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RT_CMS_OUTBOUND]
+
+
+
+DELETE FROM [dbo].[RxRoute]
+
+INSERT [dbo].[RxRoute]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RxRoute]
+
+
+
+DELETE FROM [dbo].[RxRouteStop]
+
+INSERT [dbo].[RxRouteStop]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[RxRouteStop]
+
+
+
+DELETE FROM [dbo].[SalesTax]
+
+INSERT [dbo].[SalesTax]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[SalesTax]
+
+
+
+DELETE FROM [dbo].[SalesTaxCode]
+
+INSERT [dbo].[SalesTaxCode]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[SalesTaxCode]
+
+
+
+DELETE FROM [dbo].[SalesType]
+
+INSERT [dbo].[SalesType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[SalesType]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('SalesType', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[Scale]
+
+INSERT [dbo].[Scale]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Scale]
+
+
+
+DELETE FROM [dbo].[Scales]
+
+INSERT [dbo].[Scales]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Scales]
+
+
+
+DELETE FROM [dbo].[ScaleSettings]
+
+INSERT [dbo].[ScaleSettings]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ScaleSettings]
+
+
+
+DELETE FROM [dbo].[ServiceRecord]
+
+INSERT [dbo].[ServiceRecord]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ServiceRecord]
+
+
+
+DELETE FROM [dbo].[ServiceRecordExpense]
+
+INSERT [dbo].[ServiceRecordExpense]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ServiceRecordExpense]
+
+
+
+DELETE FROM [dbo].[ServiceRecordExpenseName]
+
+INSERT [dbo].[ServiceRecordExpenseName]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ServiceRecordExpenseName]
+
+
+
+DELETE FROM [dbo].[SheetSize]
+
+INSERT [dbo].[SheetSize]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[SheetSize]
+
+
+
+DELETE FROM [dbo].[shipping_exp_wrk]
+
+INSERT [dbo].[shipping_exp_wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[shipping_exp_wrk]
+
+
+
+DELETE FROM [dbo].[Shipping_Wrk]
+
+INSERT [dbo].[Shipping_Wrk]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Shipping_Wrk]
+
+
+
+DELETE FROM [dbo].[ShippingTerm]
+
+INSERT [dbo].[ShippingTerm]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ShippingTerm]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('ShippingTerm', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[ShipVia]
+
+INSERT [dbo].[ShipVia]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[ShipVia]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('ShipVia', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[Species]
+
+INSERT [dbo].[Species]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Species]
+
+
+
+DELETE FROM [dbo].[StoreInv]
+
+INSERT [dbo].[StoreInv]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[StoreInv]
+
+
+
+DELETE FROM [dbo].[SystemID]
+
+INSERT [dbo].[SystemID]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[SystemID]
+
+
+
+DELETE FROM [dbo].[SystemInfo]
+
+INSERT [dbo].[SystemInfo]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[SystemInfo]
+
+
+
+DELETE FROM [dbo].[SystemLocking]
+
+INSERT [dbo].[SystemLocking]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[SystemLocking]
+
+
+
+DELETE FROM [dbo].[SystemLog]
+
+INSERT [dbo].[SystemLog]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[SystemLog]
+
+
+
+DELETE FROM [dbo].[SystemSearchIndex]
+
+INSERT [dbo].[SystemSearchIndex]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[SystemSearchIndex]
+
+
+
+--DELETE FROM [dbo].['Tarieven vrachtvervoer$']
+
+--INSERT [dbo].['Tarieven vrachtvervoer$']
+
+--SELECT * FROM [cdb_Wilmington_stage].[dbo].['Tarieven vrachtvervoer$']
+
+
+
+DELETE FROM [dbo].[TaskCategory]
+
+INSERT [dbo].[TaskCategory]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TaskCategory]
+
+
+
+DELETE FROM [dbo].[TaxAuthority]
+
+INSERT [dbo].[TaxAuthority]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TaxAuthority]
+
+
+
+DELETE FROM [dbo].[Terminal]
+
+INSERT [dbo].[Terminal]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Terminal]
+
+
+
+DELETE FROM [dbo].[TestXML]
+
+INSERT [dbo].[TestXML]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TestXML]
+
+
+
+DELETE FROM [dbo].[TimeZone]
+
+INSERT [dbo].[TimeZone]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TimeZone]
+
+
+
+DELETE FROM [dbo].[TradeType]
+
+INSERT [dbo].[TradeType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TradeType]
+
+
+
+DELETE FROM [dbo].[TrafficDept]
+
+INSERT [dbo].[TrafficDept]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TrafficDept]
+
+
+
+DELETE FROM [dbo].[TransactionManager]
+
+INSERT [dbo].[TransactionManager]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TransactionManager]
+
+
+
+DELETE FROM [dbo].[Trucks]
+
+INSERT [dbo].[Trucks]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Trucks]
+
+
+
+DELETE FROM [dbo].[TwoFactorAuth]
+
+INSERT [dbo].[TwoFactorAuth]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TwoFactorAuth]
+
+
+
+DELETE FROM [dbo].[TXAPVoucher]
+
+INSERT [dbo].[TXAPVoucher]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TXAPVoucher]
+
+
+
+DELETE FROM [dbo].[TXGL]
+
+INSERT [dbo].[TXGL]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TXGL]
+
+
+
+DELETE FROM [dbo].[TXGLDetail]
+
+INSERT [dbo].[TXGLDetail]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TXGLDetail]
+
+
+
+DELETE FROM [dbo].[txInvoice]
+
+INSERT [dbo].[txInvoice]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[txInvoice]
+
+
+
+DELETE FROM [dbo].[TXVendor]
+
+INSERT [dbo].[TXVendor]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[TXVendor]
+
+
+
+DELETE FROM [dbo].[UACashLedger]
+
+INSERT [dbo].[UACashLedger]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UACashLedger]
+
+
+
+DELETE FROM [dbo].[UDShortcut]
+
+INSERT [dbo].[UDShortcut]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UDShortcut]
+
+
+
+DELETE FROM [dbo].[UDShortcutMaster]
+
+INSERT [dbo].[UDShortcutMaster]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UDShortcutMaster]
+
+
+
+DELETE FROM [dbo].[UnitType]
+
+INSERT [dbo].[UnitType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UnitType]
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('UnitType', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[UserDef]
+
+INSERT [dbo].[UserDef]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UserDef]
+
+
+
+DELETE FROM [dbo].[UserDefinedFlds]
+
+INSERT [dbo].[UserDefinedFlds]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UserDefinedFlds]
+
+
+
+DELETE FROM [dbo].[UserDefinedFldValues]
+
+INSERT [dbo].[UserDefinedFldValues]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UserDefinedFldValues]
+
+
+
+DELETE FROM [dbo].[UserMessages]
+
+INSERT [dbo].[UserMessages]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UserMessages]
+
+
+
+DELETE FROM [dbo].[UserPermissions]
+
+INSERT [dbo].[UserPermissions]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UserPermissions]
+
+
+
+DELETE FROM [dbo].[UserRole]
+
+INSERT [dbo].[UserRole]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UserRole]
+
+
+
+DELETE FROM [dbo].[UserRolePermission]
+
+INSERT [dbo].[UserRolePermission]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[UserRolePermission]
+
+
+
+DELETE FROM [dbo].[VatNo]
+
+INSERT [dbo].[VatNo]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[VatNo]
+
+
+
+DELETE FROM [dbo].[Vessel]
+
+INSERT [dbo].[Vessel]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Vessel]
+
+
+
+DELETE FROM [dbo].[VesselType]
+
+INSERT [dbo].[VesselType]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[VesselType]
+
+
+
+DELETE FROM [dbo].[WarehouseCapacity]
+
+INSERT [dbo].[WarehouseCapacity]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WarehouseCapacity]
+
+
+
+DELETE FROM [dbo].[WarehouseGroup]
+
+INSERT [dbo].[WarehouseGroup]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WarehouseGroup]
+
+
+
+DELETE FROM [dbo].[WarehouseLoadingSchedule]
+
+INSERT [dbo].[WarehouseLoadingSchedule]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WarehouseLoadingSchedule]
+
+
+
+DELETE FROM [dbo].[WarehouseLocation]
+
+INSERT [dbo].[WarehouseLocation]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WarehouseLocation]
+
+
+
+DELETE FROM [dbo].[Web_Action_Log]
+
+INSERT [dbo].[Web_Action_Log]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Web_Action_Log]
+
+
+
+DELETE FROM [dbo].[web_BuysellMapping]
+
+INSERT [dbo].[web_BuysellMapping]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[web_BuysellMapping]
+
+
+
+DELETE FROM [dbo].[Web_ServiceManager]
+
+INSERT [dbo].[Web_ServiceManager]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[Web_ServiceManager]
+
+
+
+DELETE FROM [dbo].[WebPortalLoginHistory]
+
+INSERT [dbo].[WebPortalLoginHistory]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WebPortalLoginHistory]
+
+
+
+DELETE FROM [dbo].[WebUsers]
+
+INSERT [dbo].[WebUsers]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WebUsers]
+
+
+
+DELETE FROM [dbo].[WebUsers_Locations]
+
+INSERT [dbo].[WebUsers_Locations]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WebUsers_Locations]
+
+
+
+DELETE FROM [dbo].[WebUsers_Locations_ForLookup]
+
+INSERT [dbo].[WebUsers_Locations_ForLookup]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WebUsers_Locations_ForLookup]
+
+
+
+DELETE FROM [dbo].[WeighMasterCert]
+
+INSERT [dbo].[WeighMasterCert]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WeighMasterCert]
+
+
+
+DELETE FROM [dbo].[WksBOLInstructionNotes]
+
+INSERT [dbo].[WksBOLInstructionNotes]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WksBOLInstructionNotes]
+
+
+
+--DELETE FROM [dbo].[WksDetail]
+
+--12/26/23
+
+INSERT [dbo].[WksDetail]
+
+SELECT stg_wksd.* FROM [cdb_Wilmington_stage].[dbo].[WksDetail] stg_wksd
+
+WHERE NOT EXISTS (SELECT wksd.* FROM [dbo].[WksDetail] wksd where wksd.DetailId = stg_wksd.DetailId)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[WKSDetail] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('WksDetail', @RowCnt)
+
+
+
+--DELETE FROM [dbo].[WksDelivery]
+
+--12/26/23
+
+INSERT [dbo].[WksDelivery]
+
+SELECT stg_wksdl.* FROM [cdb_Wilmington_stage].[dbo].[WksDelivery] stg_wksdl
+
+WHERE NOT EXISTS (SELECT wksdl.* FROM [dbo].[WksDelivery] wksdl WHERE wksdl.itemid = stg_wksdl.itemid)
+
+
+
+SELECT @RowCnt = COUNT(*) FROM [dbo].[WksDelivery] 
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('WksDelivery', @RowCnt)
+
+
+
+DELETE FROM [dbo].[WksInventory]
+
+INSERT [dbo].[WksInventory]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[WksInventory]
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('WksInventory', @@ROWCOUNT)
+
+
+
+DELETE FROM [dbo].[POSalesReps]
+
+INSERT [dbo].[POSalesReps]
+
+SELECT * FROM [cdb_Wilmington_stage].[dbo].[POSalesReps]
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('POSalesReps', @@ROWCOUNT)
+
+
+
+
+
+COMMIT TRANSACTION
+
+
+
+   --12/06/23 I.R. Was needed during testing
+
+ --  EXEC msdb.dbo.sp_send_dbmail
+
+ --   @profile_name = 'Wilmington_Email',
+
+ --   --@recipients = 'iraspin@wilmingtonpaper.com;ebrown@wilmingtonpaper.com;vjha@wilmingtonpaper.com',
+
+	--@recipients = 'iraspin@wilmingtonpaper.com',
+
+ --   @subject = 'Update cdb_Wilmington database tables finished successfully',
+
+ --   @body = 'Update cdb_Wilmington database tables finished successfully on server WPGTESTSQL'
+
+
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran')
+
+
+
+END TRY
+
+
+
+BEGIN CATCH
+
+
+
+  ROLLBACK
+
+
+
+  --SELECT  
+
+  --  ERROR_NUMBER() AS ErrorNumber  
+
+  --  ,ERROR_SEVERITY() AS ErrorSeverity  
+
+  --  ,ERROR_STATE() AS ErrorState  
+
+  --  ,ERROR_PROCEDURE() AS ErrorProcedure  
+
+  --  ,ERROR_LINE() AS ErrorLine  
+
+  --  ,ERROR_MESSAGE() AS ErrorMessage;  
+
+
+
+    INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' error')
+
+
+
+    EXEC msdb.dbo.sp_send_dbmail
+
+    @profile_name = 'Wilmington_Email',
+
+    @recipients = 'iraspin@wilmingtonpaper.com;ebrown@wilmingtonpaper.com;vjha@wilmingtonpaper.com,jcastoire@recyclingmr.com',
+
+	--@recipients = 'iraspin@wilmingtonpaper.com',
+
+    @subject = 'cdb_Wilmington database tables update failed',
+
+    @body = 'Troubleshoot on server WPGTESTSQL (192.168.1.19), Net project in C:\VSProjects\LoadBackupAndRestore folder.Run tables update script' 
+
+
+
+END CATCH;  
+
+
+
+END
+
+
+
+
+
+
+
+--SELECT 'This is line 1.' + CHAR(13)+CHAR(10) + 'This is line 2.'
+
+--@recipients = 'iraspin@wilmingtonpaper.com;ebrown@wilmingtonpaper.com',
+
+
+
+--ALTER TABLE [dbo].[Address] ADD  CONSTRAINT [DF_Address_EDI_Code]  DEFAULT (null) FOR [EDI_ShipToCode]
+
+--GO
+
+--ALTER TABLE [dbo].[Address] ADD  DEFAULT ((1)) FOR [FeedUpdate]
+
+--GO
+
+--ALTER TABLE [dbo].[Address] ADD  DEFAULT ((0)) FOR [InternalFreightCost]
+
+--GO
+
+--ALTER TABLE [dbo].[BillSheet] ADD  CONSTRAINT [DF__BillSheet__LastE__6D888EF8]  DEFAULT (getdate()) FOR [LastEdited]
+
+--GO
+
+--ALTER TABLE [dbo].[BillSheetDetail] ADD  CONSTRAINT [DF__BillSheet__IsAdv__52D3020E]  DEFAULT ((0)) FOR [IsAdvBilling]
+
+--GO
+
+--ALTER TABLE [dbo].[BuySell] ADD  CONSTRAINT [SalesTaxAdjAmtDFLT]  DEFAULT ((0)) FOR [SalesTaxAdjAmt]
+
+--GO
+
+--ALTER TABLE [dbo].[BuySell] ADD  CONSTRAINT [FxSalesTaxAdjAmtDFLT]  DEFAULT ((0)) FOR [FxSalesTaxAdjAmt]
+
+--GO
+
+--ALTER TABLE [dbo].[BuySell] ADD  DEFAULT ('') FOR [TicketType]
+
+--GO
+
+--ALTER TABLE [dbo].[BuySell] ADD  DEFAULT ((0)) FOR [ReverseBatchNo]
+
+--GO
+
+--ALTER TABLE [dbo].[BuySell] ADD  DEFAULT ((0)) FOR [bIsLotNoAssigned]
+
+--GO
+
+--ALTER TABLE [dbo].[BuySell] ADD  CONSTRAINT [DF__BuySell__IsBilli__63E87F77]  DEFAULT ((0)) FOR [IsBillingSheet]
+
+--GO
+
+--ALTER TABLE [dbo].[CashDisbursementDetails] ADD  CONSTRAINT [DF__CashDisbu__ATMBa__678EF329]  DEFAULT ('') FOR [ATMBarcode]
+
+--GO
+
+--ALTER TABLE [dbo].[cwFavorites] ADD  CONSTRAINT [DF__cwFavorit__IsFav__0970A08F]  DEFAULT ((0)) FOR [IsFavorite]
+
+--GO
+
+--ALTER TABLE [dbo].[Freightview_Tracking] ADD  DEFAULT ((0)) FOR [Processed]
+
+--GO
+
+--ALTER TABLE [dbo].[Freightview_Tracking] ADD  DEFAULT ((0)) FOR [Error]
+
+--GO
+
+--ALTER TABLE [dbo].[GPLedger] ADD  CONSTRAINT [df_AdjSalesTaxAmt]  DEFAULT ((0)) FOR [AdjSalesTaxAmt]
+
+--GO
+
+--ALTER TABLE [dbo].[GPLedger] ADD  CONSTRAINT [df_AdjFxSalesTaxAmt]  DEFAULT ((0)) FOR [AdjFxSalesTaxAmt]
+
+--GO
+
+--ALTER TABLE [dbo].[Grade] ADD  CONSTRAINT [DF_IsInactive]  DEFAULT ((0)) FOR [IsInactive]
+
+--GO
+
+--ALTER TABLE [dbo].[Inventory] ADD  DEFAULT ((0)) FOR [FxRate]
+
+--GO
+
+--ALTER TABLE [dbo].[Inventory] ADD  DEFAULT ((0)) FOR [ExcludeItem]
+
+--GO
+
+--ALTER TABLE [dbo].[Inventory_PhysicalJobCount] ADD  CONSTRAINT [DF__Inventory__Missi__5C3E0765]  DEFAULT ((0)) FOR [MissingItem]
+
+--GO
+
+--ALTER TABLE [dbo].[InventoryLedger] ADD  CONSTRAINT [DF__Inventory__IsUnd__776EBE89]  DEFAULT ((0)) FOR [IsUndo]
+
+--GO
+
+--ALTER TABLE [dbo].[LC] ADD  DEFAULT ('R') FOR [LCMode]
+
+--GO
+
+--ALTER TABLE [dbo].[Payables] ADD  CONSTRAINT [DF_ReverseBatchNo]  DEFAULT ((0)) FOR [ReverseBatchNo]
+
+--GO
+
+--ALTER TABLE [dbo].[PayablesBatch] ADD  DEFAULT ((0)) FOR [DoNotExport]
+
+--GO
+
+--ALTER TABLE [dbo].[PO] ADD  DEFAULT ((0)) FOR [ExportFlag]
+
+--GO
+
+--ALTER TABLE [dbo].[PO] ADD  DEFAULT ((0)) FOR [IsAdvanceOrder]
+
+--GO
+
+--ALTER TABLE [dbo].[PO] ADD  DEFAULT ((0)) FOR [IsChanged]
+
+--GO
+
+--ALTER TABLE [dbo].[PODetail] ADD  DEFAULT ((1)) FOR [IsRollOverPriceUpdated]
+
+--GO
+
+--ALTER TABLE [dbo].[PriceFormula] ADD  DEFAULT (0) FOR [PriceDiscount]
+
+--GO
+
+--ALTER TABLE [dbo].[PriceFormula] ADD  DEFAULT ((0)) FOR [IsFixed]
+
+--GO
+
+--ALTER TABLE [dbo].[RecyProfitRules] ADD  DEFAULT ((0)) FOR [Charge]
+
+--GO
+
+--ALTER TABLE [dbo].[ReverseBillingBatch] ADD  DEFAULT ((0)) FOR [AllAdjustments]
+
+--GO
+
+--ALTER TABLE [dbo].[ReverseBillingStatement] ADD  DEFAULT ('AP') FOR [PostType]
+
+--GO
+
+--ALTER TABLE [dbo].[RT_CMS_OUTBOUND] ADD  CONSTRAINT [DF__RT_CMS_OU__DELIV__25A8F3D7]  DEFAULT ((1)) FOR [DELIVERED_LOAD]
+
+--GO
+
+--ALTER TABLE [dbo].[RT_CMS_OUTBOUND] ADD  CONSTRAINT [DF__RT_CMS_OU__PROCE__269D1810]  DEFAULT ((0)) FOR [PROCESSED]
+
+--GO
+
+--ALTER TABLE [dbo].[ServiceRecord] ADD  CONSTRAINT [DF__ServiceRe__SchdD__275E9424]  DEFAULT ((1)) FOR [SchdDailyIntervalFreq]
+
+--GO
+
+--ALTER TABLE [dbo].[ServiceRecordExpense] ADD  CONSTRAINT [DF__ServiceRe__AdvBi__25764BB2]  DEFAULT ((0)) FOR [AdvBilling]
+
+--GO
+
+--ALTER TABLE [dbo].[SystemInfo] ADD  CONSTRAINT [DF__SystemInf__Signa__774EC2F8]  DEFAULT ((0)) FOR [SignatureSO]
+
+--GO
+
+--ALTER TABLE [dbo].[SystemInfo] ADD  CONSTRAINT [DF__SystemInf__Signa__7842E731]  DEFAULT ((0)) FOR [SignaturePO]
+
+--GO
+
+--ALTER TABLE [dbo].[TwoFactorAuth] ADD  CONSTRAINT [DF__TwoFactor__Confi__5A7FDC25]  DEFAULT ((0)) FOR [Confirmed]
+
+--GO
+
+--ALTER TABLE [dbo].[TXAPVoucher] ADD  CONSTRAINT [DF__TXAPVouch__HideR__43BC725E]  DEFAULT ((0)) FOR [HideRecord]
+
+--GO
+
+--ALTER TABLE [dbo].[TXGL] ADD  CONSTRAINT [DF__TXGL__HideRecord__49754BB4]  DEFAULT ((0)) FOR [HideRecord]
+
+--GO
+
+--ALTER TABLE [dbo].[TXGLDetail] ADD  CONSTRAINT [DF__TXGLDetai__Amoun__4C51B85F]  DEFAULT ((0)) FOR [Amount]
+
+--GO
+
+--ALTER TABLE [dbo].[TXGLDetail] ADD  CONSTRAINT [DF__TXGLDetai__HcAmo__4D45DC98]  DEFAULT ((0)) FOR [HcAmount]
+
+--GO
+
+--ALTER TABLE [dbo].[TXVendor] ADD  CONSTRAINT [DF__TXVendor__HideRe__4698DF09]  DEFAULT ((0)) FOR [HideRecord]
+
+--GO
+
+--ALTER TABLE [dbo].[UACashLedger] ADD  DEFAULT ((0)) FOR [BankFees]
+
+--GO
+
+--ALTER TABLE [dbo].[UACashLedger] ADD  DEFAULT ((0)) FOR [FXBankFees]
+
+--GO
+
+--ALTER TABLE [dbo].[WebPortalLoginHistory] ADD  CONSTRAINT [DF_WebPortalLoginHistory_LoginCount]  DEFAULT ((0)) FOR [LoginCount]
+
+--GO
+
+--ALTER TABLE [dbo].[WKSDetail] ADD  DEFAULT ((0)) FOR [IsPerEachCnv]
+
+--GO
+
+--ALTER TABLE [dbo].[CompanyInfo_Whse]  WITH CHECK ADD  CONSTRAINT [fk_CompanyInfo_Whse] FOREIGN KEY([COID])
+
+--REFERENCES [dbo].[CompanyInfo] ([COID])
+
+--ON DELETE CASCADE
+
+--GO
+
+--ALTER TABLE [dbo].[CompanyInfo_Whse] CHECK CONSTRAINT [fk_CompanyInfo_Whse]
+
+--GO
+
+--ALTER TABLE [dbo].[PublicPriceListDetail]  WITH CHECK ADD  CONSTRAINT [fk_PublicPriceList] FOREIGN KEY([PLID])
+
+--REFERENCES [dbo].[PublicPriceList] ([PLID])
+
+--ON DELETE CASCADE
+
+--GO
+
+--ALTER TABLE [dbo].[PublicPriceListDetail] CHECK CONSTRAINT [fk_PublicPriceList]
+
+--GO
+
+--ALTER TABLE [dbo].[PublicTrade]  WITH CHECK ADD  CONSTRAINT [fk_PublicTradeCustomer] FOREIGN KEY([PTCustID])
+
+--REFERENCES [dbo].[PublicTradeCustomer] ([PTCustID])
+
+--GO
+
+--ALTER TABLE [dbo].[PublicTrade] CHECK CONSTRAINT [fk_PublicTradeCustomer]
+
+--GO
+
+--ALTER TABLE [dbo].[PublicTradeCustomer]  WITH CHECK ADD  CONSTRAINT [fk_PublicPriceList2] FOREIGN KEY([PLID])
+
+--REFERENCES [dbo].[PublicPriceList] ([PLID])
+
+--GO
+
+--ALTER TABLE [dbo].[PublicTradeCustomer] CHECK CONSTRAINT [fk_PublicPriceList2]
+
+--GO
+
+--ALTER TABLE [dbo].[PublicTradeDetail]  WITH CHECK ADD  CONSTRAINT [fk_PublicTrade] FOREIGN KEY([TradeID])
+
+--REFERENCES [dbo].[PublicTrade] ([TradeID])
+
+--ON DELETE CASCADE
+
+--GO
+
+--ALTER TABLE [dbo].[PublicTradeDetail] CHECK CONSTRAINT [fk_PublicTrade]
+
+--GO
+
+--ALTER TABLE [dbo].[Region]  WITH CHECK ADD  CONSTRAINT [FK__Region__CountryI__17A74F48] FOREIGN KEY([CountryID])
+
+--REFERENCES [dbo].[Country] ([CountryID])
+
+--GO
+
+--ALTER TABLE [dbo].[Region] CHECK CONSTRAINT [FK__Region__CountryI__17A74F48]
+
+--GO
+
+--ALTER TABLE [dbo].[BillSheet]  WITH CHECK ADD  CONSTRAINT [CHK_Status] CHECK  (([Status]='N' OR [Status]='X' OR [Status]='A' OR [Status]='C' OR [Status]='O' OR [Status]='P'))
+
+--GO
+
+--ALTER TABLE [dbo].[BillSheet] CHECK CONSTRAINT [CHK_Status]
+
+--GO
+
+--ALTER TABLE [dbo].[CounterParty]  WITH NOCHECK ADD  CONSTRAINT [ck_Role] CHECK  (([Role] = 'V' or [Role] = 'C' or [Role] = 'S' or [Role] = 'D' or [Role] = 'A' or [Role] = 'P' or [Role] = 'U' or [Role] = 'X' or [Role] = '-'))
+
+--GO
+
+--ALTER TABLE [dbo].[CounterParty] CHECK CONSTRAINT [ck_Role]
+
+--GO
+

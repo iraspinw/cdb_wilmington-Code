@@ -1,0 +1,1052 @@
+-- Created by GitHub Copilot in SSMS - review carefully before executing
+
+-- 12/29/25
+
+-- [dbo].[cw_SalesByCustomerProduct2CietradeAllStatuses3_2_Copilot2] '2023-07-01', NULL, '', '', '', '', '', 'L', 0, ''
+
+-- [dbo].[cw_SalesByCustomerProduct2CietradeAllStatuses3_2_Copilot2] '2025-12-01', '2025-12-01', '', '', '', '', '', 'L', 0, ''
+
+
+
+CREATE   PROCEDURE [dbo].[cw_SalesByCustomerProduct2CietradeAllStatuses3_2_Copilot2]
+
+    @FromDate DATETIME = NULL,
+
+    @ToDate DATETIME = NULL,
+
+    @CustID CHAR(12) = '',
+
+    @TradeType VARCHAR(48) = '',
+
+    @CoID VARCHAR(10) = '',
+
+    @Product VARCHAR(40) = '',
+
+    @salesRep VARCHAR(40) = '',
+
+    @UOM CHAR = 'L',
+
+    @isdrilldown BIT = 0,
+
+    @drilldownCust VARCHAR(100) = ''
+
+AS
+
+BEGIN
+
+    SET NOCOUNT ON;
+
+    SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+    IF @FromDate IS NULL
+
+        SET @FromDate = '2024-11-01';
+
+    IF @ToDate IS NULL
+
+        SET @ToDate = CAST(GETDATE() AS DATE);
+
+
+
+    DECLARE @ProcedureName VARCHAR(100) = OBJECT_NAME(@@PROCID);
+
+
+
+    BEGIN TRY
+
+
+
+        IF OBJECT_ID('tempdb..#detail','U') IS NOT NULL DROP TABLE #detail;
+
+
+
+IF OBJECT_ID('tempdb..#r23') IS NOT NULL
+
+    DROP TABLE #r23
+
+
+
+IF OBJECT_ID('tempdb..#r24') IS NOT NULL
+
+    DROP TABLE #r24
+
+
+
+IF OBJECT_ID('tempdb..#r25') IS NOT NULL
+
+    DROP TABLE #r25
+
+
+
+IF OBJECT_ID('tempdb..#detail2') IS NOT NULL
+
+    DROP TABLE #detail2
+
+
+
+IF OBJECT_ID('tempdb..#detail3') IS NOT NULL
+
+    DROP TABLE #detail3
+
+
+
+SELECT case when TRIM(cr.[Company]) = 'RMR' then 'RMR Raleigh'
+
+            when TRIM(cr.[Company]) = 'RMR Philadelphia' then 'RMR Philly'
+
+	        else cr.[Company]
+
+		end Company
+
+		, ri.[Index]
+
+		, ri.[Index_Value]
+
+
+
+		,CASE when LEN(RTRIM(Substring(ri.[Period],6,2)) +'/'+Substring(ri.[Period],1,4)) = 6 then
+
+			      '0' + RTRIM(Substring(ri.[Period],6,2)) +'/'+Substring(ri.[Period],1,4) 
+
+		    else Substring(ri.[Period],6,2) +'/'+Substring(ri.[Period],1,4)  end [Period]
+
+			INTO #r23
+
+		FROM [cdb_Wilmington].[dbo].[tblCompanyRegion] cr
+
+		JOIN [cdb_Wilmington].[dbo].[tblRegionalIndices2] ri
+
+		ON ri.[Region] = cr.[Region]
+
+
+
+SELECT [CieTradeGradeName]
+
+      ,[Index]
+
+	  INTO #r24
+
+  FROM [cdb_Wilmington].[dbo].[CietradeGradeNameIndexes]
+
+
+
+   SELECT 
+
+       #r23.Company
+
+      ,#r23.[Index]
+
+      ,#r23.[Index_Value]
+
+	  ,#r23.[Period]
+
+	  ,#r24.[CieTradeGradeName]
+
+	  INTO #r25
+
+  FROM #r23
+
+  LEFT JOIN #r24
+
+  ON #r23.[Index] = #r24.[Index]
+
+
+
+        -- Build detail rows (one row per WKSDetail)
+
+        SELECT
+
+            cp.CompanyNm,
+
+            bs.CustID AS CustomerID,
+
+            g.Description AS Grade,
+
+            bs.InvoiceDt AS shippingDt,
+
+            d.SAmount AS SalesAmount,
+
+            bs.BuySellNo,
+
+            ISNULL(dbo.CONVERT_TO_UOM(d.SWeight,d.SWeightUOM,@UOM),0) AS TotalShippedWeight,
+
+            1 AS ShipmentCount,
+
+            ci.CompanyDesc AS COID,
+
+            CASE WHEN bs.CustID = '(INV)' THEN 'R' WHEN bs.VendorID='(INV)' THEN 'S' ELSE 'W' END AS WksType,
+
+            FORMAT(bs.ShippingDt,'MM/yyyy') AS TransactionPeriod,
+
+            bs.SFreightChg,
+
+            bs.VendorID AS SupplierID,
+
+            bs.PriceBasis AS Delivery,
+
+            bs.SAdjustment,
+
+            g.ProductCategoryID AS [Product Category],
+
+            g.ProductGroupID AS [Product Group],
+
+            dbo.GetCietradeGradeName(g.Description) AS CietradeGradeName,
+
+            g.Description AS ItemDescription,
+
+            g.GradeID AS Grade_ID,
+
+            TRIM(g.GradeID) + ' ' + '(' + TRIM(g.Description) + ')' AS GradeName,
+
+            ut.UnitType AS [Unit],
+
+            ISNULL(bs.PickupNo,'') AS [Reference #],
+
+            ISNULL(dbo.CONVERT_TO_UOM(d.SWeight,d.SWeightUOM,@UOM),0)/2000.0 AS Tons,
+
+            d.SPrice AS SellPriceTon,
+
+            d.PPrice AS PurchasePriceTon,
+
+            d.PAmount AS PurchaseAmount,
+
+            ISNULL(r1.Name,'Unknown') AS [Sales Person 1],
+
+            ISNULL(r2.Name,'Unknown') AS [Sales Person 2],
+
+            d.InvoiceDesc,
+
+ bs.ShipFromID
+
+        INTO #detail
+
+        FROM dbo.BuySell bs
+
+        LEFT JOIN dbo.WKSDetail d ON d.BuySellNo = bs.BuySellNo
+
+        LEFT JOIN dbo.CounterParty cp ON bs.CustID = cp.CpID
+
+        LEFT JOIN dbo.Grade g ON g.GradeID = d.GradeID
+
+        LEFT JOIN dbo.CompanyInfo ci ON bs.COID = ci.COID
+
+        LEFT JOIN dbo.Unittype ut ON ut.TypeID = d.UnitType
+
+        LEFT JOIN dbo.Referrer r1 ON r1.ReferrerNo = bs.ReferrerNo1
+
+        LEFT JOIN dbo.Referrer r2 ON r2.ReferrerNo = bs.ReferrerNo2
+
+        WHERE bs.Status = 'I'
+
+          AND (@FromDate IS NULL OR bs.ShippingDt >= @FromDate)
+
+          AND (@ToDate IS NULL OR bs.ShippingDt <= @ToDate)
+
+          AND (@CustID = '' OR bs.CustID = @CustID)
+
+          AND (@CoID = '' OR bs.COID = @CoID)
+
+          AND (@TradeType = '' OR bs.TradeType = @TradeType)
+
+          AND (@salesRep = '' OR @salesRep = bs.ReferrerNo1 OR @salesRep = bs.ReferrerNo2)
+
+          AND (@Product = '' OR g.GradeID = @Product)
+
+          AND bs.CustID NOT IN('(OTHER)','(INV)')
+
+          AND ISNULL(bs.IsAgency,0) <> 1
+
+          AND bs.Status <> 'X';
+
+
+
+          --SELECT * FROM #detail
+
+          --RETURN
+
+
+
+        -- Pre-aggregate total tons per load
+
+        IF OBJECT_ID('tempdb..#load_tons','U') IS NOT NULL DROP TABLE #load_tons;
+
+        SELECT BuySellNo AS [Load], SUM(Tons) AS LoadTotalTons
+
+        INTO #load_tons
+
+        FROM #detail
+
+        GROUP BY BuySellNo;
+
+
+
+        -- Pre-aggregate WksDelivery costs by BuySellNo for many GL accounts
+
+        IF OBJECT_ID('tempdb..#wksdelivery_summary','U') IS NOT NULL DROP TABLE #wksdelivery_summary;
+
+        SELECT
+
+            wd.BuySellNo,
+
+            SUM(CASE WHEN wd.GLAcct = '510020' THEN wd.Cost ELSE 0 END) AS FreightPlantInbound,
+
+            SUM(CASE WHEN wd.GLAcct IN('511100','0510025') THEN wd.Cost ELSE 0 END) AS FreightPassThrough,
+
+            SUM(CASE WHEN wd.SalesGLAcct = '400100' AND wd.isFreight = 1 THEN wd.ChgToCustAmt ELSE 0 END) AS FreightChargeToCust,
+
+            SUM(CASE WHEN wd.GLAcct = '528105' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS BaleTagsExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '528105' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS BaleTagsPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '400900' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS BalerRentalExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '400900' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS BalerRentalPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '528110' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS BalingFeeExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '528110' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS BalingFeePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '528100' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS BalingWireGaylordExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '528100' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS BalingWireGaylordPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '500220' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS LightweightChargeExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '500220' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS LightweightChargePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '510310' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS BobtailExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '510310' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS BobtailPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '512000' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS BOLFeeExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '512000' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS BOLFeePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '535005' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS ChassisDrayExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '535005' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS ChassisDrayPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '535000' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS ChassisRentalExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '535000' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS ChassisRentalPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '555515' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS CommissionsBrokerageExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '555515' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS CommissionsBrokeragePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '510500' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS CustomsChargesExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '510500' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS CustomsChargesPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '511000' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS DemurrageExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '511000' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS DemurragePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '525005' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS DetentionExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '525005' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS DetentionPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '531000' AND wd.ChgToCustAmt > 0 THEN wd.ChgToCustAmt ELSE 0 END) AS DrayageExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '531000' AND wd.ChgToCustAmt < 0 THEN wd.ChgToCustAmt ELSE 0 END) AS DrayagePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '527500' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS DropTrailerExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '527500' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS DropTrailerPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '510025' THEN wd.Cost ELSE 0 END) AS FreightChargeback,
+
+            SUM(CASE WHEN wd.GLAcct = '510200' THEN wd.Cost ELSE 0 END) AS FreightBrokerage,
+
+            SUM(CASE WHEN wd.GLAcct = '510210' THEN wd.Cost ELSE 0 END) AS FreightBrokeragePriorAdj,
+
+            SUM(CASE WHEN wd.GLAcct = '510030' THEN wd.Cost ELSE 0 END) AS FreightPlantOutbound,
+
+            SUM(CASE WHEN wd.GLAcct = '510010' THEN wd.Cost ELSE 0 END) AS FreightPriorAdj,
+
+            SUM(CASE WHEN wd.GLAcct = '501200' THEN wd.ChgToCustAmt ELSE 0 END) AS FuelSurchargeRecovery,
+
+            SUM(CASE WHEN wd.GLAcct = '530000' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS HandlingPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '530000' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS HandlingExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '510031' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS IntercoFreightPlantOutboundPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '510031' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS IntercoFreightPlantOutboundExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '528700' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS LandfillPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '528700' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS LandfillExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '520000' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS LayoverPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '520000' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS LayoverExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '510400' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS OceanFreightPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '510400' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS OceanFreightExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '500230' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS OverweightChargePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '500230' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS OverweightChargeExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '528200' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS PerDiemPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '528200' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS PerDiemExpense,
+
+            SUM(CASE WHEN wd.GLAcct = '510320' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS PrepullYardPullPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '510320' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS PrepullYardPullExpense,
+
+
+
+            SUM(CASE WHEN wd.GLAcct = '500100' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS PurchasePassThrough,
+
+
+
+            SUM(CASE WHEN wd.GLAcct = '500100' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS PurchaseExpense,
+
+
+
+            SUM(CASE WHEN wd.GLAcct = '532000' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS RedeliveryFeePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '532000' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS RedeliveryFeeexpense,
+
+
+
+            SUM(CASE WHEN wd.GLAcct = '535200' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS RepoChassisOrContainerPassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '535200' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS RepoChassisOrContainerExpense,
+
+
+
+            SUM(CASE WHEN wd.GLAcct = '525000' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS StoragePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '525000' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS StorageExpense,
+
+            
+
+            SUM(CASE WHEN wd.GLAcct = '528400' AND wd.Cost < 0 THEN wd.Cost ELSE 0 END) AS ServicePassThrough,
+
+            SUM(CASE WHEN wd.GLAcct = '528400' AND wd.Cost > 0 THEN wd.Cost ELSE 0 END) AS ServiceExpense
+
+
+
+        INTO #wksdelivery_summary
+
+        FROM dbo.WksDelivery wd
+
+        GROUP BY wd.BuySellNo;
+
+
+
+        -- Pre-aggregate GPledger sales by BuySellNo / GLAcct
+
+        IF OBJECT_ID('tempdb..#gpledger_summary','U') IS NOT NULL DROP TABLE #gpledger_summary;
+
+        SELECT
+
+            gp.BuySellNo,
+
+            SUM(CASE WHEN gp.GLAcct = '414140' THEN gp.Sale ELSE 0 END) AS LightweightChargeSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414100' THEN gp.Sale ELSE 0 END) AS ChassisDraySales,
+
+            SUM(CASE WHEN gp.GLAcct = '414105' THEN gp.Sale ELSE 0 END) AS ChassisRentalSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414110' THEN gp.Sale ELSE 0 END) AS CustomChargesSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414115' THEN gp.Sale ELSE 0 END) AS DemurrageSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414120' THEN gp.Sale ELSE 0 END) AS DetentionSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414180' THEN gp.Sale ELSE 0 END) AS DowngradeSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414125' THEN gp.Sale ELSE 0 END) AS DrayageSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414130' THEN gp.Sale ELSE 0 END) AS FreightPlantOutboundSales,
+
+            SUM(CASE WHEN gp.GLAcct = '400510' THEN gp.Sale ELSE 0 END) AS IntercompanySales,
+
+            SUM(CASE WHEN gp.GLAcct = '414135' THEN gp.Sale ELSE 0 END) AS LayoverSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414145' THEN gp.Sale ELSE 0 END) AS OceanFreightSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414150' THEN gp.Sale ELSE 0 END) AS OverweightChargeSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414200' THEN gp.Sale ELSE 0 END) AS PalletsSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414155' THEN gp.Sale ELSE 0 END) AS PerDiemSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414160' THEN gp.Sale ELSE 0 END) AS PrepullYardPullSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414190' THEN gp.Sale ELSE 0 END) AS PricingErrorSales,
+
+            SUM(CASE WHEN gp.GLAcct = '412000' THEN gp.Sale ELSE 0 END) AS QualityAdjustmentSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414165' THEN gp.Sale ELSE 0 END) AS RedeliveryFeeSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414185' THEN gp.Sale ELSE 0 END) AS RejectionSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414170' THEN gp.Sale ELSE 0 END) AS RepoSales,
+
+            SUM(CASE WHEN gp.GLAcct = '400100' THEN gp.Sale ELSE 0 END) AS SalesSales,
+
+            SUM(CASE WHEN gp.GLAcct = '400110' THEN gp.Sale ELSE 0 END) AS SalesDiscountSales,
+
+            SUM(CASE WHEN gp.GLAcct = '810000' THEN gp.Sale ELSE 0 END) AS SalesTaxPaid,
+
+            SUM(CASE WHEN gp.GLAcct = '820000' THEN gp.Sale ELSE 0 END) AS SalesTaxReceived,
+
+            SUM(CASE WHEN gp.GLAcct = '400200' THEN gp.Sale ELSE 0 END) AS SalesBrokerage,
+
+            SUM(CASE WHEN gp.GLAcct = '400210' THEN gp.Sale ELSE 0 END) AS SalesBrokeragePriorAdj,
+
+            SUM(CASE WHEN gp.GLAcct = '400120' THEN gp.Sale ELSE 0 END) AS SalesPriorAdj,
+
+      SUM(CASE WHEN gp.GLAcct = '414175' THEN gp.Sale ELSE 0 END) AS StorageSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414205' THEN gp.Sale ELSE 0 END) AS SwitcherSales,
+
+            SUM(CASE WHEN gp.GLAcct = '410000' THEN gp.Sale ELSE 0 END) AS ToleranceSales,
+
+            SUM(CASE WHEN gp.GLAcct = '414195' THEN gp.Sale ELSE 0 END) AS TONUSales,
+
+            SUM(CASE WHEN gp.GLAcct = '424000' THEN gp.Sale ELSE 0 END) AS TransloadSales,
+
+            SUM(CASE WHEN gp.GLAcct = '411000' THEN gp.Sale ELSE 0 END) AS WeightAdjustmentSales,
+
+            SUM(CASE WHEN gp.GLAcct = '860000' THEN gp.Sale ELSE 0 END) AS BankFees,
+
+            SUM(CASE WHEN gp.GLAcct = '00251000' THEN gp.Sale ELSE 0 END) AS CADSalesTaxReceivable
+
+
+
+            ,SUM(CASE WHEN gp.source = 'A' THEN gp.Cost 
+
+            ELSE 0 END) AS SumOfAllOutOfPeriod
+
+
+
+        INTO #gpledger_summary
+
+        FROM dbo.gpledger gp
+
+        GROUP BY gp.BuySellNo;
+
+
+
+        --SELECT * FROM #gpledger_summary
+
+        --RETURN
+
+
+
+        -- Pre-aggregate receipts
+
+        IF OBJECT_ID('tempdb..#receipt_summary','U') IS NOT NULL DROP TABLE #receipt_summary;
+
+        SELECT
+
+            r.BuySellNo,
+
+            SUM(ISNULL(r.Amount,0)) AS TotalReceiptAmount,
+
+            MAX(r.PaymentDt) AS CashReceivedDate
+
+        INTO #receipt_summary
+
+        FROM dbo.Receipt r
+
+        GROUP BY r.BuySellNo;
+
+
+
+        --SELECT * FROM #receipt_summary
+
+        --RETURN
+
+
+
+        -- Now populate target table with set-based joins and allocations
+
+
+
+        -- SELECT * FROM dbo.tblCietradeGP_extended_2_Copilot
+
+
+
+        TRUNCATE TABLE dbo.tblCietradeGP_extended_2_Copilot;
+
+
+
+        INSERT INTO dbo.tblCietradeGP_extended_2_Copilot (
+
+            [BillCompany],[CustomerID],[CustDescript],[Shipped to Name],[CustDescript Shipped to Name],[Customer County],[Customer Zip],[Customer City],[Customer Street Address],[Product Category],[Product Group],[Grade Group],[CietradeGradeName],[ItemDe
+scription],[Grade],[GradeName],[Alternate Cietrade Grade Name],[Unit],[Index],[Index_Value],[Delivery Term],[Load],[Reference #],[Tons],[SellPriceTon],[PurchasePriceTon],[SalesAmountTotal],[PurchaseAmountTotal],[Bale Tags Pass Through],[Bale Tags Expense]
+,[Freight Plant Inbound],[Outbound Freight Cost on Load],[Outbound Freight Cost Allocated],[Outbound Freight Cost Adjustment],[Open N/A Pass Through],[Open N/A Expense],[Freight Charge to Customer on Load],[Freight Charge to Customer Allocated],[Baler Ren
+tal Expense],[Baler Rental Pass Through],[Baling Fee Expense],[Baling Fee Pass Through],[Baling Wire & Gaylord Expense],[Baling Wire & Gaylord Pass Through],[Sum of all out of original period adjustments],[Purchase Pass Through],[Purchase Expense],[Bobtai
+l Pass Through],[Bobtail Expense],[BOL Fee Pass Through],[BOL Fee Expense],[Chassis Dray Pass Through],[Chassis Dray Expense],[Chassis Rental Pass Through],[Chassis Rental Expense],[Commissions Brokerage Pass Through],[Commissions Brokerage Expense],[Cust
+oms charges Pass Through],[Customs charges Expense],[Demurrage Pass Through],[Demurrage Expense],[Detention Pass Through],[Detention Expense],[Drayage Pass Through],[Drayage Expense],[Drop trailer Pass Through],[Drop trailer Expense],[Freight chargeback],
+[Freight Pass Through],[Freight-Brokerage],[Freight-brokerage-prior-adj],[Freight-Plant-Outbound],[Freight-Prior Adj],[Fuel Surcharge Recovery],[Handling Pass Through],[Handling Expense],[Interco Freight-Plant-Outbound Pass Through],[Interco Freight-Plant
+-Outbound Expense],[Landfill Pass Through],[Landfill Expense],[Layover Pass Through],[Layover Expense],[Lightweight Charge Pass Through],[Lightweight Charge Expense],[Ocean Freight Pass Through],[Ocean Freight Expense],[Overweight Charge Pass Through],[Ov
+erweight Charge Expense],[Per Diem Pass Through],[Per Diem Expense],[Pre-pull/Yard pull Pass Through],[Pre-pull/Yard pull Expense],[Redelivery Fee Pass Through],[Redelivery Fee Expense],[Repo (Chassis or Container) Pass Through],[Repo (Chassis or Containe
+r) Expense],[Service Pass Through],[Service Expense],[Storage Pass Through],[Storage Expense],[Total Pass Through without Freight],[Total Expense without Freight],[Sales],[Purchases],[Purchase Adjs],[Net Cost],[Total Cost],[Net Sale],[Invoice Amt],[Commis
+sions],[Cash Received Date],[Amount Cash Received],[Status],[Logistics],[Period],[TradeType],[ContainerSales],[Weight],[Gross Profit],[Gross Profit Per ST],[Container Purchase],[Supplier id],[Supplier],[ShipFrom ID],[Sales Person 1],[Sales Person 2],[Ship
+ping Date],[Posting Date],[Sales Adjs],[Freight-PROGRAM Pass Through],[Freight-PROGRAM Expense],[Intercompany Purchase Pass Through],[Intercompany Purchase Expense],[Sales Discount],[Lightweight Charge Sales],[Chassis Dray Sales],[Chassis Rental Sales],[C
+ustom Charges Sales],[Demurrage Sales],[Detention Sales],[Downgrade Sales],[Drayage Sales],[Freight-Plant-Outbound Sales],[Intercompany Sales],[Layover Sales],[Ocean Freight Sales],[Overweight Charge Sales],[Pallets Sales],[Per Diem Sales],[Pre-pull/Yard 
+pull Sales],[Pricing Error Sales],[Quality Adjustment Sales],[Redelivery Fee Sales],[Rejection Sales],[Repo(Chassis or Container) Sales],[Sales Sales],[Sales Discount Sales],[Sales Tax Paid],[Sales Tax Received],[Sales-Brokerage],[Sales-Brokerage-Prior Ad
+j],[Sales-Prior Adj],[Storage Sales],[Switcher Sales],[TOLERANCE Sales],[TONU Sales],[Transload Sales],[Weight Adjustment Sales],[Bank Fees],[CAD Sales Tax Receivable]
+
+        )
+
+
+
+        SELECT
+
+            CASE WHEN TRIM(d.COID) = 'RMR Raleigh, LLC' THEN 'RMR Raleigh' WHEN TRIM(d.COID) = 'RMR Philadelphia' THEN 'RMR Philly' ELSE TRIM(d.COID) END AS BillCompany,
+
+            d.CustomerID,
+
+            d.CompanyNm AS CustDescript,
+
+            bs.ShipToID AS [Shipped to Name],
+
+            TRIM(d.CompanyNm) + ' ' + TRIM(ISNULL(bs.ShipToID,'')) AS [CustDescript Shipped to Name],
+
+            '' AS [Customer County],
+
+            ISNULL(addr.PostalCd,''),
+
+            ISNULL(addr.City,''),
+
+            ISNULL(ISNULL(TRIM(addr.Addr2), '') + ' ' + ISNULL(TRIM(addr.Addr3),''),''),
+
+            ISNULL(d.[Product Category],''),
+
+            ISNULL(d.[Product Group],''),
+
+            ISNULL(d.[Product Group],''),
+
+            ISNULL(d.CietradeGradeName,''),
+
+            ISNULL(d.ItemDescription,''),
+
+            d.Grade_ID,
+
+            ISNULL(d.GradeName,''),
+
+            ISNULL(d.InvoiceDesc,'(Additional Charges)'),
+
+            ISNULL(d.[Unit],''),
+
+            r.[Index],
+
+            r.[Index_Value],
+
+            d.Delivery,
+
+            d.BuySellNo AS [Load],
+
+            d.[Reference #],
+
+            d.Tons,
+
+            d.SellPriceTon,
+
+            d.PurchasePriceTon,
+
+            d.SalesAmount AS SalesAmountTotal,
+
+            d.PurchaseAmount AS PurchaseAmountTotal
+
+
+
+            -- [dbo].[cw_SalesByCustomerProduct2CietradeAllStatuses3_2_Copilot2] '2025-12-01', '2025-12-01', '', '', '', '', '', 'L', 0, ''
+
+
+
+            ,ISNULL(wd.BaleTagsPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)
+
+
+
+            ,ISNULL(wd.BaleTagsExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)
+
+            ,ISNULL(wd.FreightPlantInbound,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightPlantOutbound,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)
+
+            ,0.00,
+
+            0.00,
+
+            0.00,
+
+            0.00
+
+            ,ISNULL(wd.FreightChargeToCust,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            0.00,
+
+            ISNULL(wd.BalerRentalExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.BalerRentalPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.BalingFeeExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.BalingFeePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.BalingWireGaylordExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.BalingWireGaylordPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            ISNULL(gp.SumOfAllOutOfPeriod,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)
+
+
+
+            ,ISNULL(wd.PurchasePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.PurchaseExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.BobtailPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.BobtailExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.BOLFeePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.BOLFeeExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.ChassisDrayPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.ChassisDrayExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.ChassisRentalPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.ChassisRentalExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.CommissionsBrokeragePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.CommissionsBrokerageExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.CustomsChargesPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.CustomsChargesExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.DemurragePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.DemurrageExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.DetentionPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.DetentionExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.DrayagePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.DrayageExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.DropTrailerPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.DropTrailerExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightChargeback,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightBrokerage,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightBrokeragePriorAdj,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightPlantOutbound,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightPriorAdj,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FuelSurchargeRecovery,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.HandlingPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.HandlingExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.IntercoFreightPlantOutboundPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.IntercoFreightPlantOutboundExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.LandfillPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.LandfillExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.LayoverPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.LayoverExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.LightweightChargePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.LightweightChargeExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.OceanFreightPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.OceanFreightExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.OverweightChargePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.OverweightChargeExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.PerDiemPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.PerDiemExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.PrepullYardPullPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.PrepullYardPullExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            ISNULL(wd.RedeliveryFeePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            ISNULL(wd.RedeliveryFeeExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            ISNULL(wd.RepoChassisOrContainerPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            ISNULL(wd.RepoChassisOrContainerExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            ISNULL(wd.ServicePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            ISNULL(wd.ServiceExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            ISNULL(wd.StoragePassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            ISNULL(wd.StorageExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            -- Totals
+
+            NULL, -- [Total Pass Through without Freight] computed later if needed
+
+            NULL, -- [Total Expense without Freight]
+
+            d.SalesAmount,
+
+            d.PurchaseAmount,
+
+            (ISNULL(bs.PAdjustment,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)),
+
+            (d.PurchaseAmount + ISNULL(bs.PAdjustment,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)),
+
+            (d.PurchaseAmount + ISNULL(bs.PAdjustment,0) * d.Tons / NULLIF(lt.LoadTotalTons,0) + ISNULL(wd.PurchaseExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)),
+
+            (d.SalesAmount + ISNULL(bs.SAdjustment,0) * d.Tons / NULLIF(lt.LoadTotalTons,0) + ISNULL(wd.FreightChargeToCust,0) * d.Tons / NULLIF(lt.LoadTotalTons,0) + ISNULL(bs.SalesTaxAmt,0) * d.Tons / NULLIF(lt.LoadTotalTons,0) + ISNULL(bs.SalesTaxAdjAm
+t,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)),
+
+            (d.SalesAmount + ISNULL(wd.FreightChargeToCust,0) * d.Tons / NULLIF(lt.LoadTotalTons,0) + ISNULL(bs.SalesTaxAmt,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)),
+
+            (ISNULL(bs.Commission1,0)+ISNULL(bs.Commission2,0)) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            rc.CashReceivedDate,
+
+            ISNULL(rc.TotalReceiptAmount,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(dbo.CnvWksStatus_Name(ISNULL(bs.Status,''),''),''),
+
+            UPPER(dbo.CnvShipStatus_Name(bs.ShippingOK)),
+
+            d.TransactionPeriod,
+
+            bs.TradeType,
+
+            CASE WHEN d.ShipFromID = '(CONTAINER)' THEN 'Yes' ELSE 'No' END,
+
+            d.Tons,
+
+            ((d.SalesAmount + ISNULL(bs.SAdjustment,0) * d.Tons / NULLIF(lt.LoadTotalTons,0) + ISNULL(wd.FreightChargeToCust,0) * d.Tons / NULLIF(lt.LoadTotalTons,0) + ISNULL(bs.SalesTaxAmt,0) * d.Tons / NULLIF(lt.LoadTotalTons,0) + ISNULL(bs.SalesTaxAdjA
+mt,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)) - (d.PurchaseAmount + ISNULL(bs.PAdjustment,0) * d.Tons / NULLIF(lt.LoadTotalTons,0) + ISNULL(wd.PurchaseExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0))),
+
+
+
+            ROUND(((d.SalesAmount - d.PurchaseAmount) / IIF(ABS(d.Tons) > 0, d.Tons, 1)),3) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+
+
+            CASE WHEN (CASE WHEN d.ShipFromID = '(CONTAINER)' THEN (SELECT TOP(1) c2.RcvBuySellNo FROM dbo.Container c2 WHERE c2.SaleBuySellNo = d.BuySellNo) ELSE 'No' END) <> 'No' THEN (SELECT TOP(1) c2.RcvBuySellNo FROM dbo.Container c2 WHERE c2.SaleBuy
+SellNo = d.BuySellNo) ELSE 'No' END,
+
+            CASE WHEN (CASE WHEN d.ShipFromID = '(CONTAINER)' THEN (SELECT TOP(1) c2.RcvBuySellNo FROM dbo.Container c2 WHERE c2.SaleBuySellNo = d.BuySellNo) ELSE 'No' END) <> 'No' THEN (SELECT b2.VendorID FROM dbo.BuySell b2 WHERE b2.BuySellNo = (SELECT 
+TOP(1) c2.RcvBuySellNo FROM dbo.Container c2 WHERE c2.SaleBuySellNo = d.BuySellNo)) ELSE (SELECT b3.VendorID FROM dbo.BuySell b3 WHERE b3.BuySellNo = d.BuySellNo) END,
+
+            (SELECT cp2.CompanyNm FROM dbo.CounterParty cp2 WHERE cp2.CpID = CASE WHEN (CASE WHEN d.ShipFromID = '(CONTAINER)' THEN (SELECT TOP(1) c2.RcvBuySellNo FROM dbo.Container c2 WHERE c2.SaleBuySellNo = d.BuySellNo) ELSE 'No' END) <> 'No' THEN (SEL
+ECT b2.VendorID FROM dbo.BuySell b2 WHERE b2.BuySellNo = (SELECT TOP(1) c2.RcvBuySellNo FROM dbo.Container c2 WHERE c2.SaleBuySellNo = d.BuySellNo)) ELSE (SELECT b3.VendorID FROM dbo.BuySell b3 WHERE b3.BuySellNo = d.BuySellNo) END),
+
+            CASE WHEN (CASE WHEN d.ShipFromID = '(CONTAINER)' THEN (SELECT TOP(1) c2.RcvBuySellNo FROM dbo.Container c2 WHERE c2.SaleBuySellNo = d.BuySellNo) ELSE 'No' END) <> 'No' THEN (SELECT b2.ShipFromID FROM dbo.BuySell b2 WHERE b2.BuySellNo = (SELEC
+T TOP(1) c2.RcvBuySellNo FROM dbo.Container c2 WHERE c2.SaleBuySellNo = d.BuySellNo)) ELSE (SELECT b3.ShipFromID FROM dbo.BuySell b3 WHERE b3.BuySellNo = d.BuySellNo) END,
+
+            d.[Sales Person 1],
+
+            CASE WHEN EXISTS(SELECT 1 FROM dbo.Container c3 WHERE c3.SaleBuySellNo = d.BuySellNo) THEN (SELECT STRING_AGG(rf2.Name,', ') FROM dbo.Referrer rf2 WHERE rf2.ReferrerNo IN (SELECT DISTINCT b4.ReferrerNo2 FROM dbo.BuySell b4 INNER JOIN dbo.Conta
+iner c4 ON b4.BuySellNo = c4.RcvBuySellNo WHERE c4.SaleBuySellNo = d.BuySellNo)) ELSE d.[Sales Person 2] END,
+
+            bs.ShippingDt,
+
+            bs.InvoiceDt,
+
+            ISNULL(bs.SAdjustment,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.IntercoFreightPlantOutboundPassThrough,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.IntercoFreightPlantOutboundExpense,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(wd.FreightBrokeragePriorAdj,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.LightweightChargeSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.ChassisDraySales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.ChassisRentalSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.CustomChargesSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.DemurrageSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.DetentionSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.DowngradeSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.DrayageSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.FreightPlantOutboundSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.IntercompanySales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.LayoverSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.OceanFreightSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.OverweightChargeSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.PalletsSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.PerDiemSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.PrepullYardPullSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.PricingErrorSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.QualityAdjustmentSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.RedeliveryFeeSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.RejectionSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.RepoSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.SalesSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.SalesDiscountSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.SalesTaxPaid,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.SalesTaxReceived,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.SalesBrokerage,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.SalesBrokeragePriorAdj,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.SalesPriorAdj,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.StorageSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.SwitcherSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.ToleranceSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.TONUSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.TransloadSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.WeightAdjustmentSales,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.BankFees,0) * d.Tons / NULLIF(lt.LoadTotalTons,0),
+
+            ISNULL(gp.CADSalesTaxReceivable,0) * d.Tons / NULLIF(lt.LoadTotalTons,0)
+
+
+
+        FROM #detail d
+
+        LEFT JOIN dbo.BuySell bs ON d.BuySellNo = bs.BuySellNo
+
+        LEFT JOIN dbo.Address addr ON addr.CpID = d.CustomerID AND addr.[Type] = bs.ShipToID
+
+        LEFT JOIN #r25 r ON d.CompanyNm = r.Company AND d.TransactionPeriod = r.Period AND d.CietradeGradeName = r.CieTradeGradeName
+
+        LEFT JOIN #load_tons lt ON d.BuySellNo = lt.[Load]
+
+        LEFT JOIN #wksdelivery_summary wd ON d.BuySellNo = wd.BuySellNo
+
+        LEFT JOIN #gpledger_summary gp ON d.BuySellNo = gp.BuySellNo
+
+        LEFT JOIN #receipt_summary rc ON d.BuySellNo = rc.BuySellNo
+
+
+
+        ORDER BY 1,2;
+
+
+
+        INSERT INTO dbo.tblEvents([Event]) VALUES(@ProcedureName + ' expanded refactor run by ' + SUSER_SNAME());
+
+
+
+    END TRY
+
+    BEGIN CATCH
+
+        SELECT ERROR_NUMBER() AS ErrorNumber,
+
+               ERROR_SEVERITY() AS ErrorSeverity,
+
+               ERROR_STATE() AS ErrorState,
+
+               ERROR_PROCEDURE() AS ErrorProcedure,
+
+               ERROR_LINE() AS ErrorLine,
+
+               ERROR_MESSAGE() AS ErrorMessage;
+
+
+
+        INSERT INTO dbo.tblEvents([Event]) VALUES(@ProcedureName + ' error');
+
+
+
+        EXEC msdb.dbo.sp_send_dbmail
+
+            @profile_name = 'Wilmington_Email',
+
+            @recipients = 'iraspin@wilmingtonpaper.com',
+
+            @subject = 'cdb_Wilmington database cw_SalesByCustomerProduct2CietradeAllStatuses3 procedure failed',
+
+            @body = 'Troubleshoot cdb_Wilmington database cw_SalesByCustomerProduct2CietradeAllStatuses3 procedure on server WPGTESTSQL';
+
+    END CATCH;
+
+END;

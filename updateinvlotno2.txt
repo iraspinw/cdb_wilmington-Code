@@ -1,0 +1,70 @@
+
+
+CREATE PROCEDURE [dbo].[updateinvlotno2] AS
+
+declare @DetailID int
+
+declare @invlotno varchar(100)
+
+declare @lotno char(25)
+
+declare @unittype char(1)
+
+declare @units int
+
+declare @relno char(15)
+
+declare @rollno char(18)
+
+declare @FldVal varchar(50)
+
+--3/21/2007 BM: Extend @RollNo char(18)
+
+set nocount on
+
+declare detailID_cursor CURSOR FOR Select detailid, invlotno from wksdetail
+
+open detailID_cursor
+
+fetch next from detailID_cursor INTO @detailID, @invlotno
+
+while(@@fetch_status <> -1) begin
+
+
+
+    if (@@fetch_status <> -2) begin
+
+	exec  GetField @invlotno, 1, '|', @FldVal output
+
+	select @lotno = @FldVal
+
+	exec  GetField @invlotno, 2, '|', @FldVal output
+
+	select @unittype = @FldVal
+
+	exec  GetField @invlotno, 3, '|', @FldVal output
+
+	select @units = convert(int, convert(float,@FldVal))
+
+	exec  GetField @invlotno, 4, '|', @FldVal output
+
+	select @relno = @FldVal
+
+	exec  GetField @invlotno, 5, '|', @FldVal output
+
+	select @rollno = @FldVal
+
+
+
+	update wksdetail set lotno = @lotno, unittype = @unittype, units = @units , relno = @relno, rollno = @rollno where detailid = @detailID
+
+
+
+    end--@@fetch_status <> -2
+
+    fetch next from detailID_cursor INTO @detailID, @invlotno
+
+end--@@fetch_status <> -1
+
+deallocate detailID_cursor
+

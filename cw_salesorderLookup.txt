@@ -1,0 +1,204 @@
+
+
+-- 7/30/24
+
+-- [dbo].[cw_salesorderLookup] 365
+
+
+
+CREATE PROCEDURE [dbo].[cw_salesorderLookup] @AsOfDaysAgo int AS
+
+-- 4/8/19 MN: CREATED
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	DECLARE @AsOfCutoffDate DATE
+
+	SET @AsOfCutoffDate = DATEADD(d,ABS(@AsOfDaysAgo)*-1,GETDATE())
+
+
+
+	-- GET ALL ORDER DETAIL ITEM SHIPPED WT AND UNITS.			
+
+	CREATE TABLE #ShippedDetail	(PONumber char(15) COLLATE database_default, PO_ID int, ShippedWtLBS decimal(18,5), ShippedUnits int ) 
+
+    CREATE INDEX IE_ShippedDetail ON #ShippedDetail(PONumber, PO_ID)
+
+
+
+--if @ShowEmptyGrades = 0 begin
+
+--	IF @GetShippedWt = 1 BEGIN
+
+--			INSERT INTO #ShippedDetail
+
+--			SELECT PODetail.PONumber, PODetail.PO_ID, sum(dbo.CALCLBS(wksDetail.SWeight, wksDetail.SWeightUOM)) AS ShippedWtLBS, sum(wksDetail.Units) AS ShippedUnits
+
+--			FROM PODetail WITH(NOLOCK)
+
+--			INNER JOIN PO WITH(NOLOCK) ON PO.PONumber = PODetail.PONumber		
+
+--			INNER JOIN wksDetail WITH(NOLOCK) ON wksDetail.SPo = PODetail.PONumber AND wksDetail.SPO_ID = PODetail.PO_ID
+
+--			WHERE Status = 'OPEN' 
+
+--			AND (PO.CpID = @CpID OR @CpID = '')
+
+--			AND (PODetail.GradeID = @GradeID OR @GradeID = '')
+
+--			AND (PODetail.PO_ID = @PO_ID OR @PO_ID = 0)
+
+--			AND (@COID = '' OR @COID = PO.COID)
+
+--			AND (@AddrType = '' OR @AddrType = PO.AddrType)		
+
+--			AND (PO.PONumber = @PONo OR @PONo = '')	
+
+--			GROUP BY PODetail.PONumber, PODetail.PO_ID
+
+--	END
+
+
+
+--	SELECT PO.PONumber, PO.POReference, PODate,  PO.CpID, AddrType, PriceBasis, PODetail.PO_ID, PODetail.GradeID, isnull(Grade.[Description], '') as [Description], PODetail.PODesc, 
+
+--	Specifications, Units, UnitType, dbo.cw_RemoveTrailingZeros(isnull(Price,0),2) as Price, PriceUOM, PODetail.CurrencyCd, IsMSF,	BasisWt, BasisWtUOM, Diameter, DiameterUOM, RollWd, RollWdUOM, CoreSize, 
+
+--	CoreSizeUOM, Caliper, PODetail.LinearLen, LengthUOM, SheetSize, SheetSizeUOM, SheetGrain,	PODetail.MWeight, NoSheets, MSFPrc, 
+
+--	dbo.CALCLBS(PODetail.Weight, PODetail.WeightUOM) OrderWtLBS, PODetail.WeightUOM, isnull(#ShippedDetail.ShippedWtLBS, 0) ShippedWtLBS, 
+
+--	isnull(#ShippedDetail.ShippedUnits, 0) ShippedUnits, Comment, ContractNo,
+
+--	PODetail.WoodThickness,PODetail.WoodWidth,PODetail.WoodSzUOM,PODetail.WoodLength,PODetail.WoodLengthUOM,PO.FxRate,PO.ShipAddrType,
+
+--	PriceFormula.FormulaType, PriceFormula.PriceDiscount, PriceFormula.PriceOffset, PriceFormula.MinPrice,
+
+--	PO.ExpirationDt, PODetail.PODesc, PO.PriceBasis
+
+--	FROM PO WITH(NOLOCK)
+
+--	INNER JOIN PODetail WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber 
+
+--    INNER JOIN Grade WITH(NOLOCK) ON Grade.GradeID = PODetail.GradeID
+
+--	LEFT JOIN #ShippedDetail ON #ShippedDetail.PONumber = PODetail.PONumber AND #ShippedDetail.PO_ID = PODetail.PO_ID
+
+--	LEFT JOIN PriceFormula WITH(NOLOCK) ON PriceFormula.FormulaID = PODetail.FormulaID
+
+--	WHERE Status = 'OPEN'  AND Source = @Source
+
+--	AND (PO.CpID = @CpID OR @CpID = '')
+
+--	AND (PODetail.GradeID = @GradeID OR @GradeID = '')
+
+--	AND (@COID = '' OR @COID = PO.COID)
+
+--	AND (@AddrType = '' OR @AddrType = PO.AddrType)	
+
+--	AND (PO.PONumber = @PONo OR @PONo = '')	
+
+--    ORDER BY PO.podate desc
+
+-- end
+
+-- else begin
+
+-- IF @GetShippedWt = 1 BEGIN
+
+		INSERT INTO #ShippedDetail
+
+		SELECT PODetail.PONumber, PODetail.PO_ID, sum(dbo.CALCLBS(wksDetail.SWeight, wksDetail.SWeightUOM)) AS ShippedWtLBS, sum(wksDetail.Units) AS ShippedUnits
+
+		FROM PODetail WITH(NOLOCK)
+
+		INNER JOIN PO WITH(NOLOCK) ON PO.PONumber = PODetail.PONumber		
+
+		LEFT JOIN wksDetail WITH(NOLOCK) ON wksDetail.SPo = PODetail.PONumber AND wksDetail.SPO_ID = PODetail.PO_ID
+
+
+
+		--7/30/24 I.R.
+
+		--WHERE Status = 'OPEN' 
+
+
+
+		--AND (PO.CpID = @CpID OR @CpID = '')
+
+		--AND (PODetail.GradeID = @GradeID OR @GradeID = '')
+
+		--AND (PODetail.PO_ID = @PO_ID OR @PO_ID = 0)
+
+		--AND (@COID = '' OR @COID = PO.COID)
+
+		--AND (@AddrType = '' OR @AddrType = PO.AddrType)		
+
+		--AND (PO.PONumber = @PONo OR @PONo = '')	
+
+		GROUP BY PODetail.PONumber, PODetail.PO_ID
+
+	--END
+
+
+
+	SELECT PO.PONumber, PO.Status, PO.POReference, PODate,  PO.CpID, AddrType, PriceBasis, PODetail.PO_ID, PODetail.GradeID, isnull(Grade.[Description],'') as [Description], PODetail.PODesc, 
+
+	Specifications, Units, UnitType, dbo.cw_RemoveTrailingZeros(isnull(Price,0), 2) as Price, PriceUOM, PODetail.CurrencyCd, IsMSF,	BasisWt, BasisWtUOM, Diameter, DiameterUOM, RollWd, RollWdUOM, CoreSize, 
+
+	CoreSizeUOM, Caliper, PODetail.LinearLen, LengthUOM, SheetSize, SheetSizeUOM, SheetGrain,	PODetail.MWeight, NoSheets, MSFPrc, 
+
+	dbo.CALCLBS(PODetail.Weight, PODetail.WeightUOM) OrderWtLBS, PODetail.WeightUOM, isnull(#ShippedDetail.ShippedWtLBS, 0) ShippedWtLBS, 
+
+	isnull(#ShippedDetail.ShippedUnits, 0) ShippedUnits, Comment, ContractNo,
+
+	PODetail.WoodThickness,PODetail.WoodWidth,PODetail.WoodSzUOM,PODetail.WoodLength,PODetail.WoodLengthUOM,PO.FxRate,PO.ShipAddrType,
+
+	PriceFormula.FormulaType, PriceFormula.PriceDiscount, PriceFormula.PriceOffset, PriceFormula.MinPrice,
+
+	PO.ExpirationDt, PODetail.PODesc, PO.PriceBasis
+
+	FROM PO WITH(NOLOCK)
+
+	INNER JOIN PODetail WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber 
+
+    LEFT JOIN Grade WITH(NOLOCK) ON Grade.GradeID = PODetail.GradeID
+
+	LEFT JOIN #ShippedDetail ON #ShippedDetail.PONumber = PODetail.PONumber AND #ShippedDetail.PO_ID = PODetail.PO_ID
+
+	LEFT JOIN PriceFormula WITH(NOLOCK) ON PriceFormula.FormulaID = PODetail.FormulaID
+
+	
+
+	--07/30/24
+
+	WHERE 
+
+	--Status = 'OPEN'  
+
+	--AND 
+
+	Source = 'SO'
+
+	--AND (PO.CpID = @CpID OR @CpID = '')
+
+	--AND (PODetail.GradeID = @GradeID OR @GradeID = '')
+
+	--AND (@COID = '' OR @COID = PO.COID)
+
+	--AND (@AddrType = '' OR @AddrType = PO.AddrType)	
+
+	--AND (PO.PONumber = @PONo OR @PONo = '')	
+
+	AND (PODate >= @AsOfCutoffDate)
+
+    ORDER BY PO.podate desc
+
+ --end
+
+
+

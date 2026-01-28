@@ -1,0 +1,204 @@
+
+
+-- 1/20/26
+
+-- Used for creating latest sql code versions for Git, called  in 'cdb_Wilmington code version control job' on WPGTESTSQL SQL Server
+
+-- Job 'cdb_Wilmington code version control' (not scheduled on WPGTESTSQL SQL Server) is called in the job
+
+-- on WPGTESTSQL Server -'Update cdb_wilmington custom procedures repo local and github'.
+
+
+
+-- To run the proc:
+
+-- EXEC dbo.ExportTableToFiles @OutputFolder = 'C:\cdb_wilmington Code Repo'
+
+
+
+-- 1/27/26 - Change to process by Id
+
+-- 1/28/26 - remove column separator ','
+
+
+
+CREATE PROCEDURE [dbo].[ExportTableToFiles] @OutputFolder VARCHAR(500)
+
+
+
+AS
+
+BEGIN
+
+    SET NOCOUNT ON;
+
+
+
+    DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+
+
+    DECLARE @FileName VARCHAR(255), @Cmd VARCHAR(1000), @Id INT;
+
+
+
+-- Optional: Create error log table before running
+
+IF OBJECT_ID('tempdb..#CursorErrorLog') IS NOT NULL
+
+DROP TABLE #CursorErrorLog;
+
+
+
+CREATE TABLE #CursorErrorLog (
+
+        ErrorTime DATETIME,
+
+        FileName VARCHAR(255),
+
+        ErrorMessage NVARCHAR(4000)
+
+    );
+
+
+
+BEGIN TRY
+
+
+
+--DECLARE @Data TABLE ([FileName] VARCHAR(255));
+
+DECLARE @Data TABLE ([Id] INT IDENTITY(1,1), [FileName] VARCHAR(255));
+
+
+
+INSERT INTO @Data ([FileName])
+
+	SELECT DISTINCT [name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+
+	FROM sys.sql_modules m
+
+	INNER JOIN sys.objects o ON m.object_id=o.object_id
+
+	where left(name,6) in ('cw_sal','rptPur', 'update', 'export')
+
+	order by [name];
+
+
+
+    --SELECT * FROM @Data
+
+
+
+-- Loop until no rows remain
+
+WHILE EXISTS (SELECT 1 FROM @Data)
+
+BEGIN
+
+    -- Get one row at a time
+
+    SELECT TOP 1 @Id = Id, @FileName = [FileName]
+
+    FROM @Data
+
+    ORDER BY [Id]; --[FileName]
+
+    -- Do your processing here
+
+    PRINT 'Processing: ' + 'FileName = ' + @FileName;
+
+    SET @Cmd = 'sqlcmd -S WPGTESTSQL -d cdb_wilmington -E -Q ' + '"EXEC sp_helptext ''' + @FileName + '''' + '"' + ' -W -o ' +
+
+					+ '"' + @OutputFolder  + '\' + @FileName + '.txt"' + ' -h -1'
+
+
+
+    --SET @Cmd = 'sqlcmd -S WPGTESTSQL -d cdb_wilmington -E -Q ' + '"EXEC sp_helptext ''' + @FileName + '''' + '"' + ' -s, -W -o ' +
+
+				--	+ '"' + @OutputFolder  + '\' + @FileName + '.txt"'
+
+        print @Cmd
+
+		--return
+
+
+
+        EXEC xp_cmdshell @Cmd;
+
+		--return
+
+
+
+    -- Remove processed row
+
+    --DELETE FROM @Data WHERE [FileName] = @FileName;
+
+    DELETE FROM @Data WHERE [Id] = @Id;
+
+END;
+
+
+
+END TRY
+
+
+
+BEGIN CATCH
+
+    -- Handle errors
+
+    PRINT CONCAT('Error: ', ERROR_MESSAGE());
+
+
+
+	-- Log the error to a table
+
+    INSERT INTO #CursorErrorLog (ErrorTime, FileName, ErrorMessage)
+
+    SELECT GETDATE(), @FileName, ERROR_MESSAGE()
+
+    WHERE OBJECT_ID('tempdb..#ErrorLog') IS NOT NULL;
+
+    INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' Error: ' + ERROR_MESSAGE())
+
+
+
+    EXEC msdb.dbo.sp_send_dbmail
+
+    @profile_name = 'Wilmington_Email',
+
+    @recipients = 'iraspin@wilmingtonpaper.com',
+
+    @subject = 'cdb_Wilmington database ExportTableToFiles procedure failed',
+
+    @body = 'Troubleshoot cdb_Wilmington database ExportTableToFiles procedure on server WPGTESTSQL' 
+
+
+
+    -- View logged errors
+
+    print 'Errors'
+
+    SELECT * FROM #CursorErrorLog;
+
+
+
+END CATCH;
+
+
+
+DROP TABLE IF EXISTS #CursorErrorLog;
+
+
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
+
+
+
+
+
+END
+
+
+
