@@ -7330,6 +7330,40 @@ INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('POSa
 
 
 
+
+
+-- 1/29/26 I.R. Update tblTrackStatusLogistics
+
+INSERT tblTrackStatusLogistics (Buysellno,[Status], Logistics,AsOfDate)
+
+SELECT a1.buysellno, a1.[Status], a1.Logistics, convert(date, getdate())
+
+from tblTrackStatusLogistics a1
+
+where not exists (
+
+SELECT b1.buysellno,
+
+ISNULL(dbo.[CnvWksStatus_Name](b1.[Status],''),'') 
+
+,isnull(upper([dbo].[CnvShipStatus_Name](b1.ShippingOK)),'') 
+
+from buysell b1
+
+where year(b1.shippingdt) >= 2025 and b1.buysellno = a1.BuySellNo
+
+and ISNULL(dbo.[CnvWksStatus_Name](b1.[Status],''),'') = a1.[status]
+
+and isnull(upper([dbo].[CnvShipStatus_Name](b1.ShippingOK)),'') = a1.[Logistics])
+
+
+
+INSERT [dbo].[TableUpdateHistory] ([TableName], [NumberOfRecords]) VALUES ('tblTrackStatusLogistics', @@ROWCOUNT)
+
+
+
+
+
    --12/06/23 I.R. Was needed during testing
 
  --  EXEC msdb.dbo.sp_send_dbmail
@@ -7411,6 +7445,7 @@ END
 
 
 --ALTER TABLE [dbo].[Address] ADD  CONSTRAINT [DF_Address_EDI_Code]  DEFAULT (null) FOR [EDI_ShipToCode]
+
 --GO
 
 --ALTER TABLE [dbo].[Address] ADD  DEFAULT ((1)) FOR [FeedUpdate]

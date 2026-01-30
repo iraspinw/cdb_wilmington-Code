@@ -22,7 +22,7 @@
 
 
 
-CREATE PROCEDURE [dbo].[ExportTableToFiles] @OutputFolder VARCHAR(500)
+CREATE   PROCEDURE [dbo].[ExportCodeToFiles] @OutputFolder VARCHAR(500)
 
 
 
