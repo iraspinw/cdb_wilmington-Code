@@ -12,7 +12,7 @@
 
 -- To run the proc:
 
--- EXEC dbo.ExportTableToFiles @OutputFolder = 'C:\cdb_wilmington Code Repo'
+-- EXEC dbo.ExportCodeToFiles @OutputFolder = 'C:\cdb_wilmington Code Repo'
 
 
 
