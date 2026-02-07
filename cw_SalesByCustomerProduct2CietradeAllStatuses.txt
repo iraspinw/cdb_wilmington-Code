@@ -1765,6 +1765,12 @@ ORDER BY 1,2
 
 
 
+-- SELECT count(*) FROM tblCietradeGP
+
+
+
+
+
 -- SELECT * FROM tblCietradeGP where [load] = '65875'
 
 
@@ -1909,9 +1915,10 @@ SELECT [BillCompany]
 
       ,[Interco Freight-Plant-Outbound]
 
-      ,[Intercompany Sales]
+  ,[Intercompany Sales]
 
       ,[Landfill]
+
       ,[Layover]
 
       ,[Lightweight Charge]
