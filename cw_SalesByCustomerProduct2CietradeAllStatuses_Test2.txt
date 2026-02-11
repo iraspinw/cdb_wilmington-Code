@@ -20,23 +20,11 @@
 
 
 
--- TESTING VERSION, works fine based on tests below.
-
-
-
 -- 9/10/25 - Correctly assigning BuyRep in case of Container sales ([Sales person 2])
 
 
 
--- 9/17/25 - Correctly assigning Supplier in case of Container sales
-
-
-
--- 9/19/25 - Correctly assigning grades, groups, categories
-
-
-
--- 10/16/25 - Correctly assigning data to Packed container
+-- 2/9/26 Include adjustment loads (with no tonnage)
 
 
 
@@ -90,7 +78,9 @@
 
 
 
-CREATE PROCEDURE [dbo].[cw_SalesByCustomerProduct2CietradeAllStatuses_Test2] 
+
+
+CREATE   PROCEDURE [dbo].[cw_SalesByCustomerProduct2CietradeAllStatuses_Test2] 
 
 	 @FromDate datetime = '',
 
@@ -156,6 +146,8 @@ DROP TABLE #detail
 
 
 
+
+
 CREATE TABLE #detail(
 
 	CompanyNm varchar(100),
@@ -216,19 +208,17 @@ CREATE TABLE #detail(
 
 	,[SalesAmountTotal] money
 
+    ,[SalesAmountTotal2] money
+
 	,[PurchaseAmountTotal] money
+
+	,[PurchaseAmountTotal2] money
 
 	,[Sales Person 1] [varchar](30)
 
 	,[Sales Person 2] [varchar](60)
 
 	,[ShipFromID] [char](45) 
-
-	,Rcvbuysellno varchar(20)
-
-	,[Amount Cash Received] money 
-
-	, [ContainerWeight]  [decimal](18, 5)
 
 
 
@@ -291,12 +281,6 @@ IF OBJECT_ID('tempdb..#r25') IS NOT NULL
 IF OBJECT_ID('tempdb..#detail2') IS NOT NULL
 
     DROP TABLE #detail2
-
-
-
-IF OBJECT_ID('tempdb..#detail2a') IS NOT NULL
-
-    DROP TABLE #detail2a
 
 
 
@@ -400,7 +384,13 @@ SELECT
 
 	-- 4/29/2025
 
-	isnull(DBO.CONVERT_TO_UOM2(WKSDetail.SWeight,WKSDetail.SWeightUOM,@UOM),0) ,
+
+
+	-- select * from wksdetail where buysellno = '82505'
+
+
+
+	isnull(DBO.CONVERT_TO_UOM(WKSDetail.SWeight,WKSDetail.SWeightUOM,@UOM),0) ,
 
 	--8/29/24 I.R.
 
@@ -452,39 +442,19 @@ SELECT
 
 	,grade.ProductCategoryID
 
-
-
 	,grade.ProductGroupID
 
-
-
 	,grade.ProductGroupID
-
-
 
 	,[dbo].[GetCietradeGradeName](grade.Description)
 
-
-
 	,grade.[Description]
 
-
-
-	--,grade.GradeID
-
-
-
-	, wksdetail.GradeID
-
-
+	,grade.GradeID
 
 	,TRIM(grade.GradeID) + ' ' + '(' + trim(grade.Description)+')'
 
-
-
 	,(SELECT [UnitType] from Unittype where [TypeID] = WKSDetail.UnitType)
-
-
 
 	,ISNULL(buysell.PickupNo, '')
 
@@ -492,7 +462,7 @@ SELECT
 
 	-- 4/22/25 I.R.
 
-	,isnull(DBO.CONVERT_TO_UOM2(WKSDetail.SWeight,WKSDetail.SWeightUOM,@UOM),0)/2000 
+	,isnull(DBO.CONVERT_TO_UOM(WKSDetail.SWeight,WKSDetail.SWeightUOM,@UOM),0)/2000 
 
 
 
@@ -500,41 +470,61 @@ SELECT
 
 
 
-	,[SalesAmountTotal] = case when buysell.ShipFromID = '(CONTAINER)'
+	-- SELECT SalesAmt + Sadjustment + Sfreightchg from buysell where buysellno = '99318'
 
-	                           then buysell.SalesAmt + buysell.Sadjustment + buysell.Sfreightchg
-
-                          else
-
-						  	case when wksdetail.sweight = 0 then 0 
-
-	                        else ((buysell.SalesAmt + buysell.Sadjustment + buysell.Sfreightchg) * wksdetail.sweight) /
-
-							(sum(wksdetail.sweight) over (partition by buysell.BuySellNo ORDER BY buysell.BuySellNo)) 
-
-                          end
-
-						  end
+	-- select * from wksdetail where buysellno = '99318'
 
 
 
-	-- select buysell.SalesAmt + Sadjustment + Sfreightchg,* from buysell where buysellno = '47912'
+	,[SalesAmountTotal] = --case when wksdetail.SWeight = 0 then 0 
 
-	-- select * from wksdetail where buysellno = '47725'
+		        --else 
+
+				isnull(sum(Samount) over (partition by wksdetail.BuySellNo, wksdetail.detailid 
+
+				  ORDER BY wksdetail.BuySellNo, wksdetail.detailid), 0) 
+
+                 --   end
 
 
 
-	,[PurchaseAmountTotal] = case when wksdetail.PWeight = 0 then 0 
+	,[SalesAmountTotal2] = 
 
-		        else sum(Pamount) over (partition by wksdetail.BuySellNo, wksdetail.detailid 
+	--case when wksdetail.sweight = 0 then 0 
 
-				  ORDER BY wksdetail.BuySellNo, wksdetail.detailid) 
+	                --else 
 
-				--((buysell.PSupplierCost + PAdjustment + Pfreightchg) * wksdetail.PWeight) /(sum(wksdetail.PWeight) 
+	isnull(((buysell.SalesAmt + Sadjustment + Sfreightchg) * iif(isnull(wksdetail.sweight, 0)>0, wksdetail.sweight,1)
 
-				--	over (partition by buysell.BuySellNo ORDER BY buysell.BuySellNo)) 
+	) /(sum(iif(isnull(wksdetail.sweight, 0) > 0,wksdetail.sweight,1) ) 
 
-                    end
+	over (partition by buysell.BuySellNo ORDER BY buysell.BuySellNo)),0)
+
+                    --end
+
+
+
+	,[PurchaseAmountTotal] = --case when wksdetail.PWeight = 0 then 0 
+
+		        --else 
+
+				isnull(sum(Pamount) over (partition by wksdetail.BuySellNo, wksdetail.detailid 
+
+				  ORDER BY wksdetail.BuySellNo, wksdetail.detailid), 0)
+
+                 --end
+
+
+
+	,[PurchaseAmountTotal2] = --case when wksdetail.PWeight = 0 then 0 
+
+	                --else 
+
+					isnull(((buysell.PSupplierCost + PAdjustment + Pfreightchg) * iif(isnull(wksdetail.PWeight,0)>0, wksdetail.PWeight,1) ) /(sum(iif(isnull(wksdetail.PWeight,0) > 0, wksdetail.PWeight,1)) 
+
+					over (partition by buysell.BuySellNo ORDER BY buysell.BuySellNo)) , 0)
+
+                   --end
 
 
 
@@ -542,31 +532,7 @@ SELECT
 
     ,[Sales Person 2] = IIF(BuySell.Referrerno2 IS NULL OR TRIM(BuySell.Referrerno2) = '', 'Unknown',(SELECT [Name] from Referrer where [ReferrerNo] = BuySell.[ReferrerNo2]))
 
-
-
-	-- 9/16/25
-
 	,buysell.ShipFromID
-
-	,ISNULL(container.RcvBuySellNo, '') RcvBuySellNo
-
-
-
-	-- select top(10) * from container where RcvBuysellno IS NOT NULL
-
-
-
-	--SELECT SUM(Amount) FROM [Receipt] where Buysellno = '74667'
-
-
-
-	,[Amount Cash Received] = ISNULL((SELECT SUM(Amount) FROM [Receipt] where Buysellno = Buysell.buysellno
-
-								   /*and [PostingType] = 'CRE'*/), 0.00)
-
-
-
-	, (Container.NetWeight/2000) PackedContainerNetweight
 
 
 
@@ -579,12 +545,6 @@ from BuySell
 	left join grade on grade.GradeID = WksDetail.GradeID
 
 	left join CompanyInfo on buysell.COID = CompanyInfo.COID
-
-
-
-	-- 9/18/25
-
-	left join container on container.SaleBuySellNo = buysell.buysellno
 
 where
 
@@ -626,69 +586,33 @@ where
 
 
 
-	and (BuySell.CustID <> '(OTHER)' AND BuySell.CustID <> '(INV)')
+	--2/9/26 I.R
+
+	--and (BuySell.CustID <> '(OTHER)' AND BuySell.CustID <> '(INV)')
+
+
 
 	AND (IsNull(IsAgency,0) <> 1)		--worksheets where products dont count on financials.
 
 
 
-	-- 9/16/25 Tests
+	-- 12/11/25
 
-	 --AND buysell.buysellno = '47912' --'70949' --
-
-
-
-	 --AND buysell.buysellno = '74667'
+	--and buysell.BuySellNo = '82505'
 
 
 
-	 --AND buysell.buysellno = '65875'
+	-- 2/9/26
+
+	--and buysell.BuySellNo = '121786'
 
 
 
-	 --AND buysell.buysellno = '40133'
+	--SELECT * FROM #detail
 
 
 
-	 --AND buysell.buysellno = '95634'
-
-
-
-	--select * from buysell where buysellno = 'PR-65980'    
-
-
-
-	--select distinct gradeid from wksdetail where buysellno in
-
-	--(select rcvbuysellno from container where SaleBuysellNo = '47912')
-
-
-
-	-- select * from wksdetail where buysellno = '95634'
-
-    -- select * from wksdelivery where buysellno = '95634'
-
-
-
-	-- select top(10) * from container where containerno = 'HAMU4023689'
-
-
-
-	-- select top(10) * from container where salebuysellno = '95634'
-
-
-
-	--SELECT * from #detail
-
-
-
-	--RETURN
-
-
-
-	-- select * from buysell where buysellno = '47912'
-
-	-- select * from wksdetail where buysellno = 'PR-65980'
+    --RETURN
 
 
 
@@ -702,93 +626,77 @@ SELECT
 
 
 
-         ,CustomerID
-
-
-
-		 ,CompanyNm CustDescript
-
-
+         ,CustomerID, CompanyNm CustDescript
 
 	     ,[Shipped to Name] = (SELECT ShipToID from Buysell where buysellno = #detail.buysellno)
 
-
-
-	     ,[Customer County] = ''
-
-
-
-         ,[Customer Zip] = ISNULL((SELECT Postalcd FROM [Address] where cpid = [CustomerID] and [Type] = (SELECT ShipToID from buysell where buysellno = #detail.buysellno)), '')
+	  ,[Customer County] = ''
 
 
 
-         ,[Customer City] = ISNULL((SELECT City FROM [Address] where cpid = [CustomerID] and [Type] = (SELECT ShipToID from buysell where buysellno = #detail.buysellno)), '')
+      ,[Customer Zip] = ISNULL((SELECT Postalcd FROM [Address] where cpid = [CustomerID] and [Type] = (SELECT ShipToID from buysell where buysellno = #detail.buysellno)), '')
 
 
 
-         ,[Customer Street Address] = ISNULL((SELECT ISNULL(TRIM(Addr2), '') + ' ' + ISNULL(TRIM(Addr3), '') FROM [Address] where cpid = [CustomerID] and [Type] = (SELECT ShipToID from buysell where buysellno = #detail.buysellno)), '')
+      ,[Customer City] = ISNULL((SELECT City FROM [Address] where cpid = [CustomerID] and [Type] = (SELECT ShipToID from buysell where buysellno = #detail.buysellno)), '')
 
 
 
-	    , case when #detail.Rcvbuysellno <> '' then wksdetail.GradeID
-
-		      else Grade_ID END Grade
+      ,[Customer Street Address] = ISNULL((SELECT ISNULL(TRIM(Addr2), '') + ' ' + ISNULL(TRIM(Addr3), '') FROM [Address] where cpid = [CustomerID] and [Type] = (SELECT ShipToID from buysell where buysellno = #detail.buysellno)), '')
 
 
 
-	    , ISNULL(Unit, '') Unit
+	  ,[Product Category] = ISNULL([Product Category], '') 
 
 
 
-	    , [Index] = '' -- update at the end
+	  ,[Product Group] = ISNULL([Product Group], '')
 
 
 
-	    , [Index_Value] = 0.00 -- update at the end
+	  ,[Grade Group] = ISNULL([Product Group], '')
 
 
 
-	    , [Delivery Term] = [Delivery]
+	  ,CietradeGradeName = ISNULL(CietradeGradeName, '')
 
 
 
-	    , [Load] = #detail.buysellno
+	  ,ItemDescription = ISNULL(ItemDescription, '')
+
+	  ,[Grade] = Grade_ID
 
 
 
-	    , [Reference #]
+	  ,GradeName = ISNULL(GradeName, '')
 
 
 
-		-- SELECT (TotalWeightLbs/2000) from buysell where buysellno = '95634'
+	  ,ISNULL(Unit, '') Unit
 
 
 
-		--,case when ShipFromID = '(CONTAINER)' AND #detail.RcvBuySellNo <> '' then (SELECT (TotalWeightLbs/2000) from buysell where buysellno = #detail.RcvBuySellNo)
-
-	 --        else Tons END Tons
+	  ,[Index] = '' -- update at the end
 
 
 
-		,case when ShipFromID = '(CONTAINER)' then
-
-		       case when  #detail.RcvBuySellNo <> '' then (SELECT (TotalWeightLbs/2000) from buysell 
-
-			              where buysellno = #detail.RcvBuySellNo)
-
-			  else ContainerWeight end
-
-	          else Tons END Tons
+	  ,[Index_Value] = 0.00 -- update at the end
 
 
 
-	    --, case when ShipFromID = '(CONTAINER)' then (SELECT (TotalWeightLbs/2000) from buysell where buysellno = #detail.RcvBuySellNo)
-
-	    --     else Tons END Tons
+	  ,[Delivery Term] = [Delivery]
 
 
 
-	  --, Tons
+	  , [Load] = buysellno
+
+
+
+	  , [Reference #]
+
+
+
+	  , Tons
 
 
 
@@ -796,31 +704,867 @@ SELECT
 
 
 
+	  ,SalesAmountTotal
 
+	  ,SalesAmountTotal2
 
-	  , SalesAmountTotal 
+	  ,[PurchaseAmountTotal]
 
+	  ,[PurchaseAmountTotal2]
 
-
-	  -- 9/18/25
-
-	  -- Return to this later, if needed
-
-	  --,PurchasePriceTon = case when exists (select 1 from buysell where buysellno = #detail.buysellno and TotalWeightLbs > 0)
-
-	  --                    then (SELECT ROUND((FxSupplierCost/(TotalWeightLbs/2000)),2) from buysell where buysellno = #detail.buysellno) 
-
-			--			  else 0 END
+	  ,[Gross Profit] = [SalesAmountTotal] - [PurchaseAmountTotal]
 
 
 
-	  , [PurchaseAmountTotal] = case when #detail.RcvBuySellNo <> '' then (select PSupplierCost from buysell where buysellno = #detail.RcvBuySellNo)
-
-	                                 else [PurchaseAmountTotal] END
+	  -- select * from GPLedger where glacct = '528105'
 
 
 
+	  ,[Bale Tags] = --case when [Tons] = 0 then 0 
 
+		 --else 
+
+		 ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = #detail.Buysellno and glacct = '528105'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end	  
+
+	  ,[Freight Plant Inbound] = --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = #detail.Buysellno and glacct = '510020'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	  ,[Outbound Freight Cost on Load] = --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = #detail.Buysellno and InvoiceDesc = 'Freight-Plant-Outbound'
+
+		           and IsFreight = 1), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+	  , [Outbound Freight Cost Allocated] = 0.00
+
+
+
+	   ,[Outbound Freight Cost Adjustment] = 
+
+	   --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((SELECT SUM(Cost) FROM GPLedger where Buysellno = #detail.Buysellno and [source] = 'A' 
+
+		      --and Glacct = '510020'
+
+		       and Adjreason like '%actually billed%'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+		 --end 
+
+
+
+       -- select top(3) * from wksdelivery where invoicedesc like '%open%'
+
+	   -- select top(3) * from gpledger where adjnotes like '%open%'
+
+
+
+	   , [Open N/A] = 0.00
+
+
+
+	  ,[Freight Charge to Customer on Load] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((SELECT SUM(ChgToCustAmt) FROM Wksdelivery where Buysellno = #detail.Buysellno 
+
+		           --and InvoiceDesc = 'Freight-Plant-Outbound'
+
+				   and SalesGLAcct = '400100' and IsFreight = 1), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	   ,[Freight Charge to Customer Allocated] = 0.00
+
+
+
+	  ,[Light Weight Deduction] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = #detail.Buysellno 
+
+				   and GLAcct = '500220'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+      , [Sum of all out of original period adjustments] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		--else 
+
+		ROUND(ISNULL((SELECT SUM(Sale) FROM GPLedger where Buysellno = #detail.Buysellno  
+
+		                  and [source] = 'A'
+
+		                  and Tradedt = (SELECT Invoicedt from buysell where Buysellno = #detail.Buysellno)), 0.00)
+
+		                  * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+		--end 
+
+
+
+
+
+	  ,[Bobtail] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.Buysellno and glacct = '510310'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	  ,[BOL Fee] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.Buysellno and glacct = '512000'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	   -- select * from gpledger where glacct = '414100' [source]= 'A' and AdjType = 'S' --  nothing found
+
+
+
+	   -- select * from wksdelivery where glacct = '535005'
+
+
+
+	  ,[Chassis Dray] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.Buysellno and glacct = '535005'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+      -- select * from wksdelivery where glacct = '535000'
+
+
+
+	  -- select * from wksdetail where buysellno = '99318'
+
+
+
+   	  ,[Chassis Rental] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '535000'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+      -- select * from wksdelivery where glacct = '555515'
+
+
+
+   	  ,[Commissions Brokerage] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '555515'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+      -- select * from wksdelivery where glacct = '510500'
+
+
+
+   	  ,[Customs charges] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '510500'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	   -- select * from wksdelivery where glacct = '511000'
+
+
+
+   	  ,[Demurrage] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = #detail.buysellno and glacct = '511000'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   	  ,[Detention] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = #detail.buysellno and [source]= 'A' and AdjType = 'S' and glacct = '414120'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   	  ,[Downgrade] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = #detail.buysellno and [source]= 'A' and AdjType = 'S' and glacct = '414180'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   	   -- select * from wksdelivery where glacct = '531000'
+
+
+
+   	  ,[Drayage] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(ChgToCustAmt) from WksDelivery where buysellno = #detail.buysellno  and glacct = '531000'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   	   -- select * from wksdelivery where glacct = '527500'
+
+
+
+   	  ,[Drop trailer] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '527500'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	   -- select * from wksdelivery where glacct = '510025' order by buysellno 
+
+
+
+	   -- select buysellno, count(*) from wksdelivery where glacct = '510025' group by buysellno having count(*) > 1 order by buysellno 
+
+
+
+   	  ,[Freight chargeback] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '510025'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	   -- select * from wksdelivery where buysellno = '57027' and glacct IN('511100', '0510025')
+
+
+
+	  ,[Freight Pass Through] = 
+
+	  --case when [Tons] = 0 then 0 
+
+	     -- 7/2/25
+
+		 --else ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = #detail.Buysellno and glacct = '511100'), 0.00)
+
+		 --else 
+
+		 ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = #detail.Buysellno and glacct IN('511100', '0510025')), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	   -- select SUM(cost) from wksdelivery where buysellno = '42902' and glacct = '510200'
+
+
+
+   	  ,[Freight-Brokerage] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = #detail.buysellno and glacct = '510200'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   	   -- select * from wksdelivery where glacct = '510210'
+
+
+
+   	  ,[Freight-brokerage-prior-adj] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = #detail.buysellno and glacct = '510210'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	   -- select * from wksdelivery where glacct = '510030'
+
+
+
+   	  ,[Freight-Plant-Outbound] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '510030'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+	    -- select * from wksdelivery where glacct = '510010'
+
+
+
+   	  ,[Freight-Prior Adj] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '510010'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+  	    -- select * from wksdelivery where glacct = '501200'
+
+
+
+   	  ,[Fuel Surcharge Recovery] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(ChgToCustAmt) from WksDelivery where buysellno = #detail.buysellno and glacct = '501200'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+    -- select * from wksdelivery where glacct = '530000'
+
+
+
+   	  ,[Handling] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '530000'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   --    select * from wksdelivery where glacct = '510031'
+
+
+
+   	  ,[Interco Freight-Plant-Outbound] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(Cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '510031'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   --    select * from wksdelivery where glacct = '400510'
+
+
+
+   	  ,[Intercompany Sales] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = #detail.buysellno and [source]= 'A' and AdjType = 'S' and glacct = '400510'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   --    select * from wksdelivery where glacct = '528700'
+
+
+
+   	  ,[Landfill] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(Cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '528700'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+  --    select * from wksdelivery where glacct = '520000'
+
+
+
+   	  ,[Layover] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '520000'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+ --    select * from wksdelivery where glacct = '500220'
+
+
+
+   	  ,[Lightweight Charge] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = #detail.buysellno  and glacct = '500220'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       
+
+	   --end
+
+
+
+ --    select * from wksdelivery where glacct = '414145'
+
+
+
+   	  ,[Ocean Freight] = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '510400'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   	  ,[Overweight Charge]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '500230'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+ --    select * from wksdelivery where glacct = '414200'
+
+
+
+   	  ,[Pallets]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = #detail.buysellno and [source]= 'A' and AdjType = 'S' and glacct = '414200'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+ --    select * from wksdelivery where glacct = '528200'
+
+
+
+   	  ,[Per Diem]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '528200'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+ --    select * from wksdelivery where glacct = '510320'
+
+
+
+   	  ,[Pre-pull/Yard pull]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '510320'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+   	  ,[Pricing Error]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = #detail.buysellno and [source]= 'A' and AdjType = 'S' and glacct = '414190'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+ --    select * from wksdelivery where glacct = '412000' - nothing found
+
+
+
+   	  ,[Quality Adjustment]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = #detail.buysellno and [source]= 'A' and AdjType = 'S' and glacct = '412000'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+ --    select * from wksdelivery where glacct = '532000'
+
+
+
+   	  ,[Redelivery Fee]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = #detail.buysellno and glacct = '532000'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+ --    select * from wksdelivery where glacct = '414185' - nothing found
+
+
+
+   	  ,[Rejection]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = #detail.buysellno and [source]= 'A' and AdjType = 'S' and glacct = '414185'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+--    select * from wksdelivery where glacct = '535200'
+
+
+
+   	  ,[Repo (Chassis or Container)]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '535200'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+--    select * from wksdelivery where glacct = '528400'
+
+
+
+   	  ,[Service]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '528400'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+--    select * from wksdelivery where glacct = '525000'
+
+
+
+   	  ,[Storage]  = 
+
+	  --case when [Tons] = 0 then 0 
+
+		 --else 
+
+		 ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '525000'), 0.00)
+
+		      * iif([Tons] > 0, [Tons], 1)/sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
+
+       --end
+
+
+
+  	    , [Purchases] = 
+
+		--case when [Tons] > 0 then 
+
+		(SELECT PSupplierCost from buysell where Buysellno = #detail.Buysellno) * iif([Tons] > 0, [Tons],1)/sum(iif(Tons > 0, Tons, 1)) 
+
+	     over (partition by #detail.Buysellno order by #detail.Buysellno) 
+
+		 --else 0 END 
+
+		 
+
+   	    -- select * from buysell where buysellno = '47725'
+
+
+
+		, [Purchase Adjs] = --case when [Tons] > 0 then 
+
+		(iif(tons >0, tons,1) * (SELECT PAdjustment from buysell where Buysellno = #detail.Buysellno))/sum(iif(Tons > 0, Tons, 1)) 
+
+	     over (partition by #detail.Buysellno order by #detail.Buysellno) 
+
+		 --else 0 END 
+
+
+
+		 ,[Purchase Expenses] = --case when [Tons] > 0 then 
+
+		 (iif(tons >0, tons,1) * (SELECT PFreightChg from buysell where Buysellno = #detail.Buysellno))/sum(iif(Tons > 0, Tons, 1)) 
+
+	     over (partition by #detail.Buysellno order by #detail.Buysellno) 
+
+		 --else 0 END 
+
+
+
+		, [Net Cost] = --case when [Tons] > 0 then 
+
+		(iif(tons >0, tons,1) * (SELECT (PAdjustment + PSupplierCost) from buysell where Buysellno = #detail.Buysellno))/sum(iif(Tons > 0, Tons, 1)) 
+
+	     over (partition by #detail.Buysellno order by #detail.Buysellno) 
+
+		 --else 0 END 
+
+
+
+		 -- select PAdjustment + PSupplierCost + PFreightChg from buysell where buysellno = ''
+
+		, [Total Cost] = --case when [Tons] > 0 then 
+
+		(iif(tons >0, tons,1) * (SELECT (PAdjustment + PSupplierCost + PFreightChg) from buysell where Buysellno = #detail.Buysellno))/sum(iif(Tons > 0, Tons, 1)) 
+
+	     over (partition by #detail.Buysellno order by #detail.Buysellno) 
+
+		 --else 0 END 
+
+
+
+		, [Net Sale] = --case when [Tons] > 0 then 
+
+		(iif(tons >0, tons,1) * (SELECT SBalanceDue from buysell where Buysellno = #detail.Buysellno))/sum(iif(Tons > 0, Tons, 1)) 
+
+	     over (partition by #detail.Buysellno order by #detail.Buysellno) 
+
+		 --else 0 END 
+
+
+
+		, [Commissions] = --case when [Tons] > 0 then 
+
+		(iif(tons >0, tons,1) * (SELECT (Commission1 + Commission2) from buysell where Buysellno = #detail.Buysellno))/sum(iif(Tons > 0, Tons, 1)) 
+
+	     over (partition by #detail.Buysellno order by #detail.Buysellno) 
+
+		-- else 0 END 
+
+
+
+		 -- SELECT Max(PaymentDt) FROM [Receipt] where Buysellno = '37547'
 
 
 
@@ -828,41 +1572,19 @@ SELECT
 
 
 
-		 -- ((SELECT SUM(amount) from receipt where buysellno = '74667') * 26.73)/107.310)
+	     ,[Amount Cash Received] = --case when [Tons] = 0 then 0 
+
+		                           --else 
+
+								   ((SELECT SUM(Amount) FROM [Receipt] where Buysellno = #detail.Buysellno) * [Tons])/
+
+								   (sum(iif(Tons > 0, Tons, 1)) over (partition by #detail.Buysellno order by #detail.Buysellno)) 
+
+								   --end
 
 
 
-	     --,[Amount Cash Received] = case when [TotalShippedWeight] = 0 then 0 
-
-		    --                       else ([Amount Cash Received] * [Tons])/ (TotalShippedWeight)
-
-			   --                    end
-
-
-
-	     ,[Amount Cash Received] 
-
-		 
-
-		 --= case when [Tons] = 0 then 0 
-
-		 --                          else ROUND(([Amount Cash Received] * [Tons])/ (sum(Tons) over (partition by #detail.Buysellno /*order by #detail.Buysellno*/)),2)
-
-			--                       end
-
-
-
-	     --,[Amount Cash Received] = case when [Tons] = 0 then 0 
-
-		    --                       else ROUND(ISNULL((SELECT SUM(Amount) FROM [Receipt] where Buysellno = #detail.Buysellno 
-
-						--		   and [PostingType] = 'CRE'), 0.00) * [Tons] / sum(Tons) over (partition by #detail.Buysellno order by #detail.Buysellno), 3)
-
-			   --                    end
-
-
-
-         ,ISNULL((SELECT [dbo].[CnvWksStatus_Name](ISNULL([Status],''),'') FROM Buysell where buysellno = #detail.Buysellno), '') [Status]
+        ,ISNULL((SELECT [dbo].[CnvWksStatus_Name](ISNULL([Status],''),'') FROM Buysell where buysellno = #detail.Buysellno), '') [Status]
 
 
 
@@ -870,15 +1592,11 @@ SELECT
 
 		, [Period] = [TransactionPeriod]
 
-
-
 		,(SELECT TradeType from buysell where buysellno = #detail.buysellno) TradeType
 
 
 
-
-
-		, CASE WHEN ShipFromid = '(CONTAINER)'THEN 'Yes'
+		, CASE WHEN ShipFromID = '(CONTAINER)' THEN 'Yes'
 
 		       ELSE 'No'  END ContainerSales
 
@@ -894,884 +1612,13 @@ SELECT
 
 		,[Sales Person 2]
 
-		, RcvBuySellNo
-
-		,TotalShippedWeight/2000 TotalShippedWeight
-
-		,ShipFromID
-			   
-
-     INTO #detail2
+    INTO #detail2
 
 	 FROM #detail 
 
-	 LEFT JOIN wksdetail on #detail.Rcvbuysellno = wksdetail.buysellno
 
-	 --left join container on #detail.buysellno = container.SaleBuySellNo
 
-
-
-	 -- container table may not have Purchase Receipt - packed container
-
-	 --update #detail2 set ContainerSales = 'Yes' where ShipFromID = '(CONTAINER)'      
-
-
-
-	 --SELECT * from #detail2
-
-
-
-	 --RETURN
-
-
-
-	SELECT BillCompany,CustomerID, CustDescript, [Shipped to Name],[Customer County], [Customer Zip]
-
-	       ,[Customer City], [Customer Street Address], Grade
-
-		   ,[Product Category] = (SELECT ProductCategoryID from grade where gradeid = Grade)
-
-		   ,[Product Group] = (SELECT ProductGroupID from grade where gradeid = Grade)
-
-		   ,[Grade Group] = (SELECT ProductGroupID from grade where gradeid = Grade)
-
-		   ,CietradeGradeName = (SELECT dbo.GetCietradeGradename([description])  from grade where gradeid= Grade)
-
-		   ,ItemDescription = (SELECT [description] from grade where gradeid = Grade)
-
-		   ,GradeName =(SELECT TRIM(grade.GradeID) + ' ' + '(' + trim(grade.Description)+')' from grade where gradeid =Grade)
-
-	                                              
-
-		   ,Unit, [Index], [Index_Value],[Delivery Term], [Load]
-
-		   ,[Reference #], Tons, SellPriceTon
-
-
-
-	       --,SalesAmountTotal = SalesAmountTotal*Tons/(Sum(IIF(Tons > 0, Tons,1)) over (partition by [load]))
-
-		   ,SalesAmountTotal = case when shipfromid = '(CONTAINER)' then SalesAmountTotal*Tons/(Sum(IIF(Tons > 0, Tons,1)) over (partition by [load]))
-
-		                       else SalesAmountTotal end
-
-		   ,PurchaseAmountTotal
-
-		   ,TotalShippedWeight
-
-
-
-
-
-	  ,[Bale Tags] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = [Load] and glacct = '528105'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end	  
-
-	  ,[Freight Plant Inbound] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = [Load] and glacct = '510020'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	  ,[Outbound Freight Cost on Load] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = [Load] and InvoiceDesc = 'Freight-Plant-Outbound'
-
-		           and IsFreight = 1), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-	  , [Outbound Freight Cost Allocated] = 0.00
-
-
-
-	   ,[Outbound Freight Cost Adjustment] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((SELECT SUM(Cost) FROM GPLedger where Buysellno = [Load] and [source] = 'A' 
-
-		      --and Glacct = '510020'
-
-		       and Adjreason like '%actually billed%'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-		 end 
-
-
-
-	   , [Open N/A] = 0.00
-
-
-
-	  ,[Freight Charge to Customer on Load] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((SELECT SUM(ChgToCustAmt) FROM Wksdelivery where Buysellno = [Load] 
-
-		           --and InvoiceDesc = 'Freight-Plant-Outbound'
-
-				   and SalesGLAcct = '400100' and IsFreight = 1), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	   ,[Freight Charge to Customer Allocated] = 0.00
-
-
-
-	   -- select * from wksdelivery where glacct = '500220' and buysellno = '47912'
-
-
-
-	  ,[Light Weight Deduction] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = [Load] 
-
-				   and GLAcct = '500220'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-      , [Sum of all out of original period adjustments] = case when [Tons] = 0 then 0 
-
-		else ROUND(ISNULL((SELECT SUM(Sale) FROM GPLedger where Buysellno = [Load]  
-
-		                  and [source] = 'A'
-
-		                  and Tradedt = (SELECT Invoicedt from buysell where Buysellno = [Load])), 0.00)
-
-		            * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-		end 
-
-
-
-	  ,[Bobtail] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '510310'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	  ,[BOL Fee] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '512000'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	   -- select * from gpledger where glacct = '414100' [source]= 'A' and AdjType = 'S' --  nothing found
-
-
-
-	   -- select * from wksdelivery where glacct = '535005'
-
-
-
-	  ,[Chassis Dray] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '535005'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-      -- select * from wksdelivery where glacct = '535000'
-
-
-
-   	  ,[Chassis Rental] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '535000'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-      -- select * from wksdelivery where glacct = '555515'
-
-
-
-   	  ,[Commissions Brokerage] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '555515'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-      -- select * from wksdelivery where glacct = '510500'
-
-
-
-   	  ,[Customs charges] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '510500'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	   -- select * from wksdelivery where glacct = '511000'
-
-
-
-   	  ,[Demurrage] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = [Load] and glacct = '511000'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-   	   -- select * from wksdelivery where glacct = '414120'
-
-	   -- select * from gpledger where glacct = '525005'
-
-
-
-   	  ,[Detention] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = [Load] and [source]= 'A' and AdjType = 'S' and glacct = '414120'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-   	  ,[Downgrade] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = [Load] and [source]= 'A' and AdjType = 'S' and glacct = '414180'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-   	   -- select * from wksdelivery where glacct = '531000'
-
-
-
-   	  ,[Drayage] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(ChgToCustAmt) from WksDelivery where buysellno = [Load]  and glacct = '531000'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-   	   -- select * from wksdelivery where glacct = '527500'
-
-
-
-   	  ,[Drop trailer] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '527500'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	   -- select * from wksdelivery where glacct = '510025' order by buysellno 
-
-
-
-	   -- select buysellno, count(*) from wksdelivery where glacct = '510025' group by buysellno having count(*) > 1 order by buysellno 
-
-
-
-   	  ,[Freight chargeback] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '510025'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	   -- select * from wksdelivery where buysellno = '57027' and glacct IN('511100', '0510025')
-
-
-
-	  ,[Freight Pass Through] = case when [Tons] = 0 then 0 
-
-	     -- 7/2/25
-
-		 --else ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = [Load] and glacct = '511100'), 0.00)
-
-		 else ROUND(ISNULL((SELECT SUM(Cost) FROM Wksdelivery where Buysellno = [Load] and glacct IN('511100', '0510025')), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	   -- select SUM(cost) from wksdelivery where buysellno = '42902' and glacct = '510200'
-
-
-
-   	  ,[Freight-Brokerage] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = [Load] and glacct = '510200'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-   	   -- select * from wksdelivery where glacct = '510210'
-
-
-
-   	  ,[Freight-brokerage-prior-adj] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = [Load] and glacct = '510210'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	   -- select * from wksdelivery where glacct = '510030'
-
-
-
-   	  ,[Freight-Plant-Outbound] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '510030'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-	    -- select * from wksdelivery where glacct = '510010'
-
-
-
-   	  ,[Freight-Prior Adj] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '510010'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-  	    -- select * from wksdelivery where glacct = '501200'
-
-
-
-   	  ,[Fuel Surcharge Recovery] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(ChgToCustAmt) from WksDelivery where buysellno = [Load] and glacct = '501200'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-    -- select * from wksdelivery where glacct = '530000' and buysellno = '65875'
-
-
-
-   	  ,[Handling] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '530000'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-   --    select * from wksdelivery where glacct = '510031'
-
-
-
-   	  ,[Interco Freight-Plant-Outbound] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(Cost) from WksDelivery where buysellno = [Load] and glacct = '510031'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-   --    select * from wksdelivery where glacct = '400510'
-
-
-
-   	  ,[Intercompany Sales] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = [Load] and [source]= 'A' and AdjType = 'S' and glacct = '400510'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-   --    select * from wksdelivery where glacct = '528700'
-
-
-
-   	  ,[Landfill] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(Cost) from WksDelivery where buysellno = [Load] and glacct = '528700'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-  --    select * from wksdelivery where glacct = '520000'
-
-
-
-   	  ,[Layover] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '520000'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
- --    select * from wksdelivery where glacct = '500220'
-
-
-
-   	  ,[Lightweight Charge] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = [Load]  and glacct = '500220'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
- --    select * from wksdelivery where glacct = '414145'
-
-
-
-   	  ,[Ocean Freight] = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '510400'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-
-
-       -- select * from wksdelivery where glacct = '500230'
-
-
-
-   	  ,[Overweight Charge]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '500230'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
- --    select * from wksdelivery where glacct = '414200'
-
-
-
-   	  ,[Pallets]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = [Load] and [source]= 'A' and AdjType = 'S' and glacct = '414200'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
- --    select * from wksdelivery where glacct = '528200'
-
-
-
-   	  ,[Per Diem]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '528200'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
- --    select * from wksdelivery where glacct = '510320'
-
-
-
-   	  ,[Pre-pull/Yard pull]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '510320'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-   	  ,[Pricing Error]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = [Load] and [source]= 'A' and AdjType = 'S' and glacct = '414190'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
- --    select * from wksdelivery where glacct = '412000' - nothing found
-
-
-
-   	  ,[Quality Adjustment]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = [Load] and [source]= 'A' and AdjType = 'S' and glacct = '412000'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
- --    select * from wksdelivery where glacct = '532000'
-
-
-
-   	  ,[Redelivery Fee]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from wksdelivery where buysellno = [Load] and glacct = '532000'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
- --    select * from wksdelivery where glacct = '414185' - nothing found
-
-
-
-   	  ,[Rejection]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(sale) from gpledger where buysellno = [Load] and [source]= 'A' and AdjType = 'S' and glacct = '414185'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
---    select * from wksdelivery where glacct = '535200'
-
-
-
-   	  ,[Repo (Chassis or Container)]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '535200'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
---    select * from wksdelivery where glacct = '528400'
-
-
-
-   	  ,[Service]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '528400'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
---    select * from wksdelivery where glacct = '525000'
-
-
-
-   	  ,[Storage]  = case when [Tons] = 0 then 0 
-
-		 else ROUND(ISNULL((select SUM(cost) from WksDelivery where buysellno = [Load] and glacct = '525000'), 0.00)
-
-		      * [Tons] /(sum(Tons) over (partition by [Load] order by [Load])), 3)
-
-       end
-
-
-
-  	    , [Purchases] = CASE WHEN [Tons] > 0 then 
-
-				             CASE WHEN (select distinct salebuysellno from #ContainerSales where salebuysellno = [Load]) 
-
-				                  IS NULL THEN (SELECT PSupplierCost from buysell 
-
-		                                           where Buysellno = [Load]) * [Tons]/sum(Tons) 
-
-	                                               over (partition by [Load] 
-
-												   order by [Load]) 
-
-                                  ELSE (SELECT PSupplierCost from buysell 
-
-		                                           where Buysellno = #detail2.RcvBuySellNo) * [Tons]/sum(Tons) 
-
-	                                               over (partition by #detail2.RcvBuySellNo
-
-												   order by #detail2.RcvBuySellNo) 
-
-								  END
-
-					   ELSE 0 END 
-
-		 
-
-   	    -- select * from buysell where buysellno = '47725'
-
-
-
-  	    , [Purchase Adjs] = CASE WHEN [Tons] > 0 then 
-
-				             CASE WHEN (select distinct salebuysellno from #ContainerSales where salebuysellno = [Load]) 
-
-				                  IS NULL THEN (SELECT PAdjustment from buysell 
-
-		                                           where Buysellno = [Load]) * [Tons]/sum(Tons) 
-
-	                                               over (partition by [Load] 
-
-												   order by [Load]) 
-
-                                  ELSE (SELECT PAdjustment from buysell 
-
-		                                           where Buysellno = #detail2.RcvBuySellNo) * [Tons]/sum(Tons) 
-
-	                                               over (partition by #detail2.RcvBuySellNo
-
-												   order by #detail2.RcvBuySellNo) 
-
-								  END
-
-					   ELSE 0 END 
-
-
-
- 	    , [Purchase Expenses] = CASE WHEN [Tons] > 0 then 
-
-				                CASE WHEN (select distinct salebuysellno from #ContainerSales where salebuysellno = [Load]) 
-
-				                  IS NULL THEN (SELECT PFreightChg from buysell 
-
-		                                           where Buysellno = [Load]) * [Tons]/sum(Tons) 
-
-	                                               over (partition by [Load] 
-
-												   order by [Load]) 
-
-                                  ELSE (SELECT PFreightChg from buysell 
-
-		                                           where Buysellno = #detail2.RcvBuySellNo) * [Tons]/sum(Tons) 
-
-	                                               over (partition by #detail2.RcvBuySellNo
-
-												   order by #detail2.RcvBuySellNo) 
-
-								  END
-
-					   ELSE 0 END 
-
-
-
- 	    , [Net Cost] = CASE WHEN [Tons] > 0 then 
-
-				             CASE WHEN (select distinct salebuysellno from #ContainerSales where salebuysellno = [Load]) 
-
-				                  IS NULL THEN (SELECT (PAdjustment + PSupplierCost) from buysell 
-
-		                                           where Buysellno = [Load]) * [Tons]/sum(Tons) 
-
-	                                               over (partition by [Load] 
-
-												   order by [Load]) 
-
-                                  ELSE (SELECT (PAdjustment + PSupplierCost) from buysell 
-
-		                                           where Buysellno = #detail2.RcvBuySellNo) * [Tons]/sum(Tons) 
-
-	                                               over (partition by #detail2.RcvBuySellNo
-
-												   order by #detail2.RcvBuySellNo) 
-
-								  END
-
-					   ELSE 0 END 
-
-
-
-  	    , [Total Cost] = CASE WHEN [Tons] > 0 then 
-
-				             CASE WHEN (select distinct salebuysellno from #ContainerSales where salebuysellno = [Load]) 
-
-				                  IS NULL THEN (SELECT (PAdjustment + PSupplierCost + PFreightChg) from buysell 
-
-		                                           where Buysellno = [Load]) * [Tons]/sum(Tons) 
-
-	                                               over (partition by [Load] 
-
-												   order by [Load]) 
-
-                                 ELSE (SELECT (PAdjustment + PSupplierCost + PFreightChg) from buysell 
-
-		                                           where Buysellno = #detail2.RcvBuySellNo) * [Tons]/sum(Tons) 
-
-	                                               over (partition by #detail2.RcvBuySellNo
-
-												   order by #detail2.RcvBuySellNo) 
-
-								  END
-
-					   ELSE 0 END 
-
-
-
-  	    , [Net Sale] = CASE WHEN [Tons] > 0 then 
-
-				             CASE WHEN (select distinct salebuysellno from #ContainerSales where salebuysellno =[Load]) 
-
-				                  IS NULL THEN (SELECT SBalanceDue from buysell 
-
-		                                           where Buysellno = [Load]) * [Tons]/sum(Tons) 
-
-	                                               over (partition by [Load] 
-
-												   order by [Load]) 
-
-                                  ELSE (SELECT SBalanceDue from buysell 
-
-		                                           where Buysellno = [Load]) * [Tons]/sum(Tons) 
-
-	                                               over (partition by [Load]
-
-												   order by #detail2.RcvBuySellNo) 
-
-								  END
-
-					   ELSE 0 END 
-
-
-
-  	    , [Commissions] = CASE WHEN [Tons] > 0 then 
-
-				             CASE WHEN (select distinct salebuysellno from #ContainerSales where salebuysellno = [Load]) 
-
-				                  IS NULL THEN (SELECT (Commission1 + Commission2) from buysell 
-
-		                                           where Buysellno = [Load]) * [Tons]/sum(Tons) 
-
-	                                               over (partition by [Load] 
-
-												   order by [Load]) 
-
-                                  ELSE (SELECT (Commission1 + Commission2) from buysell 
-
-		                                           where Buysellno = #detail2.RcvBuySellNo) * [Tons]/sum(Tons) 
-
-	                                               over (partition by #detail2.RcvBuySellNo
-
-												   order by #detail2.RcvBuySellNo) 
-
-								  END
-
-					   ELSE 0 END 
-
-		   
-
-
-
-		   
-
-		   , [Cash Received Date], [Amount Cash Received], [Status], Logistics, [Period],[TradeType]
-
-		   ,[ContainerSales], [Sales Person 1], [Sales Person 2], [Rcvbuysellno]
-
-
-
-	into #detail2a
-
-
-
-	FROM #detail2 
-
-
-
-	--select * from #detail2a
-
-
+	--SELECT * FROM #detail2
 
 	--RETURN
 
@@ -1779,7 +1626,7 @@ SELECT
 
 
 
-SELECT #detail2a.[BillCompany]
+SELECT #detail2.[BillCompany]
 
       ,[CustomerID]
 
@@ -1795,25 +1642,19 @@ SELECT #detail2a.[BillCompany]
 
       ,[Customer Street Address]
 
-      ,[Product Category] = ISNULL((SELECT ProductCategoryID from grade where gradeid = [Grade]), '')
+      ,[Product Category]
 
-      ,[Product Group] = ISNULL((SELECT ProductGroupID from grade where gradeid = [Grade]), '')
+      ,[Product Group]
 
-      ,[Grade Group] = ISNULL((SELECT ProductGroupID from grade where gradeid = [Grade]), '')
+      ,[Grade Group]
 
-      ,[CietradeGradeName] = ISNULL((SELECT [dbo].[GetCietradeGradeName](grade.Description) FROM grade where gradeid = [Grade]), '')
+      ,#detail2.[CietradeGradeName]
 
-	   
-
-	   --#detail2.[CietradeGradeName] 
-
-
-
-      ,[ItemDescription] = ISNULL((SELECT grade.Description FROM grade where gradeid = [Grade]), '')
+      ,[ItemDescription]
 
       ,[Grade]
 
-      ,[GradeName] = ISNULL((SELECT TRIM(grade.GradeID) + ' ' + '(' + trim(grade.Description)+')' FROM grade where gradeid = [Grade]), '')
+      ,[GradeName]
 
       ,[Unit]
 
@@ -1832,6 +1673,8 @@ SELECT #detail2a.[BillCompany]
       ,[SellPriceTon]
 
       ,[SalesAmountTotal]
+
+	  ,[SalesAmountTotal2]
 
       ,[Bale Tags]
 
@@ -1875,7 +1718,7 @@ SELECT #detail2a.[BillCompany]
 
       ,[Drop trailer]
 
-  ,[Freight chargeback]
+      ,[Freight chargeback]
 
       ,[Freight Pass Through]
 
@@ -1933,11 +1776,13 @@ SELECT #detail2a.[BillCompany]
 
       ,[Logistics]
 
-      ,#detail2a.[Period]
+      ,#detail2.[Period]
 
       ,[TradeType]
 
       ,ContainerSales
+
+	  , 
 
 
 
@@ -1945,13 +1790,7 @@ SELECT #detail2a.[BillCompany]
 
 
 
-	  ,case when ContainerSales = 'Yes' then [Purchases]
-
-	        else [PurchaseAmountTotal] END [Purchases]
-
-
-
-	  --[Purchases] = [PurchaseAmountTotal]
+	  [Purchases] = [PurchaseAmountTotal]
 
 	  --+ [Purchase Adjs]
 
@@ -1983,6 +1822,10 @@ SELECT #detail2a.[BillCompany]
 
 	  ,[Weight] = [Tons]
 
+	  ,[Gross Profit]
+
+
+
 	  --, CASE when ContainerSales = 'Yes' then (SELECT ROUND(SUM(PWeight)/2000, 3) 
 
 	  --            from wksdetail join #ContainerSales ON RcvBuysellNo = wksdetail.Buysellno
@@ -1993,45 +1836,21 @@ SELECT #detail2a.[BillCompany]
 
 
 
-      , [Container Purchase] = case when ContainerSales = 'Yes' then (select container.RcvBuysellno from container 
+      , [Container Purchase] = case when ContainerSales = 'Yes' then (select top(1) container.RcvBuysellno from container 
 
-	                           where Rcvbuysellno = #detail2a.RcvBuysellno)  
-
-							   else 'No' END 
+	                           where salebuysellno = [Load])  else 'No' END 
 
 
 
-      --, [Container Purchase] = case when ContainerSales = 'Yes' then (select top(1) container.RcvBuysellno from container 
-
-	     --                      where salebuysellno = [Load])  else 'No' END 
+      -- (select top(1) container.RcvBuysellno from container where salebuysellno = '83336')
 
 
 
-	  , [Supplier id] = case when ContainerSales = 'Yes' then
+	  , [Supplier id] = case when ContainerSales = 'Yes' then (SELECT buysell.vendorid from buysell where buysellno in 
 
-	                         case when RcvBuysellno <> '' then (SELECT buysell.vendorid from buysell 
+	                    (select top(1) container.RcvBuysellno from container where salebuysellno = [Load]))
 
-	                              where buysellno = #detail2a.RcvBuysellno)
-
-							 else 'Packed' end
-
-	                    else (Select buysell.VendorID from buysell where buysellno = [load]) end
-
-
-
-	  --, [Supplier id] = case when ContainerSales = 'Yes' then (SELECT buysell.vendorid from buysell 
-
-	  --                 where buysellno = #detail2a.RcvBuysellno)
-
-	  --       else (Select buysell.VendorID from buysell where buysellno = [load]) end
-
-
-
-	  --, [Supplier id] = case when ContainerSales = 'Yes' then (SELECT buysell.vendorid from buysell where buysellno in 
-
-	  --                 (select top(1) container.RcvBuysellno from container where salebuysellno = [Load]))
-
-	  --       else (Select buysell.VendorID from buysell where buysellno = [load]) end
+	         else (Select buysell.VendorID from buysell where buysellno = [load]) end
 
      
 
@@ -2061,39 +1880,15 @@ SELECT #detail2a.[BillCompany]
 
 
 
-
-
-   -- select top(10) * from container where rcvbuysellno is null
-
-   -- SELECT referrerno2,* FROM buysell where buysellno = '65875'   
-
-
-
 	    ,[Sales Person 2] = case when ContainerSales = 'Yes' then
 
-		                         case when #detail2a.RcvBuySellNo <> '' then ISNULL((SELECT [name] from referrer where referrerNo =(SELECT referrerNo2 from buysell 
+        (SELECT string_agg([name],', ') from referrer where ReferrerNo in (
 
-			                               where buysellno = #detail2a.RcvBuySellNo)), '')
+        select distinct referrerNo2 from buysell inner join container 
 
-		                         else ISNULL([Sales Person 2], '') end
+        on buysell.buysellno = container.RcvBuySellNo where container.SaleBuySellNo = [Load]))
 
-                            else (SELECT [name] from referrer where referrerNo = (SELECT referrerNo2 from buysell 
-
-			                               where buysellno = [load])) end
-
-
-
-
-
-	 --   ,[Sales Person 2] = case when ContainerSales = 'Yes' then
-
-  --      (SELECT string_agg([name],', ') from referrer where ReferrerNo in (
-
-  --      select distinct referrerNo2 from buysell inner join container 
-
-  --      on buysell.buysellno = container.RcvBuySellNo where container.SaleBuySellNo = [Load]))
-
-		--else [Sales Person 2] end
+		else [Sales Person 2] end
 
 
 
@@ -2113,15 +1908,9 @@ SELECT #detail2a.[BillCompany]
 
 
 
-  FROM #detail2a
+  FROM #detail2
 
-left join #r25 ON #detail2a.BillCompany = #r25.[Company] and #detail2a.[Period] = #r25.[Period] 
-
-and (SELECT [dbo].[GetCietradeGradeName](grade.Description) FROM grade where gradeid = [Grade]) = #r25.CietradeGradeName
-
-
-
---and #detail2.CietradeGradeName = #r25.CietradeGradeName
+left join #r25 ON #detail2.BillCompany = #r25.[Company] and #detail2.[Period] = #r25.[Period] and #detail2.CietradeGradeName = #r25.CietradeGradeName
 
 
 
@@ -2131,173 +1920,35 @@ ORDER BY 1,2
 
 	--SELECT * FROM #detail3
 
-
-
 	--RETURN
 
 
 
+-- SELECT * FROM tblCietradeGP_Test2
 
 
--- 9/10/25
 
---ALTER TABLE tblCietradeGP
+-- SELECT count(*) FROM tblCietradeGP_Test2
 
---ALTER COLUMN [Sales Person 2] [varchar](60)
 
 
 
 
+-- SELECT * FROM tblCietradeGP_Test2 where [load] = '121786'
 
- --SELECT load,count(*) from tblCietradeGP 
+-- SELECT * FROM tblCietradeGP_Test2 where [load] = '121784'
 
- --where Containersales = 'Yes'
 
- --group by load
 
- --having count(*) > 1 
 
 
 
 
+TRUNCATE TABLE tblCietradeGP_Test2
 
---SELECT * from tblCietradeGP_Test where load = '65875'
 
 
-
---SELECT * from tblCietradeGP where load = '65875'
-
-
-
---SELECT * from tblCietradeGP_Test where load = '95634'
-
-
-
---SELECT * from tblCietradeGP where load = '95634'
-
-
-
- --SELECT * from tblCietradeGP_Test where load = '74667'
-
-
-
- --SELECT * from tblCietradeGP where load = '74667'
-
-
-
- --SELECT salesamounttotal, purchases,* from tblCietradeGP_Test where load = '39681'
-
-
-
- --SELECT * from tblCietradeGP where load = '39681'
-
-
-
- --SELECT * from tblCietradeGP_Test where load = '79717'
-
-
-
- --SELECT * from tblCietradeGP where load = '79717'
-
-
-
-
-
- --SELECT * from tblCietradeGP_Test where containersales = 'No' and [gross profit] > 0
-
- --order by load desc --load = '74667'
-
-
-
---SELECT * from tblCietradeGP_Test where [load] = '47284' --'91368' 
-
---except
-
---SELECT * from tblCietradeGP where [load] = '47284' --'91368'   
-
-
-
---select tons, totalmoney*tons/totaltons
-
---from
-
---(SELECT tons, 
-
--- sum(tons) over (partition by load) totaltons
-
--- , sum([Amount Cash Received]) over (partition by load) totalmoney
-
--- , [Amount Cash Received],load from tblCietradeGP_Test 
-
--- where load = '74667') a1
-
-
-
---'79297' --'47912'
-
-
-
- --SELECT * from tblCietradeGP where load = '47912'
-
-
-
- --SELECT * from tblCietradeGP_test where load = '47912'
-
-
-
- --SELECT * from tblCietradeGP_test where load = '92344'
-
-
-
-  --SELECT * from tblCietradeGP_test where load = '92344'
-
-
-
- --SELECT * from tblCietradeGP_test where load = '65875'
-
-
-
- --SELECT * from tblCietradeGP_test where load = '40133'
-
-
-
- --SELECT top(10) * from tblCietradeGP_test where containersales = 'Yes'
-
-
-
- --SELECT [load], supplier, count(*) from tblCietradeGP_test where containersales = 'Yes'
-
- --group by [load], supplier having count(*) > 1
-
- --order by 1,2
-
-
-
- --SELECT * from tblCietradeGP where load = '65875'
-
-
-
- --SELECT * from tblCietradeGP_test  where load = '90314'
-
-
-
- --SELECT * from tblCietradeGP_test  where load = '40133'
-
-
-
--- select * from buysell where buysellno = '47912'
-
-
-
--- select * from buysell where buysellno = '74667'
-
-
-
-TRUNCATE TABLE tblCietradeGP_Test
-
-
-
-INSERT tblCietradeGP_Test
+INSERT tblCietradeGP_Test2
 
 
 
@@ -2317,19 +1968,19 @@ SELECT [BillCompany]
 
       ,[Customer Street Address]
 
-      ,ISNULL([Product Category], '')
+      ,[Product Category]
 
-      ,ISNULL([Product Group], '')
+      ,[Product Group]
 
-      ,ISNULL([Grade Group], '')
+      ,[Grade Group]
 
-      ,ISNULL([CietradeGradeName], '')
+      ,[CietradeGradeName]
 
-      ,ISNULL([ItemDescription], '')
+      ,[ItemDescription]
 
       ,[Grade]
 
-      ,ISNULL([GradeName], '')
+      ,[GradeName]
 
       ,[Unit]
 
@@ -2342,12 +1993,6 @@ SELECT [BillCompany]
       ,[Load]
 
       ,[Reference #]
-
-
-
-	  -- select * from buysell where buysellno = '41357'
-
-	  -- select * from wksdetail where buysellno = '41357'
 
 
 
@@ -2455,15 +2100,7 @@ SELECT [BillCompany]
 
       ,[Cash Received Date]
 
-
-
-      ,[Amount Cash Received] = case when [Weight] = 0 then 0
-
-                                       else [Amount Cash Received] * [weight]/
-
-									   sum([weight]) over (partition by [load] order by [load]) END
-
-
+      ,[Amount Cash Received]
 
       ,[Status]
 
@@ -2481,25 +2118,27 @@ SELECT [BillCompany]
 
       ,[Weight]
 
-      ,[Gross Profit] = [SalesAmountTotal] - [Total cost]
 
-	  --case when [Weight] = 0 then 0 
 
-	  --                  else (([SalesAmountTotal] - [Total cost]) * [weight])/ (sum([weight]) over (partition by [load] order by [load])) END--[Purchases]
+      --,[Gross Profit] 
+
+
+
+	  ,[Gross Profit] = [SalesAmountTotal2] - [Total cost]
 
 
 
       ,[Gross Profit Per ST] = case when [Weight] = 0 then 0
 
-                                       else ROUND(([SalesAmountTotal] - [Total cost])/[Weight],3) * [weight]/
+                                       else ROUND(([SalesAmountTotal2] - [Total cost])/[Weight],3) * [weight]/
 
-									   (sum([weight]) over (partition by [load] order by [load])) END
+									   sum([weight]) over (partition by [load] order by [load]) END
+
+
 
 		,[Supplier id]
 
-		,[Supplier] = case when [Supplier id] = 'Packed' then 'Packed'
-
-		                  else (SELECT Companynm from Counterparty where cpid = [Supplier id]) end
+		,[Supplier] = (SELECT Companynm from Counterparty where cpid = [Supplier id])
 
 		,[ShipFrom ID] = case when [Container Purchase] <> 'No' then (SELECT ShipFromId FROM Buysell where Vendorid = [Supplier id] and buysellno = [Container Purchase])
 
@@ -2515,6 +2154,8 @@ SELECT [BillCompany]
 
 
 
+--INTO tblCietradeGP
+
 FROM #detail3 
 
 
@@ -2522,6 +2163,8 @@ FROM #detail3
 INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
 
 
+
+--END
 
 
 
@@ -2555,19 +2198,15 @@ BEGIN CATCH
 
 
 
-	--DECLARE @subject_Text VARCHAR(100) = 'cdb_Wilmington database ' + @ProcedureName + ' procedure failed'
+    EXEC msdb.dbo.sp_send_dbmail
 
+    @profile_name = 'Wilmington_Email',
 
+    @recipients = 'iraspin@wilmingtonpaper.com',
 
- --   EXEC msdb.dbo.sp_send_dbmail
+    @subject = 'cdb_Wilmington database cw_SalesByCustomerProduct2CietradeAllStatuses procedure failed',
 
- --   @profile_name = 'Wilmington_Email',
-
- --   @recipients = 'iraspin@wilmingtonpaper.com',
-
- --   @subject = @subject_Text,
-
- --   @body = 'Troubleshoot cdb_Wilmington database ' + @ProcedureName + 'procedure on server WPGTESTSQL' 
+    @body = 'Troubleshoot cdb_Wilmington database cw_SalesByCustomerProduct2CietradeAllStatuses procedure on server WPGTESTSQL' 
 
 
 
@@ -2576,10 +2215,6 @@ END CATCH;
 
 
 END
-
-
-
-
 
 
 

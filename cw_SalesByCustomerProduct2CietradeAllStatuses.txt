@@ -490,35 +490,13 @@ SELECT
 
 
 
-
-
-	-- select * from buysell where buysellno = '47725'
-
-	-- select * from wksdetail where buysellno = '47725'
-
-
-
 	,[PurchaseAmountTotal] = case when wksdetail.PWeight = 0 then 0 
 
 		        else sum(Pamount) over (partition by wksdetail.BuySellNo, wksdetail.detailid 
 
 				  ORDER BY wksdetail.BuySellNo, wksdetail.detailid) 
 
-				--((buysell.PSupplierCost + PAdjustment + Pfreightchg) * wksdetail.PWeight) /(sum(wksdetail.PWeight) 
-
-				--	over (partition by buysell.BuySellNo ORDER BY buysell.BuySellNo)) 
-
-                    end
-
-
-
-	--,PAmount = case when wksdetail.PWeight = 0 then 0 
-
-	--                else ((buysell.PSupplierCost + PAdjustment + Pfreightchg) * wksdetail.PWeight) /(sum(wksdetail.PWeight) 
-
-	--				over (partition by buysell.BuySellNo ORDER BY buysell.BuySellNo)) 
-
- --                   end
+                 end
 
 
 
@@ -594,6 +572,8 @@ where
 
 	and (BuySell.CustID <> '(OTHER)' AND BuySell.CustID <> '(INV)')
 
+
+
 	AND (IsNull(IsAgency,0) <> 1)		--worksheets where products dont count on financials.
 
 
@@ -601,6 +581,12 @@ where
 	-- 12/11/25
 
 	--and buysell.BuySellNo = '82505'
+
+
+
+	-- 2/9/26
+
+	--and buysell.BuySellNo = '121786'
 
 
 
@@ -1303,6 +1289,7 @@ SELECT
        end
 
 
+
 --    select * from wksdelivery where glacct = '528400'
 
 
@@ -1785,6 +1772,12 @@ ORDER BY 1,2
 
 
 
+--SELECT [SalesAmountTotal2] - [Total cost],* FROM #detail3
+
+--RETURN
+
+
+
 
 
 TRUNCATE TABLE tblCietradeGP
@@ -1915,7 +1908,7 @@ SELECT [BillCompany]
 
       ,[Interco Freight-Plant-Outbound]
 
-  ,[Intercompany Sales]
+      ,[Intercompany Sales]
 
       ,[Landfill]
 

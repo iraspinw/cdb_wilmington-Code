@@ -180,6 +180,10 @@ CREATE TABLE #detail(
 
 	,shipFromid [char](45) 
 
+	,[SalesAmountTotal2] money
+
+	,[PurchaseAmountTotal2] money
+
 
 
 )
@@ -287,6 +291,7 @@ SELECT [CieTradeGradeName]
 	  INTO #r24
 
   FROM [cdb_Wilmington].[dbo].[CietradeGradeNameIndexes]
+
 
 
    SELECT 
@@ -451,6 +456,36 @@ SELECT
 
 
 
+	,[SalesAmountTotal2] = 
+
+	--case when wksdetail.sweight = 0 then 0 
+
+	                --else 
+
+	isnull(((buysell.SalesAmt + Sadjustment + Sfreightchg) * iif(isnull(wksdetail.sweight, 0)>0, wksdetail.sweight,1)
+
+	) /(sum(iif(isnull(wksdetail.sweight, 0) > 0,wksdetail.sweight,1) ) 
+
+	over (partition by buysell.BuySellNo ORDER BY buysell.BuySellNo)),0)
+
+                    --end
+
+                --end
+
+
+
+	,[PurchaseAmountTotal2] = --case when wksdetail.PWeight = 0 then 0 
+
+	                --else 
+
+					((buysell.PSupplierCost + PAdjustment + Pfreightchg) * iif(isnull(wksdetail.PWeight,0)>0, wksdetail.PWeight,1) ) /(sum(iif(isnull(wksdetail.PWeight,0) > 0, wksdetail.PWeight,1)) 
+
+					over (partition by buysell.BuySellNo ORDER BY buysell.BuySellNo)) 
+
+                   --end
+
+
+
 from BuySell
 
 
@@ -503,7 +538,11 @@ where
 
 
 
+	--2/9/26
+
 	and (BuySell.CustID <> '(OTHER)' AND BuySell.CustID <> '(INV)')
+
+
 
 	AND (IsNull(IsAgency,0) <> 1)		--worksheets where products dont count on financials.
 
@@ -523,7 +562,7 @@ where
 
 
 
-   --and buysell.buysellno = '106896'
+   --and buysell.buysellno = '121786'
 
 
 
@@ -1253,7 +1292,7 @@ SELECT
 
    	  ,[Landfill Expense] = ISNULL((select SUM(Cost) from WksDelivery where buysellno = #detail.buysellno and glacct = '528700'
 
-		      and cost > 0) * (iif([Tons]>0,[Tons],1)) /
+		  and cost > 0) * (iif([Tons]>0,[Tons],1)) /
 
 			  (sum(iif(abs([Tons])> 0, [Tons],1)) over (partition by #detail.Buysellno order by #detail.Buysellno)), 0.00)
 
@@ -1697,7 +1736,7 @@ SELECT
 
 
 
-      	  ,[Sales Tax Paid]  = ISNULL((select SUM(Sale) from gpledger where buysellno = #detail.buysellno 
+      	 ,[Sales Tax Paid]  = ISNULL((select SUM(Sale) from gpledger where buysellno = #detail.buysellno 
 
 			  and glacct = '810000') * (iif([Tons]>0,[Tons],1)) /
 
@@ -1721,7 +1760,7 @@ SELECT
 
  
 
- ,[Sales-Brokerage-Prior Adj]  = ISNULL((select SUM(Sale) from gpledger where buysellno = #detail.buysellno 
+           ,[Sales-Brokerage-Prior Adj]  = ISNULL((select SUM(Sale) from gpledger where buysellno = #detail.buysellno 
 
 			  and glacct = '400210') * (iif([Tons]>0,[Tons],1)) /
 
@@ -2033,7 +2072,7 @@ SELECT #detail2.[BillCompany]
 
       ,[Outbound Freight Cost Allocated]
 
-    ,[Outbound Freight Cost Adjustment]
+      ,[Outbound Freight Cost Adjustment]
 
       ,[Open N/A Pass Through]
 
@@ -2215,7 +2254,7 @@ SELECT #detail2.[BillCompany]
 
                                          [BOL Fee Expense]+[Chassis Dray Expense]+[Chassis Rental Expense]+
 
-                        [Commissions Brokerage Expense]+[Customs charges Expense]+[Demurrage Expense]+
+                                         [Commissions Brokerage Expense]+[Customs charges Expense]+[Demurrage Expense]+
 
                                          [Detention Expense]+[Drayage Expense]+[Drop trailer Expense]+[Handling Expense]+
 
@@ -2587,7 +2626,7 @@ SELECT #detail2.[BillCompany]
 
 
 
-           ,[Sales-Prior Adj]  
+       ,[Sales-Prior Adj]  
 
 
 
@@ -2651,7 +2690,7 @@ ORDER BY 1,2
 
 
 
--- SELECT * FROM tblCietradeGP_extended where load = '106896'
+-- SELECT * FROM tblCietradeGP_extended where load = '121786'
 
 
 
