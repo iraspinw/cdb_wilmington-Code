@@ -26,6 +26,8 @@
 
 -- 2/9/26 Include adjustment loads (with no tonnage)
 
+-- 2/10/26 Ticket #1321673
+
 
 
 -- Requested for Daily reporting, By T.Topp on 6/9/25, scheduled as a job on 6/9/25
@@ -234,7 +236,7 @@ DROP TABLE #ContainerSales
 
 SELECT c1.RcvBuySellNo
 
-      ,c1.SaleBuySellNo
+ ,c1.SaleBuySellNo
 
 	  ,c1.ContainerNo
 
