@@ -44,6 +44,10 @@ BEGIN
 
 
 
+-- EXEC sp_helptext 'cw_SalesByCustomerProduct'
+
+
+
 -- Optional: Create error log table before running
 
 IF OBJECT_ID('tempdb..#CursorErrorLog') IS NOT NULL
@@ -72,17 +76,23 @@ DECLARE @Data TABLE ([Id] INT IDENTITY(1,1), [FileName] VARCHAR(255));
 
 
 
+
+
+-- select top(10) * from sys.objects where name = 'cw_SalesByCustomerProduct'
+
+
+
 INSERT INTO @Data ([FileName])
 
-	SELECT DISTINCT [name] COLLATE SQL_Latin1_General_CP1_CI_AS 
+	SELECT DISTINCT o.[name] COLLATE SQL_Latin1_General_CP1_CI_AS 
 
 	FROM sys.sql_modules m
 
-	INNER JOIN sys.objects o ON m.object_id=o.object_id
+	INNER JOIN sys.objects o ON m.object_id = o.object_id
 
-	where [name] = @FileToCheck --'cw_SalesByCustomerProduct'
+	where o.[name] = @FileToCheck --'dbo.cw_SalesByCustomerProduct'
 
-	order by [name];
+	order by o.[name];
 
 
 
@@ -116,7 +126,7 @@ BEGIN
 
     print @Cmd
 
-    return
+    --return
 
 
 
