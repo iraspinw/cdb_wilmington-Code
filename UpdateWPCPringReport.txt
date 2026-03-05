@@ -2,7 +2,7 @@
 
 
 
-CREATE   PROCEDURE UpdateWPCPringReport
+CREATE   PROCEDURE [dbo].[UpdateWPCPringReport]
 
 
 
