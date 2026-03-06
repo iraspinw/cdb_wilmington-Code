@@ -80,7 +80,7 @@ INSERT INTO @Data ([FileName])
 
 	INNER JOIN sys.objects o ON m.object_id=o.object_id
 
-	where left(name,6) in ('cw_sal','rptPur', 'update', 'export')
+	where left(name,6) in ('cw_sal','rptPur', 'update', 'export', 'cw_get')
 
 	order by [name];
 
