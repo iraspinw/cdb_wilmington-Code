@@ -1,0 +1,31 @@
+CREATE PROC [dbo].[cw_GetAccountDescList]
+
+	@GLAccount varchar(12)
+
+AS
+
+
+
+--07/06/2023 Nick: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT
+
+		rtrim(GLAccount.Name) as GLAcctName,
+
+		GLAccount.LockDescription,
+
+		GLDescriptions.AcctDesc
+
+	FROM GLAccount
+
+	LEFT JOIN GLDescriptions ON GLAccount.GLAcct = GLDescriptions.AcctNo
+
+	WHERE GLAccount.GLAcct = @GLAccount
