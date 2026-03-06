@@ -1,0 +1,16 @@
+CREATE PROC [dbo].[cw_GetCounterpartyGroups]  
+
+ AS  
+
+ --09/22/2014 MCM: Created  
+
+ SET NOCOUNT ON;  
+
+ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;  
+
+   
+
+ SELECT RTRIM(GroupNm) AS GroupNm FROM ReportGroup  
+
+ 
+

@@ -1,0 +1,505 @@
+
+
+-- 10/31/24 I.R.
+
+-- Get current and previous pricing and weights, add National Account
+
+
+
+-- Ticket# 11688261
+
+-- Scheduled as a job
+
+-- 11/13/24
+
+-- [dbo].[cw_GetContractPrices2NA] '', '', '', 'P', '', '','', '', ''
+
+
+
+--SOs
+
+-- [dbo].[cw_GetContractPrices2NA] '', '', '', 'S', '', '','', '', ''
+
+
+
+--POs
+
+
+
+-- [dbo].[cw_GetContractPrices2NA] '', '01', '', 'P', '', '','', '', '' -- RMR Atlanta
+
+
+
+-- [dbo].[cw_GetContractPrices2NA] '', '04', '', 'P', '', '','', '', '' -- RMR Central Carolina
+
+
+
+-- [dbo].[cw_GetContractPrices2NA] '', '10', '', 'P', '', '','', '', '' -- RMR Haw River
+
+
+
+-- [dbo].[cw_GetContractPrices2NA] '', '07', '', 'P', '', '','', '', '' -- RMR Raleigh
+
+
+
+-- Scheduled
+
+-- [dbo].[cw_GetContractPrices2NA] '', '', '', 'P', '', '','', '', ''   -- All Plants
+
+
+
+
+
+CREATE PROCEDURE [dbo].[cw_GetContractPrices2NA] 
+
+
+
+	@SupplierID varchar(12),
+
+	@COID char(2),
+
+	@GradeID char(15), 
+
+	@SourceType char(1), 
+
+	@ReferrerNo char(10),
+
+	@OrderType char(1),
+
+	@PriceConfirmed char(1) = '',
+
+	@SortBy varchar(25) = '',
+
+	@SortDir varchar(6) = ''
+
+AS
+
+BEGIN
+
+
+
+SET NOCOUNT ON
+
+--11/05/2015 MEC: Copied and altered for cieTrade.net
+
+--08/23/2016 DSH Exclude Formula Prices 
+
+--01/10/2016 DSH Updated and cleaned up report filtering/bugs. 
+
+--01/04/2018 MN: Added Index Formula Name'
+
+--09/24/2020 DSH Added Confirmed Price Filter.
+
+--10/10/2022 Nick: Sales Price Index Purchase Orders are now excluded from the Order List
+
+--03/13/2022 ZT: Added [.] column for confirmed checkmark
+
+--03/13/2023 Nick: Added Previous Price functionality
+
+--3/15/2023 MEC: Correct PriceConfirmed Filter bug
+
+
+
+-- SELECT * FROM tblContractPricesNA where [Order No] in ('97933', '97934', '97517')
+
+
+
+-- SELECT * FROM tblContractPricesNA order by [Period] desc
+
+
+
+DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+
+
+	CREATE TABLE #OrderList(	
+
+		PO_ID INT, 
+
+		PONumber CHAR(15),
+
+		ShipWtLbs DECIMAL(22,5),
+
+		FormulaDesc varchar(255),
+
+		IsPriceConfirmed BIT,
+
+		LastPrice DECIMAL(22,8),
+
+		LastPriceUOM VARCHAR(10),
+
+		LastPriceID INT,
+
+		CPID CHAR(12),
+
+		GradeID CHAR(15),
+
+		UnitType CHAR(1),
+
+		Comment VARCHAR(500),
+
+		CONSTRAINT PKOrderList UNIQUE (PO_ID)
+
+	)
+
+
+
+	CREATE TABLE #ShipWeights(
+
+		PO_ID INT,
+
+		CalcWtLbs DECIMAL(22,5),
+
+		CONSTRAINT PKShipWeights UNIQUE (PO_ID)
+
+	)
+
+
+
+
+
+	INSERT #OrderList
+
+	SELECT PODetail.PO_ID,PODetail.PONumber,0, COALESCE(PriceFormula.FormulaDesc,'') FormulaDesc, PODetail.IsRollOverPriceUpdated,
+
+			0 as LastPrice,'' as LastPriceUOM,NULL as LastPriceID, PO.CPID,PODetail.GradeID,PODetail.UnitType,PODetail.Comment
+
+		FROM PO WITH(NOLOCK) 		
+
+			INNER JOIN PODetail WITH(NOLOCK) ON PO.PONumber = PODetail.PONumber 
+
+			INNER JOIN Grade WITH(NOLOCK) ON Grade.GradeID = PODetail.GradeID
+
+			INNER JOIN Counterparty WITH(NOLOCK) ON Counterparty.CpID = PO.CpID
+
+			LEFT JOIN UnitType WITH(NOLOCK) ON UnitType.TypeID = PODetail.UnitType
+
+			LEFT JOIN PriceFormula WITH(NOLOCK) ON PriceFormula.FormulaID = PODetail.FormulaID
+
+			WHERE PO.[Status] = 'OPEN' 
+
+			AND (@SupplierID = '' OR PO.CpID = @SupplierID)
+
+			AND (@COID = '' OR PO.COID = @COID OR (@COID='--' and (PO.COID = '' or PO.COID is null)))
+
+			AND (@GradeID = '' OR PODetail.GradeID = @GradeID)
+
+			AND ((@SourceType = 'P' AND PO.Source = 'PO') OR (@SourceType = 'S' AND PO.Source = 'SO'))			
+
+			AND ((@OrderType = '' OR (@OrderType = 'S' AND MonthlyContract = 0) OR (@OrderType = 'F' AND  MonthlyContract = 1)))
+
+			AND (@ReferrerNo = '' OR (@ReferrerNo <> '' AND EXISTS(SELECT POID FROM POSalesReps WITH(NOLOCK) WHERE PoSalesReps.POID = PO.POID AND POSalesReps.ReferrerNo = @ReferrerNo )))
+
+			AND (ISNULL(PriceFormula.indexID, 1) <> 0)
+
+			AND (@PriceConfirmed = '' OR PODetail.IsRollOverPriceUpdated = @PriceConfirmed)
+
+
+
+	IF @SourceType = 'P' BEGIN
+
+		INSERT #ShipWeights
+
+		SELECT WKSDETAIL.PPO_ID, SUM(dbo.convert_to_uom(PWeight,PweightUOM,'L')) CalcWtLbs			
+
+			FROM WKSDETAIL INNER JOIN #OrderList ON  WKSDETAIL.PPO_ID = #OrderList.PO_ID
+
+			GROUP BY WKSDETAIL.PPO_ID
+
+	END
+
+
+	IF @SourceType = 'S' BEGIN
+
+		INSERT #ShipWeights
+
+		SELECT WKSDETAIL.SPO_ID, SUM(dbo.convert_to_uom(SWeight,SweightUOM,'L')) CalcWtLbs		
+
+			FROM WKSDETAIL INNER JOIN #OrderList ON  WKSDETAIL.SPO_ID = #OrderList.PO_ID
+
+			GROUP BY WKSDETAIL.SPO_ID
+
+	END
+
+
+
+
+
+	UPDATE #OrderList SET
+
+		ShipWtLbs = #ShipWeights.CalcWtLbs
+
+		FROM #OrderList INNER JOIN #ShipWeights ON  #OrderList.PO_ID = #ShipWeights.PO_ID
+
+		
+
+		--GET LAST PRICE
+
+
+
+		-- MATCH METHOD WITH COMMENT
+
+		UPDATE #OrderList SET LastPriceID = 
+
+			(
+
+			SELECT TOP 1 PO_ID FROM PODetail WITH (NOLOCK) INNER JOIN PO ON PODetail.PONumber = PO.PONumber 
+
+			WHERE 
+
+				PODetail.GradeID = #OrderList.GradeID 
+
+				AND PO.CPID = #OrderList.CPID 
+
+				AND PODetail.UnitType = #OrderList.UnitType		
+
+				AND PODetail.Comment = #OrderList.Comment
+
+				order by PODATE DESC
+
+			)
+
+
+
+		-- MATCH METHOD WITHOUT COMMENT
+
+		UPDATE #OrderList SET LastPriceID = 
+
+			(
+
+			SELECT TOP 1 PO_ID FROM PODetail WITH (NOLOCK) INNER JOIN PO ON PODetail.PONumber = PO.PONumber 
+
+			WHERE 
+
+				PODetail.GradeID = #OrderList.GradeID 
+
+				AND PO.CPID = #OrderList.CPID 
+
+				AND PODetail.UnitType = #OrderList.UnitType						
+
+				order by PODATE DESC
+
+			)
+
+			WHERE ISNULL(LastPriceID,0)=0
+
+						
+
+			UPDATE #OrderList SET LastPrice = Price, LastPriceUOM = PriceUOM 
+
+				FROM #OrderList  INNER JOIN PODetail ON #OrderList.LastPriceID = PODetail.PO_ID 
+
+
+
+   TRUNCATE TABLE tblContractPricesNA
+
+   INSERT tblContractPricesNA
+
+
+
+   SELECT BillingCompany, Supplier, [Location], [Order No], [Period]
+
+           --, [YearMonth]
+
+   , Product
+
+   , ISNULL([Packaging], '') [Packaging]
+
+   , Price 
+
+   , ISNULL(CAST(LEAD(Price) OVER (PARTITION BY BillingCompany, Supplier, [Location], Product  ORDER BY BillingCompany, Supplier, [Location], Product, [Period] desc) AS VARCHAR(40)), '') [Previous Month Price]
+
+    --, ISNULL(CAST(LEAD(Price) OVER (PARTITION BY BillingCompany, Supplier, Product, [Location] ORDER BY BillingCompany, Supplier, Product, [Location],[Order No] DESC, [YearMonth] desc) AS VARCHAR(40)), '') [Previous Month Price]
+
+
+
+   , ShipWtLbs
+
+
+
+   , ISNULL(CAST(LEAD(ShipWtLbs) OVER (PARTITION BY BillingCompany, Supplier, [Location], Product  ORDER BY BillingCompany, Supplier, [Location], Product, [Period] desc) AS VARCHAR(40)), '') [Previous Month ShipWtLbs]
+
+   --, ISNULL(CAST(LEAD(ShipWtLbs) OVER (PARTITION BY BillingCompany, Supplier, Product, [Location] ORDER BY BillingCompany, Supplier, Product, [Location], [Order No] DESC, [YearMonth] desc) AS VARCHAR(40)), '') [Previous Month ShipWtLbs]
+
+
+
+
+
+		   	,	CASE PriceUOM
+
+				WHEN 'L' THEN 'Lbs'
+
+				WHEN 'S' THEN 'Ton'
+
+				WHEN 'T' THEN 'Ton'
+
+				WHEN 'K' THEN 'Kg'
+
+				ELSE PriceUOM END PriceUOM
+
+
+
+		   --, PriceUOM
+
+
+
+		   ,[Index Formula]
+
+		   
+
+		   ,[Shipping Terms]
+
+		   ,[IsContract]
+
+		   ,[NationalAccount]
+
+   FROM
+
+   (
+
+	SELECT 
+
+		CompanyInfo.CompanyDesc BillingCompany,
+
+		Counterparty.CompanyNm As Supplier, 
+
+		UPPER(PO.AddrType) As [Location],
+
+		PO.PONumber As [Order No], 
+
+		PODate As [Period],  
+
+
+
+		FORMAT(PODate,'yyyyMM') [YearMonth],
+
+
+
+		Case When len(PODetail.PODesc) > 0 Then PODetail.PODesc Else Grade.[Description] End As Product, 
+
+		dbo.CnvUnitName(UnitType.UnitType) As [Packaging],
+
+		--dbo.cw_RemoveTrailingZeros(Price, 0) + '/' + dbo.CnvUOM_Names(PriceUOM) As Price,
+
+		Price , 
+
+		PriceUOM,
+
+		ShipWtLbs ,
+
+
+
+		PriceBasis As [Shipping Terms]
+
+
+
+		,#OrderList.FormulaDesc As [Index Formula]
+
+
+
+		,IIF(IsNull(MonthlyContract,0)<> 0, 'Yes', 'No') As [IsContract]
+
+		, CASE WHEN CHARINDEX('Wilmington', Counterparty.CompanyNm) > 0 THEN 'WPC'
+
+		       WHEN CHARINDEX('WPC', Counterparty.CompanyNm) > 0 THEN 'WPC'
+
+			   WHEN ISNULL(TRIM(Counterparty.[UserDefined4]), '') = '' THEN 'No'
+
+			   ELSE 'Yes' END [NationalAccount]
+
+	FROM #OrderList
+
+		INNER JOIN PODetail WITH(NOLOCK) ON #OrderList.PO_ID = PODetail.PO_ID
+
+		INNER JOIN PO WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber 
+
+		INNER JOIN Counterparty WITH(NOLOCK) ON Counterparty.CpID = PO.CpID
+
+		INNER JOIN Grade WITH(NOLOCK) ON Grade.GradeID = PODetail.GradeID
+
+		LEFT JOIN UnitType WITH(NOLOCK) ON UnitType.TypeID = PODetail.UnitType	
+
+		INNER JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.COID = PO.COID
+
+		
+
+		) a1
+
+
+
+--SELECT * FROM tblContractPricesNA
+
+
+
+--RETURN
+
+
+
+
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
+
+
+
+-- 12/20/24 Update Wilmington Suppliers Prices for Prev two months for all RMR plants in Cietrade
+
+
+
+EXEC [dbo].[spWPCPricingReport]
+
+
+
+END
+
+
+
+
+
+--GO
+
+--cw_GetContractPrices @SupplierID=N'1294',@COID=N'',@GradeID=N'',@OrderType=N'F',@ReferrerNo=N'',@SourceType=N'P', @PriceConfirmed='0'
+
+
+
+-- SELECT * FROM tblContractPricesNA where product like '%pugs%'
+
+
+
+-- select top(10) * from podetail where gradeid = 1460 --ponumber = '103086'
+
+
+
+-- select top(10) * from po where ponumber = '103086'
+
+
+
+-- select top(10) * from grade where [description] like '%KCB2/BBC%'
+
+
+
+-- select top(10) status,* from po where ponumber = '130277'
+
+-- select top(10) * from po where ponumber = '133091'
+
+
+
+--select  * from podetail where ponumber = '130277' and PODesc = 'SUS Rolls'
+
+--select  * from podetail where ponumber = '133091' and PODesc = 'SUS Rolls'
+
+
+
+
+
+--SELECT TOP 1 PO_ID FROM PODetail WITH (NOLOCK) INNER JOIN PO ON PODetail.PONumber = PO.PONumber 
+
+--			WHERE 
+
+--				PODetail.GradeID = 1458 --#OrderList.GradeID 
+
+--				AND PO.CPID = 6373 --#OrderList.CPID 
+
+--				AND PODetail.UnitType = 'R'			
+
+--				order by PODATE DESC
+

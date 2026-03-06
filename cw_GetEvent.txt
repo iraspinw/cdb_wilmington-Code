@@ -1,0 +1,30 @@
+CREATE  PROCEDURE [dbo].[cw_GetEvent] 
+
+	AS
+
+	
+
+--1/17/2020 alex: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	select CAST(EventTypeID AS varchar) as EventTypeID,EventDescription as Description,EventShortName as [Short Name],EventSeqOrder as [Seq Order] from DocEventType with(nolock) order by EventSeqOrder
+
+
+
+	--[dbo].[cw_GetEvent] 
+
+
+
+	--sp_who2
+
+
+
+	
+

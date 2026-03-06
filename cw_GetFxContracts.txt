@@ -1,0 +1,198 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetFxContracts] @Status varchar(1), @ContractCurrency char(3), @Type char(1),
+
+										 @FromDt datetime='', @ToDt datetime='', @DataKey char(20)='',
+
+										 @IDType tinyint = 0
+
+AS
+
+--5/9/2019 Alex: Created copy from  [dbo].[q_GetFxContracts]. For cietrade.net
+
+
+
+
+
+
+
+--cw_GetFxContracts '','','','','','',''
+
+
+
+
+
+BEGIN
+
+	SET NOCOUNT ON
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	declare @controName varchar(50);
+
+
+
+	CREATE TABLE #FxContractList (ItemNo int IDENTITY,FxContractNo varchar(20), FilledBal money )
+
+	--CREATE INDEX #PK1 ON #FxContractList(FxContractNo)
+
+	
+
+	INSERT INTO #FxContractList
+
+	SELECT ContractNo,0	 
+
+	FROM FxContracts WITH(NOLOCK)
+
+	WHERE (@Status = '' OR (IsActive = 1 AND (ExpirationDt IS NULL OR ExpirationDt+1 > getdate()))) 
+
+	AND (@ContractCurrency = '' OR CurrencyCd = @ContractCurrency)
+
+	AND (@Type = '' OR ContractType = @Type OR ContractType = '')
+
+	AND (@FromDt = '' OR (FxContracts.ContractDate >= @FromDt AND FxContracts.ContractDate<= @ToDt))
+
+	AND (@DataKey = '' OR
+
+			(@IDType = 0 AND FxContracts.ContractNo = @DataKey)
+
+		OR
+
+			(@IDType = 1 AND FxContracts.RefNo = @DataKey)
+
+		)
+
+
+
+
+
+
+
+	DECLARE @FxContractNo varchar(20)
+
+	DECLARE @FilledBal money,@ContractVal money
+
+	DECLARE @FilledContractCurrency char(3)
+
+	
+
+
+
+	
+
+	DECLARE @count int, @i int
+
+	SELECT @count = COUNT(FxContractNo) FROM #FxContractList
+
+	SET @i = 0
+
+	IF @count > 0 BEGIN
+
+		WHILE @i < @count BEGIN
+
+			SET @i = @i + 1	
+
+			SELECT @FxContractNo = FxContractNo	FROM #FxContractList WHERE ItemNo = @i
+
+			EXEC q_CheckFxContractLimit @FxContractNo, '', '', 0, 0, @ContractVal OUTPUT, @FilledBal OUTPUT, @FilledContractCurrency OUTPUT
+
+			UPDATE #FxContractList set FilledBal = @FilledBal WHERE FxContractNo = @FxContractNo    
+
+		END
+
+	END				
+
+	
+
+    SELECT ContractNo as 'Contract No' ,
+
+	 ContractDate as  'Date',
+
+	  CurrencyCd as  'Currency',
+
+	  [dbo].[cw_RemoveTrailingZeros](FORMAT(ExchRate, 'N14', 'en-us'),2)  AS 'Rate',
+
+	 -- CAST(ROUND(ExchRate, 8) AS DECIMAL(10,8)) as 'Rate',
+
+	  -- ROUND(ExchRate,8) as 'Rate',
+
+	    ContractValue as '{C}Amount',
+
+		 RefNo 'RefNo',
+
+		  UserID as 'User',
+
+		  ExpirationDt as 'Expiry Date',	    
+
+		IsActive,
+
+	  -- isnull(Adjustment,0), ContractValue - isnull(Adjustment,0) - FilledBal AS '{C}Balance',
+
+	case when isnull(ContractType,'')<>'' then case when ContractType = 'S' then 'SELL' ELSE 'BUY' END  ELSE '' END as '{C}Contract Type',
+
+	case when ContractType = 'S' then 	
+
+		(SELECT isnull(sum(SFxAmount),0) From WKSDetail with(nolock)  inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.SFxContractNo=ContractNo) --+ (SELECT isnull(sum(FxAmount),0) From PODetail with(nolock) inner join PO on PO.PONumb
+er = PODetail.PONumber WHERE PO.ContractNo=FxContracts.ContractNo)
+
+	ELSE 
+
+	
+
+		(SELECT isnull(sum(PFxAmount),0) From WKSDetail with(nolock) inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.PFxContractNo=ContractNo) --+ (SELECT isnull(sum(FxAmount),0) From PODetail with(nolock) inner join PO on PO.PONumbe
+r = PODetail.PONumber WHERE PO.ContractNo=FxContracts.ContractNo)
+
+	END as '{C}Applied Amount',
+
+	case when ContractType = 'S' then 
+
+		ContractValue-(SELECT isnull(sum(SFxAmount),0) From WKSDetail with(nolock)  inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.SFxContractNo=ContractNo) ---(SELECT isnull(sum(FxAmount),0) From PODetail with(nolock) inner join PO
+ on PO.PONumber = PODetail.PONumber WHERE PO.ContractNo=FxContracts.ContractNo)
+
+	ELSE 
+
+		ContractValue-(SELECT isnull(sum(PFxAmount),0) From WKSDetail with(nolock) inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.PFxContractNo=ContractNo)-- -(SELECT isnull(sum(FxAmount),0) From PODetail with(nolock) inner join PO 
+on PO.PONumber = PODetail.PONumber WHERE PO.ContractNo=FxContracts.ContractNo)
+
+	END as '{C}Balance',
+
+	'' as '-hidden-'
+
+  
+
+    FROM FxContracts WITH(NOLOCK)
+
+	INNER JOIN #FxContractList ON #FxContractList.FxContractNo = FxContracts.ContractNo
+
+		WHERE (@Status = '' OR (IsActive = 1 AND (ExpirationDt IS NULL OR ExpirationDt+1 > getdate())))
+
+		AND (@ContractCurrency = '' OR CurrencyCd = @ContractCurrency)
+
+		AND (@Type = '' OR ContractType = @Type OR ContractType = '')
+
+		AND (@FromDt = '' OR (FxContracts.ContractDate >= @FromDt AND FxContracts.ContractDate<= @ToDt))
+
+		AND (@DataKey = '' OR
+
+				(@IDType = 0 AND FxContracts.ContractNo = @DataKey)
+
+			OR
+
+				(@IDType = 1 AND FxContracts.RefNo = @DataKey)
+
+			)
+
+END
+
+
+
+
+
+
+

@@ -1,0 +1,74 @@
+CREATE   PROCEDURE [dbo].[cw_GetMasterPageData] @UserID char(10) = ''
+
+--06/23/2022 DSH: Crsated to eliminate cw_GetMasterVars AND cw_FetchCRMTasks.   
+
+AS
+
+SET NOCOUNT ON;
+
+
+
+
+
+	DECLARE @TaskCount varchar(15)		
+
+	DECLARE @OpenPeriod DATE
+
+	SELECT @TaskCount = COUNT(TaskID) FROM CRMTask WITH (NOLOCK) 
+
+		WHERE ISNULL(TaskComplete,0) <> 1 AND UserID = @UserID
+
+	
+
+	SELECT @OpenPeriod = openmonth from systeminfo WITH (NOLOCK) 
+
+
+
+
+
+	SELECT 
+
+		@TaskCount [TaskCount], 		
+
+		@OpenPeriod [OpenPeriod] 
+
+
+
+
+
+	IF @TaskCount >= 1 BEGIN
+
+		SELECT
+
+			C.TaskID,		
+
+			CG.TaskNm As [Category],
+
+			UPPER(convert(varchar(20), TaskDate, 106)) TaskDate,
+
+			CounterParty.CompanyNm AS [CompanyNm]
+
+		FROM CRMTask C With (NoLock)
+
+			INNER JOIN CounterParty With (NoLock) ON C.CPID = Counterparty.CPID
+
+			LEFT JOIN CRMTaskCategory CG ON CG.TaskID = C.CategoryID
+
+		WHERE
+
+			C.UserID = @UserID AND ISNULL(TaskComplete,0) <> 1 
+
+	END		
+
+
+
+
+
+
+
+
+
+
+
+
+

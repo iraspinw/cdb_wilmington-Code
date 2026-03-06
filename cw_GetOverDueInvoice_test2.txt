@@ -1,0 +1,1396 @@
+CREATE PROC [dbo].[cw_GetOverDueInvoice_test2]
+
+ 
+
+	@ForCurrency char(3) = '',
+
+	@CpID CHAR(12) = '', 
+
+	@COID CHAR(2) = '',
+
+	@LCSONLY int = 0,
+
+	@SalesRepOnly bit = 0,
+
+	@Country varchar(35) = '', 
+
+	@TradeType varchar(25) = '',
+
+	@AgeFromDate varchar(12) = 'INVOICE',	--POSTING, DUE
+
+	@ShowShortPayOnly bit = 0, 
+
+	@ReportingGrp char(25) = '', 
+
+	@InclUACash char(1) = '', 	
+
+	@CollateBySalesRep bit = 0, 
+
+	@InclCreditInv bit = 1 ,
+
+	@OrderBy bit = 0, 
+
+	@RefID char(10) = '',
+
+	@UseGrouping smallint = 0,
+
+	@DoSummary BIT = 1,
+
+	@ReportOption varchar(8) = 'DETAILED',
+
+	@ShowPastDueOnly bit = 0,
+
+	@daysOut int = 0,
+
+	@PastDueMoreThan int,
+
+	@PastDueLessThan int,
+
+	@ReturnVal money = 0.00 OUTPUT
+
+AS 
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--12/14/2017 MEC: Taken from the q_GetReceivablesAsOf AsOfDate section for cieTrade.net
+
+--03/20/2018 DSH: Updated to support reporting with the A/R Tracking feature (AR is driven by one procedure)
+
+--03/28/2018 DSH Added Summary Reporting Option -- Cleaned-up report
+
+--04/17/2018 DSH Exclude AR Booked Activity.
+
+--06/24/2019 BF: Changed "DaysOut" calc to use aging date, not today's date
+
+--09/04/2019 DSH Expanded Payment terms
+
+--10/15/2019 DSH Correction for FX invoice amount
+
+--9/11/2020 BF: only looking at posted adjustments (AdjPosted = 'Y')
+
+--04/13/2022 DSH: Added "Basic" A/R Report option for other reports 
+
+--09/13/2022 DSH: Modificastions to speed up SUMMARY mode.
+
+--10/28/2022 ZT: Added POReference column 
+
+--11/18/2022 ZT: Added RelNo column
+
+--03/02/2023 ZT: Added column Statement column 
+
+--03/08/2023 DN: added PastDueOnly filter, custaddr is now the email, added days out filter
+
+--cw_ARAgingReportAsOf '03/18/2018', 'USD', '', '', 0, 0, '', '', 'SHIPPING', 0, '', '', 0, 1, 0, '', 0
+
+--
+
+
+
+
+
+
+
+
+
+DECLARE @Balance money
+
+declare @AsOfDate datetime
+
+set @AsOfDate = getdate()
+
+
+
+
+
+-- ACCOUNTS RECEIVABLE AS OF REPORT
+
+-----------------------------------
+
+CREATE TABLE #ARSUMMARY(
+
+	CompanyNm VARCHAR(100),
+
+	CPID CHAR(12),	
+
+	AgingCurrent MONEY,
+
+	Aging_1to30 MONEY,
+
+	Aging_31to60 MONEY,
+
+	Aging_61to90 MONEY,
+
+	Aging_Over90 MONEY,
+
+	OriginalBalance MONEY,
+
+	Payments MONEY,
+
+	Adjustments MONEY,
+
+	Aging_Balance MONEY,
+
+	Concentration DECIMAL(10,3)
+
+	)
+
+
+
+
+
+
+
+CREATE TABLE #ARASOF(	
+
+	CompanyNm VARCHAR(100),
+
+	CPID CHAR(12),
+
+	BuySellNo CHAR(12),
+
+	InvoiceDt DATETIME,
+
+	ShipDt DATETIME,
+
+	InvoiceAmt MONEY,
+
+	Payments MONEY,
+
+	Balance MONEY,
+
+	SAdjustment MONEY,
+
+	DaysToPay INT,
+
+	DueDt DATETIME,
+
+	DaysOut INT,
+
+	AgingCurrent MONEY,
+
+	Aging_1to30 MONEY,
+
+	Aging_31to60 MONEY,
+
+	Aging_61to90 MONEY,
+
+	Aging_Over90 MONEY,
+
+	OverDueBalance MONEY,
+
+	GroupNm VARCHAR(100),
+
+	CurrencyCd CHAR(3),
+
+	APContact varchar(500),
+
+	APVoiceNo varchar(100),
+
+	PaymentTerms varchar(150),
+
+	CreditLimit money,
+
+	CustAddr varchar(1000),
+
+	VendorID char(12), 
+
+	DateSort DATETIME,
+
+	CustID char(12),
+
+	Supplier nvarchar(65),
+
+	StatmentNo int,
+
+	FxBalance MONEY,
+
+	HcBalance MONEY,
+
+	FxInvoice MONEY,
+
+	HcInvoice MONEY,
+
+	FxRate DECIMAl(22,8),
+
+	CustOrderNum varchar(50),
+
+	PORef VARCHAR(50),
+
+	APEmail varchar(500)--,
+
+	--LastPayAmount money,
+
+	--LastPayDate datetime
+
+
+
+)
+
+
+
+CREATE TABLE #LastPayment(
+
+		BuySellNo CHAR(25),
+
+		PaymentDt DATETIME,
+
+		CheckNo VARCHAR(25),
+
+		ARBatchNo VARCHAR(25),
+
+		Amount money,
+
+		CustID char(25)
+
+	)
+
+	CREATE INDEX #PKLastPayment ON #LastPayment(BuySellNo)
+
+
+
+	-- GET LAST PAYMENT INFO.
+
+	INSERT #LastPayment
+
+		SELECT  Receipt.BuySellNo, PaymentDt = max(PaymentDt), SPACE(15) as CheckNo, SPACE(15) as ARBatchNo, 0 AS AMount, BuySell.CustID
+
+		FROM Receipt WITH(NOLOCK) INNER JOIN BUYSELL WITH(NOLOCK)  ON Receipt.BuySellno = BuySell.BuySellNo
+
+		WHERE ISNULL(BuySell.IsAgency,0) <> 1 AND Amount > 0 
+
+		AND Receipt.reversed <> 1
+
+		AND BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(PLANT)' AND BuySell.CustID <> '{C}'
+
+		AND (@COID = '' or (Buysell.coid = @COID))
+
+		GROUP BY Receipt.BuySellNo,BuySell.CustID
+
+	
+
+	UPDATE #Lastpayment SET CheckNo = (SELECT TOP 1 CheckNo FROM Receipt WHERE BuySellNo = #LastPayment.BuySellNo ORDER BY PaymentDt DESC)
+
+	FROM #LastPayment
+
+
+
+	UPDATE #Lastpayment SET ARBatchNo = (SELECT TOP 1 ARBatchNo FROM Receipt WHERE BuySellNo = #LastPayment.BuySellNo ORDER BY PaymentDt DESC)
+
+	FROM #LastPayment
+
+
+
+	UPDATE #Lastpayment SET Amount = (SELECT TOP 1 Amount FROM Receipt WHERE BuySellNo = #LastPayment.BuySellNo ORDER BY PaymentDt DESC)
+
+	FROM #LastPayment
+
+
+
+	-- GET LAST PAYMENT USING UNAPPLIED CASH.
+
+	SELECT RECEIPT.BuySellNo, PaymentDt=max(UACashLedger.EntryDt)
+
+	INTO #UACLastPayment 
+
+	FROM Receipt WITH(NOLOCK) INNER JOIN UACashLedger ON Receipt.LedgerID = UACashLedger.LedgerID
+
+	INNER JOIN BUYSELL WITH(NOLOCK)  ON Receipt.BuySellno = BuySell.BuySellNo
+
+	WHERE ISNULL(BuySell.IsAgency,0) <> 1 AND Amount > 0 
+
+	AND Receipt.reversed <> 1
+
+	AND BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(PLANT)' AND BuySell.CustID <> '{C}'
+
+	AND (@COID = '' or (Buysell.coid = @COID))
+
+	GROUP BY Receipt.BuySellNo
+
+
+
+	UPDATE #LastPayment SET #LastPayment.PaymentDt = #UACLastPayment.PaymentDt 
+
+		FROM #LastPayment INNER JOIN #UACLastPayment ON #LastPayment.BuySellNo = #UACLastPayment.BuySellNo
+
+
+
+	DECLARE @TotalBalance MONEY
+
+
+
+	-- GET TODAYS DATE
+
+	DECLARE @TodaysDate DATETIME 
+
+	SET @TodaysDate = CONVERT(CHAR(12),GetDate(),101)
+
+
+
+
+
+	-- DETERMINE WHETHER A/R MODULE IS USED.
+
+	DECLARE @IsARModule BIT
+
+
+
+	SELECT @IsARModule  = ISNULL(EnablecieTradeAR,0) FROM systeminfo WHERE ID = '00'
+
+	
+
+
+
+
+
+
+
+	--====================================================================================================================================================
+
+	--A/R TRACKING REPORT ONLY
+
+	
+
+	IF @IsARModule = 0 BEGIN
+
+
+
+		INSERT #ARASOF
+
+		SELECT 
+
+			Counterparty.CompanyNm, 
+
+			CounterParty.CpID, 
+
+			BuySell.BuySellNo, 
+
+			InvoiceDt, 
+
+			ShippingDt As ShipDt,
+
+		    IsNull(FxInvoiceAmt,0)+IsNull(SFreightChg,0)+isnull(FxSAdjustment,0) As InvoiceAmount, 
+
+			ISNULL(ARTrkFxPaymentAmt,0) As Payments, 
+
+			(IsNull(FxInvoiceAmt,0)+IsNull(SFreightChg,0)+isnull(FxSAdjustment,0))-ISNULL(ARTrkFxPaymentAmt,0) As BalanceDue,
+
+			--Case When @ForCurrency = '' Then IsNull(SalesAmt,0)+IsNull(SFreightChg,0)+isnull(SalesTaxAmt,0) Else IsNull(FxInvoiceAmt,0)+IsNull(SFreightChg,0)+isnull(FxSAdjustment,0) END As InvoiceAmount, 
+
+			--Case When @ForCurrency = '' Then ISNULL(ARTrkFxPaymentAmt,0) ELSE ISNULL(ARTrkFxPaymentAmt,0) END As Payments, 
+
+			--Case When @ForCurrency = '' Then (IsNull(SalesAmt,0)+IsNull(SFreightChg,0)+isnull(SAdjustment,0))-ISNULL(ARTrkPaymentAmt,0) ELSE (IsNull(FxInvoiceAmt,0)+IsNull(SFreightChg,0)+isnull(FxSAdjustment,0))-ISNULL(ARTrkFxPaymentAmt,0) END As BalanceDue,  
+
+			SAdjustment,
+
+			DaysToPay, 
+
+			BuySell.DueDt,
+
+			0 As DaysOut,
+
+			0 As AgingCurrent,
+
+			0 As Aging_1to30,
+
+			0 As Aging_31to60,
+
+			0 As Aging_61to90,
+
+			0 As Aging_Over90,
+
+			0, 
+
+			Counterparty.GroupNm, 
+
+			BuySell.CurrencyCd,
+
+			'',
+
+			'',
+
+			--(SELECT Top 1 ContactNm From Contact WITH(NOLOCK) 
+
+			--	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+			--	WHERE RoleNm In ('Collections', 'Primary') And Contact.CpID = Counterparty.CpID Order By RoleNm) APContact,
+
+			--(SELECT Top 1 PhoneBusiness From Contact WITH(NOLOCK) 
+
+			--	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+			--	WHERE RoleNm In ('Collections', 'Primary') And Contact.CpID = Counterparty.CpID Order By RoleNm) APVoiceNo,
+
+			BuySell.Terms,
+
+			Counterparty.CreditLimit,
+
+			dbo.xDoc_GetAddressFlat(Buysell.CustID,'',0) as CustAddr,
+
+			VendorID, NULL, 
+
+			buysell.CustID,
+
+			V.CompanyNm AS [Supplier],
+
+			StatementNo,
+
+			(IsNull(SalesAmt,0)+IsNull(SFreightChg,0)+isnull(SAdjustment,0))-ISNULL(ARTrkPaymentAmt,0) FxBalance,
+
+			(IsNull(FxInvoiceAmt,0)+IsNull(SFreightChg,0)+isnull(FxSAdjustment,0))-ISNULL(ARTrkFxPaymentAmt,0) HcBalance,		
+
+			(IsNull(FxInvoiceAmt,0)+IsNull(SFreightChg,0)+isnull(FxSAdjustment,0)) FxInvoice,
+
+			(IsNull(SalesAmt,0)+IsNull(SFreightChg,0)+isnull(SalesTaxAmt,0)) HcInvoice,
+
+			Buysell.FxRate,
+
+			isnull(buysell.RefSONo,''),
+
+			ISNULL(PO.POReference,''),
+
+			''--,
+
+			--#LastPayment.Amount,
+
+			--#LastPayment.PaymentDt
+
+			--(SELECT Top 1 Email From Contact WITH(NOLOCK) 
+
+			--	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+			--	WHERE RoleNm In ('Collections', 'Primary') And Contact.CpID = Counterparty.CpID Order By RoleNm) APEmail
+
+		FROM BuySell WITH(NOLOCK) 
+
+			INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID		
+
+			INNER JOIN Counterparty V WITH(NOLOCK) ON BuySell.VendorID = V.CpID
+
+			LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'        
+
+			LEFT JOIN BIllingTerm WITH(NOLOCK) ON BuySell.Terms = BillingTerm.Term
+
+			LEFT JOIN PO WITH(NOLOCK) ON BuySell.RefSONo = PO.PONumber
+
+			--left join #LastPayment on buysell.BuySellNo = #LastPayment.BuySellNo
+
+		WHERE 			
+
+			((@CpID = '' AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}'  AND BuySell.CustID <> '(PLANT)')) OR (@CpID = BuySell.CustID))
+
+			AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+			AND BuySell.[Status] = 'I'        
+
+			AND (IsNull(SalesAmt,0)+IsNull(SFreightChg,0)+isnull(SalesTaxAmt,0)+SAdjustment)-ISNULL(ARTrkPaymentAmt,0) <> 0 
+
+			AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCD)
+
+			AND ISNULL(BuySell.IsAgency,0) <> 1
+
+			--AND (@RefID = '' OR (@RefID = BuySell.ReferrerNo1 OR @RefID= BuySell.ReferrerNo2)) 
+
+			AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+			AND (
+
+				(@SalesRepOnly = 0 AND (@RefID = '' OR (BuySell.ReferrerNo1 = @RefID OR BuySell.ReferrerNo2 = @RefID)))
+
+				OR
+
+				(@SalesRepOnly = 1 AND (@RefID = '' OR ((BuySell.ReferrerNo1 = @RefID))))
+
+			)
+
+
+
+
+
+		UPDATE #ARASOF SET DueDt = InvoiceDt, DaystoPay = 0 WHERE COALESCE(PaymentTerms,'') = '' and DueDt IS NULL
+
+		UPDATE #ARASOF SET DueDt = DATEADD(d,DaystoPay,InvoiceDt) WHERE DueDt is NULL AND DaystoPay <> 0
+
+		UPDATE #ARASOF SET DaysOut = DATEDIFF(d,DueDt, @ASOfDate)
+
+		UPDATE #ARASOF SET AgingCurrent = Balance WHERE DaysOut <=0
+
+		UPDATE #ARASOF SET Aging_1to30 = Balance WHERE DaysOut >0 AND DaysOut <=30
+
+		UPDATE #ARASOF SET Aging_31to60 = Balance WHERE DaysOut >30 AND DaysOut <=60
+
+		UPDATE #ARASOF SET Aging_61to90 = Balance WHERE DaysOut >60 AND DaysOut <=90
+
+		UPDATE #ARASOF SET Aging_Over90 = Balance WHERE DaysOut >90
+
+		UPDATE #ARASOF SET OverDueBalance = Balance WHERE DaysOut >0 
+
+
+
+		IF @ShowShortPayOnly=1  DELETE FROM #ARASOF WHERE Balance <> 0 AND Payments = 0
+
+
+
+
+
+		--SUMMARY REPORT
+
+		IF @DoSummary = 1 BEGIN
+
+			
+
+			SELECT @TotalBalance = SUM(Balance) FROM #ARASOF
+
+
+
+			INSERT #ARSUMMARY
+
+				SELECT 
+
+				'' As [Statement],
+
+				CompanyNm As [Customer], 
+
+				CPID As [-Hidden-CpID], 
+
+				SUM(AgingCurrent) As [{C}Current],
+
+				SUM(Aging_1to30)  As [{C}1 - 30],
+
+				SUM(Aging_31to60) As [{C}31 - 60],
+
+				SUM(Aging_61to90) As [{C}61 - 90],
+
+				SUM(Aging_Over90) As [{C}Over 90],
+
+				SUM(InvoiceAmt) As OriginalBalance,
+
+				SUM(Payments), 
+
+				SUM(SAdjustment),
+
+				SUM(Balance),
+
+				0.00 As Concentration 
+
+			FROM #ARASOF GROUP BY CompanyNm, CPID			
+
+			IF @TotalBalance <> 0 UPDATE #ARSUMMARY SET Concentration = (Aging_Balance / @TotalBalance) * 100
+
+			
+
+		SELECT
+
+			'' As [Statement],
+
+			CompanyNm As [Customer], 
+
+			CPID As [-Hidden-CpID],
+
+			AgingCurrent AS [{C}Current],
+
+			Aging_1to30  As [{C}1 - 30],
+
+			Aging_31to60 As [{C}31 - 60],
+
+			Aging_61to90 As [{C}61 - 90],
+
+			Aging_Over90 As [{C}Over 90],
+
+			OriginalBalance AS [{C}Original Balance],
+
+			Payments As [{C}Payments], 
+
+			Adjustments AS [{C}Adjustments],
+
+			Aging_Balance AS [{C}Balance],
+
+			Concentration 
+
+		 FROM #ARSUMMARY ORDER BY CompanyNm
+
+
+
+			END
+
+		
+
+		--DETAIL REPORT
+
+		ELSE BEGIN
+
+
+
+			SELECT 
+
+			'' As [Statement],
+
+			CompanyNm As [Customer], 
+
+			CPID As [-Hidden-CpID], 
+
+			BuySellNo As [Wks No],
+
+			CustOrderNum as [Order No],
+
+			InvoiceDt As [Invoice Date], 
+
+			ShipDt As [Shipping Date], 
+
+			InvoiceAmt As [{C}Invoice Amount],
+
+			Payments As [{C}Payments], 
+
+			Balance As [{C}Balance], 
+
+			SAdjustment As [{C}Adjustments], 
+
+			DaysToPay As [Days to Pay], 
+
+			DueDt As [Due Date],
+
+			DaysOut As [Days Out],
+
+			AgingCurrent As [{C}Current],
+
+			Aging_1to30 As [{C}1 - 30],
+
+			Aging_31to60 As [{C}31 - 60],
+
+			Aging_61to90 As [{C}61 - 90],
+
+			Aging_Over90 As [{C}Over 90],
+
+			OverDueBalance As [{C}Remaining Balance],
+
+			GroupNm As [-Hidden-GroupNm],
+
+			CurrencyCd As [-Hidden-Currency],
+
+			APContact,
+
+			APVoiceNo,
+
+			PaymentTerms,
+
+			CreditLimit,
+
+			CustAddr,
+
+			CustID, 
+
+			Supplier,
+
+			StatmentNo [Group Invoice],
+
+			PORef As [Order Ref]
+
+			FROM #ARASOF 
+
+			ORDER BY CompanyNm, ShipDt 
+
+		END
+
+
+
+		RETURN
+
+	END
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	--====================================================================================================================================================
+
+	
+
+
+
+	
+
+
+
+	/* ADJUSTMENTS AFTER cutoff date */     
+
+	SELECT 
+
+		BuySellNo=GPLedger.BuySellNo, 
+
+		PaymentsRcvd = Sum(GrossProfit+AdjSalesTaxAmt), 
+
+		FXPaymentsRcvd = Sum(AdjFXAmount+AdjFxSalesTaxAmt)
+
+		INTO #Adjustments
+
+	FROM GPLedger WITH(NOLOCK)  INNER JOIN BUYSELL WITH(NOLOCK)  ON BuySell.BuySellNo = GPLedger.BuySellNo 
+
+		INNER JOIN COUNTERPARTY WITH(NOLOCK) ON BUYSELL.CUSTID = COUNTERPARTY.CPID  
+
+		LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'
+
+	WHERE AdjType = 'S'		
+
+		AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+		AND (@CpID = '' OR @CpID = BuySell.CustID) AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}' AND BuySell.CustID <> '(PLANT)')
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd)	
+
+		AND GPLedger.TradeDt > @AsofDate
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND ISNULL(IsInvoiceBooked,0) <> 1
+
+		and GPLedger.AdjPosted = 'Y'
+
+		AND (
+
+			(@SalesRepOnly = 0 AND (@RefID = '' OR (BuySell.ReferrerNo1 = @RefID OR BuySell.ReferrerNo2 = @RefID)))
+
+			OR
+
+			(@SalesRepOnly = 1 AND (@RefID = '' OR ((BuySell.ReferrerNo1 = @RefID))))
+
+		)
+
+		GROUP By GPLedger.BuySellNo
+
+
+
+
+
+
+
+	/* ADJUSTMENTS BEFORE cutoff date */   
+
+	SELECT 
+
+		BuySellNo=GPLedger.BuySellNo, 
+
+		OldAdjAmt = Sum(GrossProfit+AdjSalesTaxAmt), 
+
+		FXOldAdjAmt = Sum(AdjFXAmount+AdjFxSalesTaxAmt)
+
+		INTO #OldAdjustments
+
+	FROM GPLedger WITH(NOLOCK)  INNER JOIN BuySell WITH(NOLOCK)  On BuySell.BuySellNo = GPLedger.BuySellNo
+
+		LEFT JOIN COUNTERPARTY WITH(NOLOCK) ON BUYSELL.CUSTID = COUNTERPARTY.CPID  
+
+		LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'
+
+	WHERE AdjType = 'S'
+
+		AND BuySell.InvoiceDt <= @AsofDate
+
+		AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+		AND (@CpID = '' OR @CpID = BuySell.CustID) AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}' AND BuySell.CustID <> '(PLANT)')
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd)  --FxSalesCurrency          
+
+		--AND (@RefID = ''  OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2)
+
+		AND GPLedger.TradeDt <= @AsofDate
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND ISNULL(IsInvoiceBooked,0) <> 1
+
+		AND (
+
+			(@SalesRepOnly = 0 AND (@RefID = '' OR (BuySell.ReferrerNo1 = @RefID OR BuySell.ReferrerNo2 = @RefID)))
+
+			OR
+
+			(@SalesRepOnly = 1 AND (@RefID = '' OR ((BuySell.ReferrerNo1 = @RefID))))
+
+		)
+
+	GROUP By GPLedger.BuySellNo
+
+
+
+
+
+	/* RECEIPTS AFTER (since) cutoff date */
+
+	SELECT 
+
+		BuySellNo=Receipt.BuySellNo, 
+
+		PaymentsRcvd = Sum(Amount), 
+
+		FXPaymentsRcvd = SUM(FXAmount)  
+
+		INTO #ReceiptsOnly
+
+	FROM Receipt WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK)  ON BuySell.BuySellNo = Receipt.BuySellNo 
+
+		INNER JOIN COUNTERPARTY WITH(NOLOCK) ON BuySell.CustID = Counterparty.CpID  
+
+		LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'
+
+	WHERE 
+
+		BuySell.InvoiceDt <= @AsofDate
+
+		AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+		AND (@CpID = '' OR @CpID = BuySell.CustID) AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}' AND BuySell.CustID <> '(PLANT)')
+
+		AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd)  --FxSalesCurrency
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		--AND (@RefID = ''  OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2)
+
+		AND PaymentDt > @AsofDate
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND ISNULL(IsInvoiceBooked,0) <> 1
+
+		AND (
+
+			(@SalesRepOnly = 0 AND (@RefID = '' OR (BuySell.ReferrerNo1 = @RefID OR BuySell.ReferrerNo2 = @RefID)))
+
+			OR
+
+			(@SalesRepOnly = 1 AND (@RefID = '' OR ((BuySell.ReferrerNo1 = @RefID))))
+
+		)
+
+	GROUP By Receipt.BuySellNo
+
+
+
+
+
+
+
+
+
+	/* GET LIST OF RECEIPTS LESS ADJUSTMENTS AFTER CUTOFF DATE FOR EACH WORKSHEET. */
+
+	SELECT BuySell.BuySellNo, 
+
+		Receipts=isnull(#ReceiptsOnly.PaymentsRcvd,0) - isnull(#Adjustments.PaymentsRcvd,0), AfterAdj=isnull(#Adjustments.PaymentsRcvd,0),
+
+		FXReceipts=isnull(#ReceiptsOnly.FXPaymentsRcvd,0) - isnull(#Adjustments.FxPaymentsRcvd,0), FXAfterAdj=isnull(#Adjustments.FxPaymentsRcvd,0)
+
+	INTO #RecentReceipts
+
+	FROM  BUYSELL WITH(NOLOCK) LEFT JOIN #ReceiptsOnly ON buySell.BuySellNo  = #ReceiptsOnly.BuySellNo 
+
+		LEFT JOIN Counterparty WITH(NOLOCK) ON BuySell.CustID = Counterparty.CpID
+
+		LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'
+
+		LEFT JOIN #Adjustments ON  BuySell.BuySellNo = #Adjustments.BuySellNo 
+
+	WHERE 
+
+		(@CoID = '' OR @CoID = BuySell.CoID)
+
+		AND (@CpID = '' OR @CpID = BuySell.CustID) AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}' AND BuySell.CustID <> '(PLANT)')
+
+		AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd)
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		--AND (@RefID = ''  OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2)
+
+		AND BuySell.InvoiceDt <= @AsofDate
+
+		AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND ISNULL(IsInvoiceBooked,0) <> 1
+
+		AND (
+
+			(@SalesRepOnly = 0 AND (@RefID = '' OR (BuySell.ReferrerNo1 = @RefID OR BuySell.ReferrerNo2 = @RefID)))
+
+			OR
+
+			(@SalesRepOnly = 1 AND (@RefID = '' OR ((BuySell.ReferrerNo1 = @RefID))))
+
+		)
+
+
+
+
+
+
+
+	-- CREATE AR DETAILS.
+
+	IF @ReportOption <> 'SUMMARY' BEGIN
+
+	INSERT #ARASOF
+
+	SELECT 
+
+		CounterParty.CompanyNm, 
+
+		CounterParty.CpID, 
+
+		BuySell.BuySellNo, 
+
+		InvoiceDt, 
+
+		ShippingDt As ShipDt,
+
+		InvoiceAmt= Case When @ForCurrency = '' Then IsNull(SalesAmt,0)+IsNull(SFreightChg,0)+isnull(SalesTaxAmt,0) Else FxInvoiceAmt+FxSalesTaxAmt END, --+SFreightChg+isnull(FxSalesTaxAmt,0), 
+
+		Payments= Case When @ForCurrency = '' Then Round(SPayments-Receipts-AfterAdj,2) ELSE Round(FxPayments-FXReceipts-FXAfterAdj,2) END,
+
+		--Payments= Round(FxPayments-FXReceipts-FXAfterAdj,2),
+
+		Balance= Case When @ForCurrency = '' Then Round(ISNULL(SBalanceDue,0)+ISNULL(Receipts,0),2) ELSE Round(ISNULL(FxBalanceDue,0)+ISNULL(FxReceipts,0),2) END, 
+
+		--Balance= Round(ISNULL(FxBalanceDue,0)+ISNULL(FxReceipts,0),2), 
+
+		SAdjustment= Case When @ForCurrency = '' Then ISNULL(#OldAdjustments.OldAdjAmt,0) ELSE ISNULL(#OldAdjustments.FXOldAdjAmt,0) END, 
+
+		BIllingTerm.DaysToPay, 
+
+		BuySell.DueDt,
+
+		0 As DaysOut,
+
+		0 As AgingCurrent,
+
+		0 As Aging_1to30,
+
+		0 As Aging_31to60,
+
+		0 As Aging_61to90,
+
+		0 As Aging_Over90,
+
+		OverDueBalance = Case When @ForCurrency = '' Then Round(ISNULL(SBalanceDue,0)+ISNULL(FxReceipts,0),2) ELSE Round(ISNULL(FxBalanceDue,0)+ISNULL(FxReceipts,0),2) END,	--02/14/2011 RS: Added,
+
+		Counterparty.GroupNm, 
+
+		BuySell.CurrencyCd,
+
+		'',--(SELECT Top 1 ContactNm From Contact WITH(NOLOCK) 	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID WHERE RoleNm In ('Billing', 'Primary') And Contact.CpID = Counterparty.CpID Order By RoleNm) APContact,
+
+
+		'',--(SELECT Top 1 PhoneBusiness From Contact WITH(NOLOCK) INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 	WHERE RoleNm In ('Billing', 'Primary') And Contact.CpID = Counterparty.CpID Order By RoleNm) APVoice
+No,
+
+		BuySell.Terms,
+
+		CounterParty.CreditLimit,
+
+		contact.Email as CustAddr,
+
+		--dbo.xDoc_GetAddressFlat(Buysell.CustID,'',0) as CustAddr,
+
+		VendorID, NULL, 
+
+		buysell.CustID,
+
+		V.CompanyNm AS [Supplier],
+
+		StatementNo,
+
+		Round(ISNULL(FxBalanceDue,0)+ISNULL(FxReceipts,0),2) FxBalance,
+
+		Round(ISNULL(SBalanceDue,0)+ISNULL(Receipts,0),2)  HcBalance,		
+
+		FxInvoiceAmt+FxSalesTaxAmt FxInvoice,
+
+		IsNull(SalesAmt,0)+IsNull(SFreightChg,0)+isnull(SalesTaxAmt,0) HcInvoice,
+
+		Buysell.FxRate,
+
+		isnull(buysell.RefSONo,''),
+
+		ISNULL(PO.POReference,''),
+
+		''--,
+
+		--isnull(#LastPayment.Amount,0),
+
+		--#LastPayment.PaymentDt
+
+		----(SELECT Top 1 Email From Contact WITH(NOLOCK) 
+
+		--		INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+		--		WHERE RoleNm In ('Collections', 'Primary') And Contact.CpID = Counterparty.CpID Order By RoleNm) APEmail
+
+	FROM BuySell WITH(NOLOCK) 
+
+		INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID			
+
+		INNER JOIN Counterparty V WITH(NOLOCK) ON BuySell.VendorID = V.CpID
+
+		LEFT JOIN #RecentReceipts ON BuySell.BuySellNo = #RecentReceipts.BuySellNo			
+
+		LEFT JOIN #OldAdjustments ON BuySell.BuySellNo = #OldAdjustments.BuySellNo 						
+
+		LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'   
+
+		LEFT JOIN BIllingTerm WITH(NOLOCK) ON BuySell.Terms = BillingTerm.Term   
+
+		LEFT JOIN PO WITH(NOLOCK) ON BuySell.RefSONo= PO.PONumber
+
+		left join Contact on buysell.CustID = contact.CpID and contact.IsPrimary = 1
+
+		--left join #LastPayment on buysell.BuySellNo = #LastPayment.BuySellNo
+
+	WHERE 
+
+		((@CpID = '' AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}'  AND BuySell.CustID <> '(PLANT)')) OR (@CpID = BuySell.CustID))
+
+		AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+		AND BuySell.InvoiceDt <= @AsofDate And BuySell.[Status] = 'I'        
+
+		AND Round(ISNULL(FxBalanceDue,0)+ISNULL(Receipts,0),2) <> 0
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCD) --FxSalesCurrency            
+
+		AND (@ShowShortPayOnly = 0 OR (Round(Spayments-Receipts,2) > 0 AND Round(FxBalanceDue+Receipts,2) > 0))
+
+		AND (@Country = '' or Address.Country = @Country) 
+
+		AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+		AND (
+
+			(@SalesRepOnly = 0 AND (@RefID = '' OR (BuySell.ReferrerNo1 = @RefID OR BuySell.ReferrerNo2 = @RefID)))
+
+			OR
+
+			(@SalesRepOnly = 1 AND (@RefID = '' OR ((BuySell.ReferrerNo1 = @RefID))))
+
+		)
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND ISNULL(IsInvoiceBooked,0) <> 1
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+		UPDATE #ARASOF SET DueDt = InvoiceDt, DaystoPay = 0 WHERE COALESCE(PaymentTerms,'') = '' and DueDt IS NULL
+
+		UPDATE #ARASOF SET DueDt = DATEADD(d,DaystoPay,InvoiceDt) WHERE DueDt is NULL AND DaystoPay <> 0
+
+		UPDATE #ARASOF SET DaysOut = DATEDIFF(d,DueDt, @ASOfDate)
+
+		UPDATE #ARASOF SET AgingCurrent = Balance WHERE DaysOut <=0
+
+		UPDATE #ARASOF SET Aging_1to30 = Balance WHERE DaysOut >0 AND DaysOut <=30
+
+		UPDATE #ARASOF SET Aging_31to60 = Balance WHERE DaysOut >30 AND DaysOut <=60
+
+		UPDATE #ARASOF SET Aging_61to90 = Balance WHERE DaysOut >60 AND DaysOut <=90
+
+		UPDATE #ARASOF SET Aging_Over90 = Balance WHERE DaysOut >90
+
+		UPDATE #ARASOF SET OverDueBalance = Balance WHERE DaysOut >0 
+
+
+
+
+
+
+
+
+
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+    -------------------------------------------------------------------------------------------------------------------------
+
+	-- Return the data for the query
+
+	IF @DoSummary = 1 BEGIN
+
+		
+
+		SELECT @TotalBalance = SUM(Balance) FROM #ARASOF
+
+
+
+		--update the contact and email fields to the primary contact for the counterpaty
+
+	update #ARASOF set APContact = isnull(Contact.ContactNm,''), APEmail = isnull(contact.Email,'') 
+
+		from CounterParty
+
+		inner join Contact  on Contact.CpID = CounterParty.CpID 
+
+		where Contact.IsPrimary = 1 and Contact.CpID = #ARASOF.CustID and (isnull(#ARASOF.APContact,'') = '' or isnull(#ARASOF.APEmail,'') = '' )
+
+
+
+
+
+
+
+		select
+
+		'' as Chk,
+
+		CPID as CustID,
+
+		CompanyNm as Customer,
+
+		APContact as Contact,
+
+		APEmail as Email,
+
+		sum(FxBalance) as [{C}Balance Due],
+
+		CurrencyCd as [Currency]
+
+		from #ARASOF
+
+		--left join #LastPayment on #ARASOF.BuySellNo = #LastPayment.BuySellNo and #LastPayment.CustID = #ARASOF.CPID
+
+		where (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan) and DaysOut <> ''
+
+		group by CompanyNm, CPID, APContact,APEmail,CurrencyCd
+
+
+
+		--INSERT #ARSUMMARY
+
+		--	SELECT 
+
+		--	CompanyNm, 
+
+		--	CPID As [-Hidden-CpID], 
+
+		--	SUM(AgingCurrent),
+
+		--	SUM(Aging_1to30),
+
+		--	SUM(Aging_31to60),
+
+		--	SUM(Aging_61to90),
+
+		--	SUM(Aging_Over90),
+
+		--	SUM(InvoiceAmt) As OriginalBalance,
+
+		--	SUM(Payments),
+
+		--	SUM(SAdjustment),
+
+		--	SUM(Balance),
+
+		--	0.00 As Concentration 
+
+		--FROM #ARASOF GROUP BY CompanyNm, CPID			
+
+
+
+		--IF @TotalBalance <> 0 UPDATE #ARSUMMARY SET Concentration = (Aging_Balance / @TotalBalance) * 100
+
+
+
+		--if @ReportOption = 'DETAILED'
+
+		--	SELECT
+
+		--		'' AS Statement,
+
+		--		CompanyNm As [Customer], 
+
+		--		CPID As [-Hidden-CpID],
+
+		--		bala AS [{C}Balance Due],
+
+		--		Aging_1to30  As [{C}1 - 30],
+
+		--		Aging_31to60 As [{C}31 - 60],
+
+		--		Aging_61to90 As [{C}61 - 90],
+
+		--		Aging_Over90 As [{C}Over 90],
+
+		--		OriginalBalance AS [{C}Original Balance],
+
+		--		Payments As [{C}Payments], 
+
+		--		Adjustments AS [{C}Adjustments],
+
+		--		Aging_Balance AS [{C}Balance],
+
+		--		Concentration 
+
+		--	 FROM #ARSUMMARY ORDER BY CompanyNm
+
+		
+
+		--IF @ReportOption = 'SUMMARY'
+
+
+
+		--	SET @ReturnVal =(SELECT SUM(Balance) FROM #ARASOF)
+
+		RETURN
+
+	END
+
+		
+
+
+
+
+
+    -------------------------------------------------------------------------------------------------------------------------
+
+	-- DETAILED AGING REPORT
+
+	IF @DoSummary = 0 BEGIN
+
+		
+
+		IF @AgeFromDate = 'POSTING' UPDATE #ARASOF SET DateSort = InvoiceDt
+
+		IF @AgeFromDate = 'INVOICE' UPDATE #ARASOF SET DateSort = ShipDt
+
+				
+
+		if @ReportOption = 'DETAILED'
+
+			SELECT 
+
+				CompanyNm As [Customer], 
+
+				CPID As [-Hidden-CpID], 
+
+				#ARASOF.BuySellNo As [Wks No],
+
+				CustOrderNum as [Order No],
+
+				#ARASOF.InvoiceDt As [Invoice Date], 
+
+				ShipDt As [Shipping Date], 
+
+				InvoiceAmt As [{C}Invoice Amount],
+
+				Payments As [{C}Payments], 
+
+				Balance As [{C}Balance], 
+
+				#ARASOF.SAdjustment As [{C}Adjustments], 
+
+				DaysToPay As [Days to Pay], 
+
+				#ARASOF.DueDt As [Due Date],
+
+				DaysOut As [Days Out],
+
+				AgingCurrent As [{C}Current],
+
+				Aging_1to30 As [{C}1 - 30],
+
+				Aging_31to60 As [{C}31 - 60],
+
+				Aging_61to90 As [{C}61 - 90],
+
+				Aging_Over90 As [{C}Over 90],
+
+				OverDueBalance As [{C}Remaining Balance],
+
+				GroupNm As [-Hidden-GroupNm],
+
+				#ARASOF.CurrencyCd As [-Hidden-Currency],
+
+				APContact,
+
+				APVoiceNo,
+
+				PaymentTerms,
+
+				CreditLimit,
+
+				CustAddr,
+
+				#ARASOF.CustID,
+
+				Supplier,
+
+				convert(varchar(20), StatmentNo) [Group Invoice],
+
+				PORef As [Order Ref],
+
+				ISNULL(RelNo,'') As [Release No]
+
+			FROM #ARASOF 
+
+			LEFT JOIN BuySell ON #ARASOF.BuySellNo = BuYSell.BuySellNo
+
+			where (@ShowPastDueOnly = 0 or #ARASOF.DaysOut > 0)
+
+			and (@daysOut = 0 or (#ARASOF.DaysOut > 0 and  #ARASOF.DaysOut < @daysOut))
+
+			ORDER BY CompanyNm, DateSort
+
+			
+
+		IF @ReportOption = 'SUMMARY'
+
+			SET @ReturnVal =(SELECT SUM(Balance) FROM #ARASOF)
+
+	END  
+
+
+
+
+
+
+

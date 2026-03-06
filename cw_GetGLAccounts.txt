@@ -1,0 +1,30 @@
+CREATE   PROCEDURE [dbo].[cw_GetGLAccounts] @cat char(15) AS
+
+--09/13/2011 MCM: Added PURCHFRT category option for counterparty charges
+
+--10/03/2013 MCM: Order by Name
+
+--12/23/2014 DSH Added OFFSET Account so that Expense form on worksheet shows account and allows editing of descriprion.
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	select Name, GLAcct, CAT, BankCurrencyCd, PettyCashCOID
+
+	FROM GLAccount 
+
+	where cat = @cat OR @cat = ''
+
+    OR (@cat = 'PURCHASES' AND (cat = 'PURCHASES' OR cat = 'FREIGHT' OR cat = 'COMM EXPENSE'  OR cat = 'COMM INCOME' OR cat = 'OFFSET'))
+
+    OR (@cat = 'PURCHFRT'  AND (cat = 'PURCHASES' OR cat = 'FREIGHT'))
+
+    ORDER BY [Name]
+
+
+

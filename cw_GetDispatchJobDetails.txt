@@ -1,0 +1,68 @@
+CREATE   PROCEDURE [dbo].[cw_GetDispatchJobDetails] @JobNo int AS
+
+
+
+--7/22/21 (Alex) - Created
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SET NOCOUNT ON;
+
+
+
+
+
+select 
+
+DispatchJob.COID,
+
+JobNo,AccountID,
+
+Location,EquipmentType,
+
+CarrierID,
+
+Driver,
+
+ HWeight,
+
+ HWeightUOM ,
+
+ Grade.Description,
+
+ Grade.GradeID ,
+
+ CounterParty.CurrCode,
+
+ CounterParty.CommRate,
+
+ WarehouseID,EquipmentNoOut,RefNo,
+
+ Hauler.CurrCode AS CurrCodeHauler,
+
+ Hauler.CommRate AS CommRateHauler,
+
+ Hauler.CpID AS HaulerCpID,
+
+ ISNULL(E.EquipmentID, 0) AS [EquipmentID], 
+
+ ISNULL(E.EquipmentNo, '') AS [EquipmentNo]
+
+
+
+from DispatchJob 
+
+LEFT JOIN Grade ON Grade.GradeID =  DispatchJob.Commodity
+
+LEFT JOIN CounterParty ON CounterParty.CpID = DispatchJob.AccountID
+
+LEFT JOIN CounterParty Hauler  ON Hauler.CpID = DispatchJob.CarrierID
+
+LEFT JOIN Equipment E ON DispatchJob.EquipmentIDRtn = E.EquipmentID
+
+where JobNo =  @JobNo
+
+
+

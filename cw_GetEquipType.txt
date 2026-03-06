@@ -1,0 +1,20 @@
+CREATE PROC [dbo].[cw_GetEquipType]
+
+ AS  
+
+--09/23/2014 MEC: Created  
+
+--09/23/2014 MCM: col list
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	SELECT rtrim(EqType) As EqType, RTRIM(ShortName) AS ShortName, RTRIM(TareWt) As TareWt, isnull(Rtrim(Ltrim(INTTRACODE)),'') as INTTRACODE FROM EquipmentType WITH (NOLOCK)  
+
+
+
+	
+

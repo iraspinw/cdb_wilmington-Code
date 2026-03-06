@@ -1,0 +1,10 @@
+create proc [dbo].[cw_GetQBOAccounts] @COID varchar(2) as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+select qboapacctid, qboapaccrualid, qboismulticurrency from companyinfo where coid = @COID
+

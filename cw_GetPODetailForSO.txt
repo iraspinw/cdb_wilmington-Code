@@ -1,0 +1,96 @@
+CREATE   PROCEDURE [dbo].[cw_GetPODetailForSO] 
+
+	@PONumber char(15)
+
+AS
+
+
+
+--06/10/2010 MEC: Created for .net
+
+
+
+--cw_GetPODetailForSO '100015'
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	SELECT DISTINCT 
+
+		--PODetail.PO_ID as [pID],
+
+        PO.PONumber [PO Number],
+
+        PO.PODate [Date],
+
+        Case When IsNull(PODesc,'') <> '' Then PODesc Else Grade.[Description] End [Product],
+
+        REPLACE(REPLACE(Specifications,char(10),''),char(13),' ') Specifications,
+
+        convert(varchar(100), Units) + ' ' +  UnitType.UnitType [Packaging],
+
+        convert(varchar, cast([Weight] as money)) + ' ' + dbo.CnvUOM_Names(WeightUOM) as Quantity,
+
+        convert(varchar, cast(Price as money)) + '/' + dbo.CnvUOM_Names(PriceUOM) + ' ' + CurrencyCd Price,
+
+		[Weight] [-Hidden-Wt],
+
+		WeightUOM [-Hidden-UOM]
+
+  --      (SELECT TOP 1 referrer.name FROM POSalesReps INNER JOIN referrer ON POSalesReps.ReferrerNo = referrer.ReferrerNo WHERE POSalesReps.POID = PO.POID) As SalesRep,
+
+  --      PO.Status,
+
+  --      c.CompanyNm,
+
+  --      PO.POReference,
+
+  --      PO.MonthlyContract, 
+
+  --      Grade.GradeID,
+
+		--ProductGroupID,
+
+  --      Address.country,
+
+  --      c.CpID as CounterpartyID, 
+
+  --      PO.SchShipDate as ScheduleDate, 
+
+  --      REPLACE(REPLACE(PO.Notes,char(10),''),char(13),' ') Notes, 
+
+  --      SPACE(30) as CounterpartyReference, 
+
+  --      ShipTo.CompanyNm as CounterpartyName
+
+	FROM PO WITH(NOLOCK)
+
+	--INNER JOIN PO SO WITH(NOLOCK) ON SO.SONumberLink  = PO.PONumber
+
+	INNER JOIN PODetail WITH(NOLOCK) on PO.PONumber = PODetail.PONumber
+
+	INNER JOIN Grade WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID
+
+	LEFT JOIN UnitType WITH(NOLOCK) ON UnitType.TypeID = PODetail.UnitType
+
+	--INNER JOIN Counterparty c WITH(NOLOCK) on PO.CpID = c.CpID
+
+	--LEFT JOIN Address WITH(NOLOCK) ON PO.ShipAddrID = Address.CpID AND PO.ShipAddrType = Address.[Type]
+
+	--LEFT JOIN POSalesReps p WITH(NOLOCK) ON p.POID = PO.POID
+
+	--LEFT JOIN PriceFormula WITH(NOLOCK) ON PODetail.FormulaID = PriceFormula.FormulaID		
+
+	--LEFT JOIN Counterparty ShipTo WITH(NOLOCK) on PO.ShipAddrID = ShipTo.CpID
+
+	WHERE PO.SONumberLink = @PONumber And PO.[Source] = 'PO'
+
+		
+

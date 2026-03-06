@@ -1,0 +1,116 @@
+CREATE  PROCEDURE [dbo].[cw_GetMonthlyContractShipments] 
+
+	@PONo varchar(15), 
+
+	@GradeID varchar(15), 
+
+	@UnitType char(1), 
+
+	@Source char(2), 
+
+	@PODetailID int = 0
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+Declare @ClosedPeriodCutoff datetime
+
+Declare @Cout INT
+
+--12/29/2004: dsh Created.
+
+--1/3/2004: Revised to include conditional filters.
+
+--2/24/2005(JW): Added parameters GradeID and UnitType for contract pricing scheduling utility
+
+--1/13/2006 BM:  Added @Source parameter to distinguish between Purchase contracts and Sales contracts
+
+--8/9/2007 BM: Added @PODetailID parameter to allow use of new PPO_ID and SPO_ID links
+
+--04/28/2008 DSH: Return shipments with paid expenses if they are flat fee only 
+
+--06/11/2008 DSH: (*1) Revised to filtr on specific expense types. (problem rpt by GCR)
+
+--10/02/2009 MCM: Added SCurrencyCd for checking
+
+--10/08/2009 MCM: Added PCurrencyCd for checking
+
+--08/09/2011 DSH: *Avoid Price Update when load is already attached to a Reverse Billing Batch. 
+
+--11/15/2013 RS: Bale Route support added 
+
+--05/18/2017 MEC: Wrap IsNull to zero for account for when Reversed & ReverseBatchNo is null
+
+--10/10/2022 Nick: Added IsSalesPrice
+
+
+
+	-- GET OPEN PERIOD. 
+
+	SELECT @ClosedPeriodCutoff = OpenMonth FROM SYSTEMINFO WHERE ID = '00'
+
+
+
+	-- GET LIST OF SHIPMENTS AVAILABLE TO UPDATE.
+
+	SELECT DISTINCT 
+
+		wksDetail.BuySellNo, 
+
+		DetailID,
+
+		wksDetail.GradeID, 
+
+		CustID, 
+
+		wksDetail.UnitType, 
+
+		wksDetail.SCurrencyCd, 
+
+		wksDetail.PCurrencyCd,
+
+		IIF(isnull(PriceFormula.IndexID, 1) = 0, 1, 0) as IsSalesPrice
+
+	FROM wksDetail WITH(NOLOCK)  
+
+	INNER JOIN BuySell WITH(NOLOCK)  ON wksDetail.BuySellNo = BuySell.BuySellNo
+
+	LEFT JOIN PODetail PurchaseDetail WITH(NOLOCK) ON wksDetail.PPO_ID = PurchaseDetail.PO_ID
+
+	LEFT JOIN PriceFormula WITH(NOLOCK) ON PriceFormula.FormulaID = PurchaseDetail.FormulaID
+
+	WHERE 
+
+	((PPO_ID = @PODetailID and @Source = 'PO' AND @PODetailID <> 0) OR (SPO_ID = @PODetailID and @Source = 'SO' and @PODetailID <> 0))
+
+	AND (@Source <> 'SO' OR (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(PLANT)'))				    --SO Contracts not used on Receiving Worksheets
+
+	AND CustID <> '{C}' AND CustID <> '(OTHER)' 
+
+	AND (BuySell.[Status]<>'I' OR (BuySell.[Status]='I' AND InvoiceDt >= @ClosedPeriodCutoff))  				            -- Not in a Closed Period.
+
+	AND charindex(WksDetail.PUOM,'L,S,K,M,G') <> 0 					    			                        -- Supported pricing models only.
+
+	AND NOT EXISTS(SELECT PayableID FROM Payables (NOLOCK) WHERE Payables.BuySellNo = BuySell.BuySellno     -- Supplier is NOT paid & NOT IN Reverse-Batch.  
+
+		AND ItemIDSource = 'S' AND IsNull(Reversed,0)=0 AND (IsNull(Posted,0)=1 OR IsNull(ReverseBatchNo,0) <> 0))
+
+	AND NOT EXISTS(SELECT * FROM WKSDELIVERY WITH(NOLOCK) WHERE WKSDELIVERY.BUYSELLNO = BUYSELL.BUYSELLNO	-- (*1) With no expenses that are %sale/%purchase/%gp 
+
+		AND charindex(PricePer,'¢/$110,% GP,% BUY,% SELL,¢/$100') <> 0 )
+
+	AND (ISNULL(BuySell.BaleRouteID,0)<>0 OR
+
+				NOT EXISTS(SELECT * FROM WKSINVENTORY WITH(NOLOCK)  				                                -- No Sold Off-Inventory.
+
+				INNER JOIN INVENTORY WITH(NOLOCK)  ON WKSINVENTORY.Lotno=INVENTORY.Lotno 
+
+				WHERE INVENTORY.BUYSELLNO = BUYSELL.BUYSELLNO)
+
+		)
+
+
+

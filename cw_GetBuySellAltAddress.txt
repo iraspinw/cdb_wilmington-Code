@@ -1,0 +1,22 @@
+
+
+
+
+
+
+
+
+Create  PROCEDURE [dbo].[cw_GetBuySellAltAddress] @COID int as
+
+
+
+--8/23/2007 MM: Changed table from Buysell to DBAAddress
+
+--08/18/2008 MCM: Added Country join to obtain UseAltAddrFormat information
+
+--08/27/2008 MCM: ISNULL around UseAltAddrFormat
+
+	
+
+	SELECT CoName, CoAddr1, CoAddr2, CoCity, CoRegion, CoPostalCd, CoCtry, CoPhone, CoFax, CoEmail, ISNULL(Country.UseAltAddrFormat,0) FROM DBAAddress WITH(NOLOCK) LEFT JOIN Country ON Country.CountryID = DBAAddress.CoCtry WHERE CoAddrID = @COID
+

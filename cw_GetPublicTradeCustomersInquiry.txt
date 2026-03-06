@@ -1,0 +1,54 @@
+CREATE PROC [dbo].[cw_GetPublicTradeCustomersInquiry] @Status char(1) = '', @Cust varchar(50) = '' AS
+
+--12/22/2020: MN:CREATED
+
+SET NOCOUNT ON
+
+
+
+SELECT
+
+	PTCustID
+
+	,FirstName AS [First Name]	
+
+	,LastName AS [Last Name]
+
+	,Company
+
+	,Addr1 AS [Address 1]
+
+	,Addr2 AS [Address 2]
+
+	,Addr3 AS [Address 3]
+
+	,City
+
+	,Region 
+
+	,PostalCd As [Zip Code]
+
+	,CountryID  As [Country]
+
+	,Phone 
+
+	,Email 
+
+	,PublicPriceListName AS [Price List]
+
+	--,IsActive
+
+	
+
+FROM PublicTradeCustomer PTC
+
+LEFT JOIN PublicPriceList PPL ON PTC.PLID = PPL.PLID
+
+WHERE (@Status = '' OR (IsActive = @Status))
+
+AND (@Cust = '' OR LastName Like '%' + @Cust + '%')
+
+ORDER BY LastName
+
+
+

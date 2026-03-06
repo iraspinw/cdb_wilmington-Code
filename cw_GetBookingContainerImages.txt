@@ -1,0 +1,24 @@
+CREATE PROC [dbo].[cw_GetBookingContainerImages] @BookingNo varchar(25) as
+
+Set NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+--04/27/2016 MEC: Created
+
+
+
+	-- cw_GetBookingContainerImages '128312'
+
+	
+
+	SELECT DocID
+
+	FROM BuySell WITH(NOLOCK)
+
+	INNER JOIN DocumentImage ON DocumentImage.RefID = BuySell.BuySellNo
+
+	WHERE BuySell.BookingNo = @BookingNo And DocumentImage.IsContainer = 1
+

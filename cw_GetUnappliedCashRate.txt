@@ -1,0 +1,20 @@
+Create proc [dbo].[cw_GetUnappliedCashRate] 
+
+
+
+	@LedgerID int
+
+
+
+as
+
+
+
+-- MEC: Created for Unapplied Cash Rates
+
+
+
+select FxRate from UACashLedger where LedgerID = @LedgerID
+
+		
+

@@ -1,0 +1,514 @@
+CREATE   PROCEDURE [dbo].[cw_GetDocTrackInquiry_TEST] @SetTypeID int = 0, @EventTypeID INT = 0, @SetStatus varchar(10) = '', @UserID as char(10) = '', @DateFormat CHAR(10) = 'MM/dd/yyyy'
+
+	AS
+
+	
+
+--1/17/2020 alex: Created
+
+--11/16/2022 ZT: Changed SELECT CONVERT(nvarchar,dtd.EventDt, 1) to SELECT CONVERT(nvarchar,dtd.EventDt, 101)
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	--Select top 200 PO.PONumber as 'Order #'  from PO
+
+	if ((select count(*) from EventType) = 0)
+
+	begin
+
+	return;
+
+	end
+
+
+
+	-- CREATE ##ALLEVENTS TABLE THAT WILL INCLUDE ALL EVENTS FOR ALL SOs 
+
+	CREATE TABLE #ALLEVENTS(
+
+	SONo char(15),
+
+	EventTypeID int,
+
+	IsCompleted bit,
+
+	EventShortName varchar(50),
+
+	DocSetTypeID int
+
+	)
+
+	
+
+	declare @Orders table (OrderRowNum int IDENTITY (1, 1), SONo char(15))
+
+	insert into @Orders (SONo) SELECT DISTINCT PONumber FROM PO WHERE ISNULL(DocSetTypeID,0) <> 0
+
+
+
+	--select * from @Orders
+
+
+
+	declare @Proc nvarchar(50)
+
+	declare @ExecSql nvarchar(255)
+
+	select @Proc = 'cw_InsertForDocTrackingInq'
+
+
+
+	declare @OrderMaxRows int
+
+	declare @OrderRowCnt int
+
+	select @OrderMaxRows=count(*) from @Orders
+
+
+
+	select @OrderRowCnt = 1
+
+
+
+	while @OrderRowCnt <= @OrderMaxRows
+
+	begin
+
+		select @ExecSql = 'exec ' + @Proc + ' ''' + SONo + '''' from @OrderS where  OrderRowNum = @OrderRowCnt
+
+		execute sp_executesql @ExecSql
+
+		
+
+		Select @OrderRowCnt = @OrderRowCnt + 1
+
+	end
+
+
+
+		--select * from #ALLEVENTS
+
+
+
+		declare @cols as varchar(max) 
+
+		set @cols =
+
+		 (SELECT SUBSTRING(
+
+				(
+
+				SELECT ',[' + CAST(DocEventType.EventShortName AS VARCHAR)+']' FROM DocEventType order by DocEventType.EventSeqOrder
+
+				FOR XML PATH('')), 2,10000)) 
+
+
+
+
+
+
+
+   DECLARE  @query  AS NVARCHAR(MAX);
+
+
+
+
+
+	SELECT isnull(CONVERT(varchar(50), dse.EventTypeID),'n/a') as EventTypeIDGridData, #ALLEVENTS.EventTypeID, SONo ,EventShortName,#ALLEVENTS.IsCompleted,DocSetTypeID,BuySell.BuySellNo
+
+	INTO #ALLEVENTS2 
+
+	      from #ALLEVENTS 
+
+		   INNER JOIN BuySell WITH (NOLOCK) ON BuySell.RefSONo =#ALLEVENTS.SONo
+
+				 left JOIN DocSetEvents dse
+
+                        ON #ALLEVENTS.DocSetTypeID = dse.SetTypeID  and #ALLEVENTS.EventTypeID = dse.EventTypeID
+
+				-- left JOIN DocTrackDetail dtd
+
+				    --   ON #ALLEVENTS.EventTypeID=dtd.EventTypeID and #ALLEVENTS.DocSetTypeID = dtd.DocTrackID
+
+
+
+--select * from #ALLEVENTS2
+
+
+
+				  update #ALLEVENTS2
+
+				  set #ALLEVENTS2.EventTypeIDGridData= ( SELECT FORMAT(dtd.EventDt, @DateFormat))
+
+				  from #ALLEVENTS2 				 
+
+				  left JOIN DocTrackDetail dtd ON #ALLEVENTS2.EventTypeID=dtd.EventTypeID --and #ALLEVENTS2.DocSetTypeID = dtd.DocTrackID
+
+				  left join BuySell on BuySell.DocTrackID =dtd.DocTrackID
+
+				  where #ALLEVENTS2.EventTypeIDGridData<>'n/a' and BuySell.BuySellNo=#ALLEVENTS2.BuySellNo
+
+
+
+				  update #ALLEVENTS2
+
+				  set #ALLEVENTS2.EventTypeIDGridData = Case When IsNumeric(#ALLEVENTS2.EventTypeIDGridData) = 1 Then '' Else #ALLEVENTS2.EventTypeIDGridData End
+
+				  from #ALLEVENTS2 				 
+
+				  left JOIN DocTrackDetail dtd ON #ALLEVENTS2.EventTypeID=dtd.EventTypeID --and #ALLEVENTS2.DocSetTypeID = dtd.DocTrackID
+
+				  --left join BuySell on BuySell.DocTrackID =dtd.DocTrackID
+
+				  where #ALLEVENTS2.EventTypeIDGridData<>'n/a' --and BuySell.BuySellNo=#ALLEVENTS2.BuySellNo
+
+
+
+
+
+
+
+--select * from #ALLEVENTS2
+
+       
+
+	set @query = 'SELECT * INTO ##DocTrackTable from 
+
+           (
+
+                select  EventTypeIDGridData as EventTypeIDe , SONo as SO# ,#ALLEVENTS2.BuySellNo as BuySellNo,EventShortName 
+
+				
+
+                from #ALLEVENTS2
+
+				
+
+           ) x
+
+            pivot 
+
+            (
+
+                 max(EventTypeIDe)
+
+                for EventShortName in (' + @cols + ')
+
+            ) p '
+
+
+
+
+
+   execute(@query)
+
+
+
+   --select * from ##DocTrackTable
+
+
+
+
+
+   
+
+	
+
+
+
+
+
+	
+
+
+
+	
+
+	select
+
+	 ##DocTrackTable.SO# as [SO No],
+
+	 PO.POReference as [Reference],
+
+	0 as IsCompleted,
+
+	BuySell.BuySellNo as Worksheet,
+
+	--Space(25) as EventDt,
+
+	--Space(25) as ConfirmNo, 
+
+	--Space(25) as TrackingNo,
+
+	BookSheet.BookingNo as [Booking No],
+
+	CounterParty.CompanyNm as Vessel,
+
+	BuySell.DocTrackID ,
+
+	0  as IsPartOfSet,
+
+	 Case When Year(CutOffDate) = 1900 Then Null Else CutOffDate End [Cut Off Date],
+
+	 Case When Year(DocCutOffDate) = 1900 Then Null Else DocCutOffDate End [Doc Cut Off Date],
+
+	 Case When Year(ETA) = 1900 Then Null Else ETA End ETA,
+
+	 Case When Year(ETS) = 1900 Then Null Else ETS End ETS, 
+
+	 (SELECT TOP 1 LCNo FROM LC WHERE PO.POID = LC.POID and LC.LCNo <> '') as [LC No],
+
+	-- CONVERT(varchar(10), 'OPEN') as SetStatus,
+
+	 ISNULL(DocTrackHeader.SetStatus,'OPEN')  AS [Doc Set Status],
+
+	 InvoiceDt as[Invoice Date],
+
+	 DueDt as [Due Date],
+
+	 dbo.GetWksStatusNameV2(BuySell.BuySellNo) as [Wks Status],
+
+	 po.DocSetTypeID ,
+
+	 UserDef.UserNm as [User],
+
+	 ##DocTrackTable.*
+
+	INTO #REPORT
+
+	from ##DocTrackTable
+
+	inner join PO on po.PONumber= ##DocTrackTable.SO#
+
+	INNER JOIN BuySell WITH (NOLOCK) ON BuySell.RefSONo = ##DocTrackTable.SO# and ##DocTrackTable.BuySellNo=BuySell.BuySellNo
+
+	LEFT JOIN BookSheet WITH (NOLOCK) ON BookSheet.BookingNo = BuySell.BookingNo
+
+	LEFT JOIN CounterParty WITH (NOLOCK) ON BookSheet.Carrier =  CounterParty.CPID
+
+	LEFT JOIN DocTrackHeader ON DocTrackHeader.DocTrackID=BuySell.DocTrackID
+
+	inner join UserDef on UserDef.UserID = BuySell.UserID
+
+	where  (@SetTypeID =0 or @SetTypeID =po.DocSetTypeID)
+
+	       and (@UserID ='' or @UserID =BuySell.UserID)
+
+		   and (@SetStatus ='' or @SetStatus = ISNULL(DocTrackHeader.SetStatus,'OPEN'))
+
+		   
+
+	Declare @FilterEventColumn as varchar(80) 
+
+	select @FilterEventColumn =DocEventType.EventShortName  FROM DocEventType where DocEventType.EventTypeID=@EventTypeID
+
+
+
+	DECLARE  @query2  AS NVARCHAR(MAX);
+
+	if @EventTypeID=0
+
+		begin
+
+		set @query2= 'select * from #REPORT'
+
+
+
+		 end
+
+	else
+
+		begin
+
+			 set @query2= 'select * from #REPORT where ( IsCompleted=0 and  ['+@FilterEventColumn+'] <>''n/a'')'
+
+
+
+		 end
+
+
+
+	execute(@query2)
+
+
+
+   drop table ##DocTrackTable
+
+
+
+
+
+
+
+
+
+   --SELECT  #ALLEVENTS.SONo, #ALLEVENTS.EventTypeID, #ALLEVENTS.IsCompleted,
+
+	--BuySell.BuySellNo, 
+
+	--Space(25) as EventDt,Space(25) as ConfirmNo, Space(25) as TrackingNo,
+
+	--DocEventType.EventShortName,DocEventType.EventDescription,
+
+	--BookSheet.BookingNo,CounterParty.CompanyNm as Vessel, DocEventType.EventSeqOrder,
+
+	--(SELECT DocSetTypeID FROM PO WHERE PO.PONumber = #ALLEVENTS.SONo) As DocSetTypeID,
+
+	--BuySell.DocTrackID,0 as IsPartOfSet, CutOffDate,DocCutOffDate,ETA,ETS, 
+
+	--Space(25) as LCNo,CONVERT(varchar(10), 'OPEN') as SetStatus,
+
+	--InvoiceDt,DueDt,dbo.GetWksStatusName(BuySell.BuySellNo) as WksStatus,##TempTableTesting.*
+
+	--INTO #REPORT
+
+	--FROM #ALLEVENTS
+
+	--INNER JOIN BuySell WITH (NOLOCK) ON BuySell.RefSONo = #ALLEVENTS.SONo
+
+	--INNER JOIN DocEventType WITH (NOLOCK) ON DocEventType.EventTypeID = #ALLEVENTS.EventTypeID
+
+	--INNER JOIN ##TempTableTesting WITH (NOLOCK) ON ##TempTableTesting.SO# = #ALLEVENTS.SONo
+
+	--LEFT JOIN BookSheet WITH (NOLOCK) ON BookSheet.BookingNo = BuySell.BookingNo
+
+	--LEFT JOIN CounterParty WITH (NOLOCK) ON BookSheet.Carrier =  CounterParty.CPID
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	---- GET DOC EVENT INFO
+
+	--UPDATE #REPORT 
+
+	--SET #REPORT.EventDt = DocTrackDetail.EventDt,
+
+	--#REPORT.ConfirmNo = DocTrackDetail.ConfirmNo,
+
+	--#REPORT.TrackingNo = DocTrackDetail.TrackingNo,
+
+	--#REPORT.IsCompleted = DocTrackDetail.IsCompleted
+
+	--FROM #REPORT
+
+	--INNER JOIN DocTrackDetail ON  #REPORT.DocTrackID = DocTrackDetail.DocTrackID AND #REPORT.EventTypeID = DocTrackDetail.EventTypeID
+
+
+
+	---- GET LC NOs
+
+	--UPDATE #REPORT 
+
+	--SET #REPORT.LCNo = (SELECT TOP 1 LCNo FROM LC WHERE PO.POID = LC.POID and LC.LCNo <> '') 
+
+	--FROM #REPORT
+
+	--INNER JOIN PO ON #REPORT.SONo = PO.PONumber
+
+
+
+	---- CHECK IF EVENT IS PART OF THE ORDER DOC SET
+
+	--UPDATE #REPORT SET IsPartOfSet = 1
+
+	--FROM #REPORT
+
+	--INNER JOIN DocSetEvents ON DocSetEvents.SetTypeID=#REPORT.DocSetTypeID and DocSetEvents.EventTypeID=#REPORT.EventTypeID
+
+
+
+	---- GET DOC SET STATUS
+
+	--UPDATE #REPORT SET #REPORT.SetStatus = ISNULL(DocTrackHeader.SetStatus,'OPEN') 
+
+	--FROM #REPORT
+
+	--INNER JOIN DocTrackHeader ON DocTrackHeader.DocTrackID = #REPORT.DocTrackID
+
+
+
+	
+
+	
+
+	--IF @EventTypeID = 0 BEGIN
+
+	--	SELECT * FROM #REPORT
+
+	--	WHERE (@SetTypeID = 0 OR DocSetTypeID = @SetTypeID)
+
+	--	AND (@SetStatus='' OR #REPORT.SetStatus = @SetStatus)
+
+	--	ORDER BY SONo,BuySellNo,EventSeqOrder
+
+	--END
+
+	--ELSE BEGIN
+
+	---- SHOW ONLY RECORDS WITH CURRENT EVENT OPEN
+
+	--	--SELECT DISTINCT SONo, BuySellNo 
+
+	--	SELECT DISTINCT SONo, BuySellNo
+
+	--	INTO #COMPLETE
+
+	--	FROM #REPORT 
+
+	--	INNER JOIN DocSetEvents ON DocSetEvents.SetTypeID=#REPORT.DocSetTypeID AND DocSetEvents.EventTypeID = @EventTypeID
+
+	--	WHERE #REPORT.EventTypeID = @EventTypeID AND IsCompleted = 0
+
+		
+
+	--	SELECT  #REPORT.* FROM #REPORT
+
+	--	INNER JOIN #COMPLETE On #REPORT.SONo =#COMPLETE.SONo AND #REPORT.BuySellNo = #COMPLETE.BuySellNo
+
+	--	WHERE (@SetTypeID = 0 OR DocSetTypeID = @SetTypeID)
+
+	--	AND (@SetStatus='' OR #REPORT.SetStatus = @SetStatus)
+
+	--	ORDER BY SONo,BuySellNo,EventSeqOrder
+
+
+
+	--END
+
+	
+
+
+
+	---[dbo].[cw_GetDocTrackInquiry] 0,0 ,''
+
+	--select * from DocEventType
+
+	--select * from  DocTrackDetail
+
+	--select BuySell.DocTrackID from BuySell
+
+	 --select * from DocSetEvents
+
+
+
+	-- select * from  DocTrackHeader
+
+	-- select * from  DocTrackDetail Proforma Invoice Booking Instructions Pre Shipment Inspection Cert
+
+	 
+

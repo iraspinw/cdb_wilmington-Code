@@ -1,0 +1,22 @@
+CREATE proc [dbo].[cw_GetEquipmentContainers] @ContainerType varchar(15) = '' as
+
+
+
+-- 3/28/22 MN: CREATED
+
+
+
+		SELECT 
+
+				
+
+			EquipmentID, EquipmentNo, ContainerType
+
+		FROM EquipmentContainer WITH(NOLOCK) 
+
+		WHERE (@ContainerType = '' OR ContainerType = @ContainerType)
+
+			
+
+
+

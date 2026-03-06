@@ -1,0 +1,64 @@
+CREATE proc [dbo].[cw_GetOpenOrders] @CPID varchar(25), @Side char(2), @Location varchar(45) = '' as
+
+
+
+--7/3/2019 Alex : Return the number of grades per PO Number
+
+--10/02/2020 MEC: Added Location Filter for Inventory Pickers
+
+
+
+	if @Side = 'SO' begin
+
+		select distinct po.ponumber,t.CountGrade
+
+		from po
+
+		------------------added by Alex Return the grade per PO number---------------
+
+		 left JOIN
+
+			(
+
+			select PODetail.PONumber,COUNT(*) as CountGrade from   PODetail
+
+		     group by  PODetail.PONumber
+
+			) t on t.PONumber =po.PONumber
+
+         ---------------------------------------------------------------------------
+
+		where (@CPID=Po.CpID)
+
+		and (@side = po.source)
+
+		and (@Location = '' OR @Location = po.AddrType)
+
+		and po.status='OPEN'
+
+		order by ponumber
+
+	end
+
+	if @Side = 'PO' begin
+
+		select distinct po.ponumber, ISNULL(MonthlyContract,0) MonthlyContract, podate --, grade.[Description], podetail.UnitType, podetail.Price, podetail.PO_ID, podetail.gradeid, podetail.PriceUOM
+
+		from po
+
+		inner join podetail on podetail.PONumber = po.PONumber
+
+		inner join grade on grade.gradeid = podetail.GradeID
+
+		where (@CPID=Po.CpID)
+
+		and (@side = po.source)
+
+		and (@Location = '' OR @Location = po.AddrType)
+
+		and po.status='OPEN'
+
+		order by podate 
+
+	end
+

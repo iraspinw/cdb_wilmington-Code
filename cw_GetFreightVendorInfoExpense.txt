@@ -1,0 +1,28 @@
+CREATE   PROCEDURE [dbo].[cw_GetFreightVendorInfoExpense] @WksNo int AS
+
+-- 02/28/2018 MN: CREATED
+
+	
+
+	SELECT Counterparty.CompanyNm as FRTVendorNm, 
+
+	dbo.xDoc_GetAddress(Counterparty.CPID,'',0,0) as FRTVendorAddr,
+
+	Contact.ContactNm AS [Contact],Contact.Email,Contact.PhoneBusiness AS [Telephone]
+
+	FROM ExpenseAlloc_Detail WITH(NOLOCK) 
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON ExpenseAlloc_Detail.CpID = Counterparty.CpID
+
+	INNER JOIN [ADDRESS] WITH(NOLOCK) ON [ADDRESS].CPID = Counterparty.CPID AND ISNULL(InvoiceAddr,'') = 'Y'
+
+	INNER JOIN Contact WITH(NOLOCK) ON Contact.CPID = Counterparty.CPID AND IsPrimary = '1'
+
+	WHERE TransNo = @WksNo
+
+	AND IsFreight = 1
+
+
+
+
+

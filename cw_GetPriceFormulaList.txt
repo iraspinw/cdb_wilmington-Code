@@ -1,0 +1,36 @@
+
+
+CREATE PROC [dbo].[cw_GetPriceFormulaList] @IncludeSales bit = 0
+
+AS
+
+--4/17/2006 BM: Created
+
+--5/18/2006 BM: Added Support for % Formulas
+
+--6/1/2006 BM: Added Minimum Price
+
+--12/19/2007 BM: Added Support  to Apply %-Factor BEFORE deducting Charge
+
+--03/11/2010 MCM: Changed INNER JOIN to LEFT JOIN for Profit Sharing project - indexes do not exist in database
+
+--03/12/2010 MCM: Added @IncludeSales
+
+--05/04/2010 MCM: Added IsFixed
+
+--12/02/2013 MCM: Added UOM and CurrencyCd
+
+SET NOCOUNT ON
+
+
+
+	SELECT  FormulaID as [-Hidden-FormulaID], FormulaDesc as Formula, PriceIndex.IndexNm as [Index]
+
+		FROM PriceFormula 
+
+		LEFT JOIN PriceIndex ON PriceIndex.IndexID = PriceFormula.IndexID
+
+		WHERE (@IncludeSales = 0 AND FormulaType <> 'SALE') OR @IncludeSales = 1
+
+		ORDER BY FormulaDesc
+

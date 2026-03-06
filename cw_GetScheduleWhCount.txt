@@ -1,0 +1,116 @@
+CREATE PROC [dbo].[cw_GetScheduleWhCount] @ReturnCount varchar(15) OUTPUT
+
+AS
+
+
+
+--07/23/2021 MN: CREATED
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+BEGIN TRANSACTION
+
+
+
+	CREATE TABLE #Tickets(
+
+		PackingSlipNo CHAR(12)
+
+	)
+
+
+
+	INSERT #Tickets	
+
+	SELECT		
+
+		B.BuySellNo
+
+	FROM BuySell B 
+
+		INNER JOIN Counterparty C ON B.CustID = C.CpID  
+
+		LEFT JOIN [Address] A ON B.ShipToID = A.Type AND B.CustID = A.CPID
+
+		LEFT JOIN Referrer R ON B.ReferrerNo1 = R.ReferrerNo
+
+	WHERE (B.WarehouseStatus = 'COMPLETED')
+
+		AND (B.Status <> 'X' AND B.Status <> 'I')
+
+		AND (VendorID = '(INV)')
+
+
+
+
+
+	INSERT #Tickets
+
+	SELECT		
+
+		B.BuySellNo
+
+	FROM BuySell B	
+
+		INNER JOIN Counterparty C ON B.VendorID = C.CpID  
+
+		INNER JOIN [Address] A ON B.ShipFromID = A.[Type] AND B.VendorID = A.CPID
+
+		INNER JOIN [Address] Warehouse ON B.ShipToID = Warehouse.[Type] AND Warehouse.CpID = '(INV)'
+
+		LEFT JOIN Referrer R ON B.ReferrerNo1 = R.ReferrerNo
+
+	WHERE (B.WarehouseStatus = 'COMPLETED')
+
+		AND (B.[Status] <> 'X' AND B.[Status] <> 'I')
+
+		AND (Upper(CustID) = '(INV)')
+
+		AND IsNull(B.WarehouseStatus, '') <> ''
+
+
+
+
+
+
+
+	INSERT #Tickets	
+
+	SELECT		
+
+		CJ.JobNo
+
+	FROM ConvertingJob CJ
+
+		LEFT JOIN Counterparty C ON CJ.RefConvertingCpID = C.CpID
+
+		LEFT JOIN UserDef ON UserDef.UserID = OperatorNm
+
+	WHERE (CJ.WarehouseStatus = 'COMPLETED')
+
+		AND CJ.[Status] <> 'I'
+
+
+
+	 
+
+	SELECT @ReturnCount = Count(PackingSlipNo) FROM #Tickets 
+
+
+
+COMMIT TRANSACTION
+
+
+
+RETURN @ReturnCount
+
+
+
+
+
+
+

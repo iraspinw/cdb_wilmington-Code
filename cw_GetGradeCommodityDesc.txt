@@ -1,0 +1,4 @@
+CREATE proc [dbo].[cw_GetGradeCommodityDesc] @GradeID varchar(65) as
+
+select [CommodityDesc] from grade where gradeid=@gradeid
+

@@ -1,0 +1,12 @@
+CREATE PROC [dbo].[cw_GetPOShippingLineRemarks]
+
+ AS
+
+--09/23/2014 MEC: Created
+
+	SELECT * FROM POShippingLineRemarks
+
+
+
+
+

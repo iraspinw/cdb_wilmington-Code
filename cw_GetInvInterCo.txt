@@ -1,0 +1,238 @@
+CREATE   PROCEDURE [dbo].[cw_GetInvInterCo] @FromDate datetime, @ToDate datetime, @COID char(2) = '', @DoSummary bit = 0  AS
+
+--07/19/2006 JW - added lengthuom
+
+--03/06/2007 JW - added sell.fxrate
+
+--12/05/2007 JW - modified report to look at inventory.coid, inventory.rcvdt, inventory.vendorid instead of inventory rcpt wks coid and rcvdt since info is the same and works if is manual inventory data w/o src wks from conversion
+
+--01/26/2009 JW - added wksinvvalue
+
+--03/09/2009 - last change
+
+--08/31/2012 DSH Added support for handling inventory returns.
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+	
+
+
+
+Create Table #detail(
+
+	FromCo char(2) not null,
+
+	FromDesc varchar(50),
+
+	ToCo char(2),
+
+	ToDesc varchar(50),
+
+	CompanyNm varchar(100),
+
+	WksNo varchar(20),
+
+	LotNo varchar(20),
+
+	DateIn datetime,
+
+	DateOut datetime,
+
+	Description varchar(100),
+
+	Weight decimal (22,3),
+
+	UOM char(1),
+
+	Price decimal (22,3),
+
+	PriceUOM char(1),
+
+	RollWD decimal(22,3),
+
+	RollWDUOM varchar(10),
+
+	LinearLen varchar(10),
+
+	CurrencyCd varchar(5),
+
+	LengthUOM varchar(10),
+
+	FxRate decimal (22,3),
+
+	wksInvValue money	
+
+)
+
+
+
+
+
+	/* SOLD INVENTORY LOTS WHERE PURCHASE DEPARTMENT IS NOT SALES DEPT */
+
+insert #detail
+
+	SELECT 
+
+		Inventory.COID, 
+
+		buyCO.CompanyDesc, 
+
+		sell.COID, 
+
+		sellCO.CompanyDesc, 
+
+		Counterparty.CompanyNm, 
+
+		WksInventory.BuySellNo, 
+
+		WksInventory.LotNo, 
+
+		Inventory.RcvDt DateIn,
+
+		sell.InvoiceDt DateOut,
+
+		Grade.Description, 
+
+		WksInventory.Weight, 
+
+		WksInventory.UOM, 
+
+		Inventory.Price, 
+
+		Inventory.PriceUOM, 
+
+		Inventory.RollWd, 
+
+		Inventory.RollWdUOM, 
+
+		Inventory.LinearLen, 
+
+		sell.CurrencyCd, 
+
+		Inventory.LengthUOM, 
+
+		sell.FxRate, 
+
+		WksInventory.wksInvValue
+
+	FROM ((((((WksInventory INNER JOIN BuySell sell WITH(NOLOCK)   ON WksInventory.BuySellNo = sell.BuySellNo)
+
+		INNER JOIN Inventory WITH(NOLOCK)  ON WksInventory.LotNo = Inventory.LotNo)
+
+		INNER JOIN Counterparty ON Inventory.VendorID = Counterparty.CpID)
+
+		INNER JOIN Grade ON WksInventory.ForGradeID = Grade.GradeID)
+
+		INNER JOIN CompanyInfo buyCO ON Inventory.COID = buyCO.COID)
+
+		INNER JOIN CompanyInfo sellCO ON sell.COID = sellCO.COID)
+
+	WHERE 
+
+		Inventory.COID <> sell.COID 
+
+		AND sell.Status = 'I'
+
+		AND (Sell.InvoiceDt >= @FromDate AND Sell.InvoiceDt <= @ToDate)
+
+	
+
+
+
+
+
+	/* RETURNED INVENTORY LOTS WHERE PURCHASE DEPARTMENT IS NOT SALES DEPT */
+
+	--UNION ALL
+
+
+
+insert #detail
+
+	SELECT 
+
+		SellCo.COID, 
+
+		SellDept.CompanyDesc, 
+
+		BuyCo.COID, 
+
+		BuyDept.CompanyDesc, 
+
+		Counterparty.CompanyNm, 
+
+		WksInventory.BuySellNo  WksNo, 
+
+		WksInventory.ReturnedAsLotNo, 
+
+		SellCo.InvoiceDt DateIn,
+
+		BuyCo.InvoiceDt DateOut,
+
+		Grade.Description, 
+
+		WksInventory.Weight, 
+
+		WksInventory.UOM, 
+
+		Inventory.Price, 
+
+		Inventory.PriceUOM, 
+
+		Inventory.RollWd, 
+
+		Inventory.RollWdUOM, 
+
+		Inventory.LinearLen, 		
+
+		BUYCO.CurrencyCd, 
+
+		Inventory.LengthUOM, 
+
+		BUYCO.FxRate, 
+
+		WksInventory.wksInvValue
+
+	from wksinventory inner join inventory on wksinventory.returnedaslotno = inventory.lotno
+
+		inner join buysell BUYCO on inventory.buysellno = BUYCO.buysellno
+
+		inner join buysell SELLCO on wksinventory.buysellno = SELLCO.buysellno
+
+		INNER JOIN Grade ON Inventory.GradeID = Grade.GradeID
+
+		INNER JOIN CompanyInfo BuyDept ON BUYCO.COID = BuyDept.COID
+
+		INNER JOIN CompanyInfo SellDept ON SELLCO.COID = SellDept.COID
+
+		INNER JOIN Counterparty ON Inventory.VendorID = Counterparty.CpID
+
+	where
+
+		Wksinventory.IsReturned=1 
+
+		AND (BuyCo.InvoiceDt >= @FromDate AND BuyCo.InvoiceDt <= @ToDate)
+
+		AND BUYCO.COID <> SellCo.COID 
+
+
+
+
+
+
+
+select * from #detail
+
+ORDER BY FromCo, ToCo  --Inventory.COID, sell.COID
+
+
+
+
+
+
+
+
+

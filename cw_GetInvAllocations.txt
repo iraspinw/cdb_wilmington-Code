@@ -1,0 +1,28 @@
+CREATE   PROCEDURE [dbo].[cw_GetInvAllocations](@FromDt datetime, @ToDt as datetime, @COID as char(2), @TotalValue MONEY = 0 OUTPUT) as
+
+--08/29/2008 JW: changed from sum(amount) to sum(FxAmount) as FxAmount holds the domicile amount
+
+--09/23/2016 MEC: Coverted for cieTrade.net Inventory Roll Forward to calculate Allocations
+
+SET NOCOUNT ON
+
+
+
+	
+
+	SELECT 
+
+		@TotalValue = ISNULL(sum(FxAmount) ,0)
+
+	FROM ExpenseAlloc_Detail (NOLOCK) inner join ExpenseAllocation (NOLOCK) ON ExpenseAlloc_Detail.TransNo = ExpenseAllocation.TransNo
+
+	where PostingDt >= @FromDt and PostingDt <= @ToDT
+
+	AND (@COID = '' OR @COID = COID)
+
+	AND ISPosted = 1
+
+	
+
+
+

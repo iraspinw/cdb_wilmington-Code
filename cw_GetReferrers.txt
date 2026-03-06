@@ -1,0 +1,8 @@
+CREATE   PROCEDURE [dbo].[cw_GetReferrers] AS
+
+--SELECT Name, ReferrerNo, DefaultRate, FixedCharge  FROM Referrer Where Active = 1  ORDER BY Name
+
+
+
+select name, referrerno, DefaultRate, fixedCharge from Referrer where referrer.Active = 1 ORDER BY name
+

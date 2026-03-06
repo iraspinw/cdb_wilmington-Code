@@ -1,0 +1,220 @@
+CREATE PROC [dbo].[cw_GetBillSheet_TEST] @BillSheetID char(12)
+
+		
+
+AS
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+--08/09/2019 MN: CREATED
+
+--2/6/2020 Alex: added 	Address.FuelSurChgSellRate,Address.FuelSurChgBuyRate,Address.SharedSavPercent
+
+--2/8/2022 ZT: Billingsheet details pull grade from DispatchJob or Service Record  
+
+DECLARE @Undeletable bit = 0
+
+
+
+    if exists (select * from Receipt WITH(NOLOCK) where Receipt.BuySellNo = @BillSheetID AND (reversed=0 OR Reversed IS NULL)) begin
+
+        SET @Undeletable = 1
+
+    end
+
+   
+
+    if exists (select * from Payables WITH(NOLOCK) where Payables.BuySellNo = @BillSheetID And Posted = 1 AND (reversed=0 OR Reversed IS NULL))  begin
+
+        SET @Undeletable = 1
+
+    end
+
+
+
+
+
+	SELECT  
+
+		BillSheetID,
+
+        Case When B.PostedDt = '01/01/1900' Then NULL Else B.PostedDt End [PostedDt],
+
+		CustID AS AccountID,
+
+		A.CompanyNm AS [Account],
+
+		ShipToID AS [Location],
+
+		BillingRef,
+
+		B.COID,
+
+		CO.CompanyDesc As [Department],
+
+		TradeType,
+
+		[Status],
+
+		InvoiceDt,
+
+		DueDt,
+
+		PostedDt,
+
+		BillFromDt,
+
+		BillToDt,
+
+		H.CompanyNm AS [Waste-Hauler],
+
+		HaulerID,
+
+		BillingMode,
+
+		AccountNo,
+
+		CurrencyCd,
+
+		FxRate,
+
+		SalesTaxAmt,
+
+		PayTerms,
+
+		isnull(dbo.xDoc_GetAddress(CustID, ShipToID,0,0),'') AS [AccountAddr],
+
+		ST.SalesTaxCode,
+
+		ST.SalesTaxCodeID,
+
+		B.SalesTaxAmt,
+
+		InvoiceNotes,
+
+		@Undeletable AS [Undeletable],
+
+		isnull(Address.FuelSurChgSellRate,0) as FuelSurChgSellRate,
+
+		isnull(Address.FuelSurChgBuyRate,0) as FuelSurChgBuyRate,
+
+		isnull(B.TotalBenchmark,0) as TotalBenchmark,
+
+		isnull(Address.SharedSavPercent,0) as SharedSavPercent,
+
+		B.UserDefined1,
+
+		userdef.UserNm
+
+	FROM BillSheet B WITH(NOLOCK) 
+
+	INNER JOIN Counterparty A WITH(NOLOCK) ON B.CustID = A.CpID
+
+	LEFT JOIN Address ON Address.Type=ShipToID AND Address.CpID=A.CpID
+
+	LEFT JOIN Counterparty H WITH(NOLOCK) ON B.HaulerID = H.CpID
+
+	LEFT JOIN [CompanyInfo] CO WITH(NOLOCK) ON CO.COID = B.COID
+
+	LEFT JOIN SalesTaxCode ST WITH(NOLOCK) ON ST.SalesTaxCodeID = B.SalesTaxCode
+
+	LEFT JOIN userdef WITH(NOLOCK) ON  B.UserID = userdef.UserID
+
+	--WHERE (B.VendorID <> '(PLANT)' and b.VendorID <> '(INV)') and (b.CustID <> '(PLANT)' and b.custid <> '(INV)')
+
+	--AND ((@ToDt= '' and @FromDt = '') OR( B.ShippingDt >= @FromDt AND B.ShippingDt <= @ToDT))
+
+	--AND ((@PostToDt= '' and @PostFromDt = '') OR( B.InvoiceDt >= @PostFromDt AND B.InvoiceDt <= @PostToDT))
+
+	--AND ((@RefToDt= '' and @RefFromDt = '') OR( B.OrderDt >= @RefFromDt AND B.OrderDt <= @RefToDt))
+
+	--and (@Status = '' or (b.[Status]=@Status and @Status<>'G') or  (@Status ='G' and b.[Status] in ('W','C','A','N'))  )
+
+	WHERE BillSheetID = @BillSheetID
+
+	
+
+
+
+	SELECT 
+
+		ItemID,
+
+		BillSheetID,
+
+		BillSheetDetail.VendorID,
+
+		BillSheetDetail.GLAcct,
+
+		BillSheetDetail.InvoiceDesc,
+
+		[Date],
+
+		EqType,
+
+		[Site],
+
+		dbo.cw_RemoveTrailingZeros([Weight], 2) As [Weight],
+
+		WeightUOM,
+
+		dbo.cw_RemoveTrailingZeros(BillSheetDetail.Price, 2) As [Price],
+
+		PricePer,
+
+		Cost,
+
+		Charge,
+
+		ChargePer,
+
+		Amount,
+
+		BillSheetDetail.JobNo,
+
+		BillSheetDetail.ServiceID,
+
+		ServiceType,
+
+		PONo,
+
+		BillSheetDetail.IsTaxable,
+
+		BillSheetDetail.DSE_ID,
+
+		BillSheetDetail.InclFuelSurcharge,
+
+		IsAdvBilling,
+
+		ChgSource,
+
+		ServiceRecordExpense.Benchmark,
+
+		ServiceRecordExpense.BenchmarkPer,
+
+		BillSheetDetail.EquipNo,
+
+		BillSheetDetail.MarkForDelete,
+
+		BillSheetDetail.GLAcct_Sales,
+
+		ISNULL(BillSheetDetail.IsWeightOvercharge,0) AS [IsWeightOvercharge],
+
+		(CASE WHEN DispatchJob.Commodity <> '' AND DispatchJob.Commodity IS NOT NULL THEN DispatchJob.Commodity WHEN ServiceRecord.GradeID <> '' AND ServiceRecord.GradeID IS NOT NULL THEN ServiceRecord.GradeID ELSE NULL END ) As GradeID
+
+	FROM BillSheetDetail WITH(NOLOCK)
+
+	left join ServiceRecordExpense on ServiceRecordExpense.DSE_ID = BillSheetDetail.DSE_ID
+
+	LEFT JOIN DispatchJob ON BillSheetDetail.JobNo = DispatchJob.JobNo
+
+	LEFT JOIN ServiceRecord ON ServiceRecord.DispatchScheduleKey = BillSheetDetail.ServiceID
+
+	WHERE BillSheetID = @BillSheetID
+
+	ORDER BY [Date], ItemID ASC
+
+
+

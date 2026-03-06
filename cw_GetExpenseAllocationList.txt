@@ -1,0 +1,112 @@
+CREATE PROC [dbo].[cw_GetExpenseAllocationList] 
+
+	@COID char(2),
+
+	@TransNo INT, 
+
+	@FromDt datetime, 
+
+	@ToDt Datetime,
+
+	@PostedFromDt datetime = '', 
+
+	@PostedToDt Datetime = '',
+
+	@WarehouseID varchar(15) = '',
+
+	@CPID char(15),
+
+	@UnPostedOnly int, 
+
+	@UserID char(10)
+
+AS
+
+--5/3/2006 BM: Created
+
+--4/8/2008 BF added COID Filter
+
+--09/09/2008 RS: WarehouseCpID and filters (@TransNo,@FromDt,@ToDt,@CPID,@UnPostedOnly,@UserID) added
+
+--09/18/2008 RS: Join with Counterparty fixed
+
+--01/14/2014 MCM: Added new columns
+
+--08/3/2015 MEC: Copied for Expense Allocation Ledger for cieTrade.net
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	SELECT 
+
+		TransNo As [Trans No], 
+
+		TransDate As [Trans-Date],
+
+		
+
+		WarehouseNm As [Warehouse],
+
+		PostingDt As [Posted Dt],
+
+		TradeType As [Trade Type],
+
+		(SELECT TOP 1 CompanyNm FROM ExpenseAlloc_Detail INNER JOIN Counterparty ON Counterparty.CpID = ExpenseAlloc_Detail.CpID WHERE ExpenseAlloc_Detail.TransNo = ExpenseAllocation.TransNo) 
+
+		AS Vendor,
+
+		Cast((SELECT SUM(ISNULL(FxAmount,0)) FROM ExpenseAlloc_Detail WHERE ExpenseAlloc_Detail.TransNo = ExpenseAllocation.TransNo) as decimal(25,2))
+
+		AS [Total Exp],
+
+		Cast((SELECT SUM(dbo.CONVERT_TO_UOM(ISNULL([Weight],0),ISNULL(WeightUOM,'S'),'S')) FROM ExpenseAlloc_Source WHERE ExpenseAlloc_Source.TransNo = ExpenseAllocation.TransNo) as decimal(22,3))
+
+		AS [Total Wt],
+
+		CASE WHEN ISNULL(IsPosted,0) = 1 THEN 'Posted' ELSE 'Open' END 
+
+		AS [Exp Status],
+
+		[Description],
+
+		CompanyInfo.CompanyDesc As [Dept],
+
+		u.UserNm As [User]
+
+	FROM ExpenseAllocation
+
+	LEFT JOIN CompanyInfo ON CompanyInfo.COID = ExpenseAllocation.COID
+
+	LEFT JOIN UserDef u ON u.UserID = ExpenseAllocation.UserID
+
+    LEFT JOIN Counterparty ON WarehouseNm = CpID
+
+	WHERE (@COID='' or (ExpenseAllocation.coid=@COID))
+
+		AND (@TransNo=0 OR TransNo = @TransNo)
+
+		AND (@FromDt = '' OR TransDate >= @FromDt)
+
+		AND (@ToDt = '' OR TransDate <= @ToDt)
+
+		AND (@PostedFromDt = '' OR Convert(DateTime, Convert(VarChar, PostingDt, 101)) >= @PostedFromDt)
+
+		AND (@PostedToDt = '' OR Convert(DateTime, Convert(VarChar, PostingDt, 101)) <= @PostedToDt)
+
+		AND (@WarehouseID = '' OR @WarehouseID = WarehouseNm)
+
+		AND (@CPID = '' OR @CPID = WarehouseNm)
+
+		AND (@UserID = '' OR ExpenseAllocation.UserID = @UserID)
+
+		AND (@UnPostedOnly = 2 OR @UnPostedOnly = IsPosted) 
+
+	ORDER BY TransNo
+
+
+

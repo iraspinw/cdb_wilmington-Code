@@ -1,0 +1,18 @@
+CREATE PROC [dbo].[cw_GetCompanyNameFromPO] @PONumber varchar(50)
+
+as
+
+--08/30/2018 Alex: Created for cieTrade.net
+
+
+
+	SET NOCOUNT ON;
+
+	select counterparty.CompanyNm,PO.CpID,PO.TradeType  from PO
+
+	inner join counterparty on PO.CpID = counterparty.CpID
+
+	where PONumber = @PONumber and Source ='PO'
+
+
+

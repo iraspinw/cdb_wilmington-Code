@@ -1,0 +1,26 @@
+
+
+CREATE PROC [dbo].[cw_GetContactRoles] 
+
+As
+
+--4/10/18 MN: Create
+
+ 
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+		SELECT
+
+			RoleNm AS [RoleNm]
+
+		FROM ContactRole
+
+
+
+
+

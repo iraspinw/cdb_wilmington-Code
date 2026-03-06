@@ -1,0 +1,46 @@
+CREATE  PROCEDURE [dbo].[cw_GetCustomColumnSettings] 
+
+(
+
+	@UserID char(10) 
+
+)
+
+As
+
+set nocount on
+
+
+
+--07/27/2010 MEC: Get Custom Column Settings from master and user settings
+
+
+
+select [UserID] ,[SettingName] ,[SettingValue] 
+
+into #tempcwsettings 
+
+from cwSettingsMaster 
+
+
+
+Update #tempcwsettings
+
+	Set #tempcwsettings.SettingValue = cwSettings.SettingValue,
+
+		#tempcwsettings.UserID = cwSettings.UserID
+
+from #tempcwsettings INNER JOIN cwSettings on #tempcwsettings.SettingName = cwSettings.SettingName
+
+Where cwSettings.UserID = @UserID AND IsNull(cwSettings.SettingValue,'') <> ''
+
+
+
+select * from #tempcwsettings-- ORDER BY SettingName
+
+
+
+Drop table #tempcwsettings
+
+
+

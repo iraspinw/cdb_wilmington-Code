@@ -1,0 +1,76 @@
+CREATE PROC [dbo].[cw_GetScales] 
+
+@ScaleID    INT  = 0,
+
+@UserID     CHAR(15) =''
+
+
+
+AS
+
+--4/26/2016 MN: Created
+
+--11/9/2018 Alex: add ChromeAppID
+
+--12/17/2018 Alex: filter be UserID
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	DECLARE @ScaleNameDefault VARCHAR(50) 
+
+	DECLARE @ScaleDefaultID   INT
+
+
+
+	SELECT @ScaleNameDefault= ISNULL(Scale.ScaleName,'') ,@ScaleDefaultID=Scale.scaleID  FROM UserDef INNER JOIN Scale ON Scale.scaleID = UserDef.ScaleDefault  WHERE  UserDef.UserID =@UserID
+
+
+
+	SELECT 
+
+		scaleID As [-Hidden- ScaleID],
+
+		ScaleName,
+
+		Warehouse,
+
+		IP,
+
+		Port,
+
+		StartString,
+
+		EndString,
+
+		@ScaleNameDefault AS ScaleDefault,
+
+		@ScaleDefaultID   AS ScaleDefaultID
+
+		
+
+		--ChromeAppID as 'Chrome App ID'
+
+	FROM Scale With (NoLock)
+
+	where(@ScaleID =0 or scaleID= @ScaleID)
+
+	ORDER BY scaleID
+
+
+
+	--Update user Default Scale
+
+	update UserDef
+
+	set UserDef.ScaleDefault = @ScaleID
+
+	where UserID =@UserID and @ScaleID <>0 
+
+
+

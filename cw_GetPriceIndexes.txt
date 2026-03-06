@@ -1,0 +1,8 @@
+CREATE proc [dbo].[cw_GetPriceIndexes] as
+
+select indexid, indexnm, isnull(PriceUOM,'S') PriceUOM from PriceIndex
+
+	ORDER BY IndexNm
+
+
+

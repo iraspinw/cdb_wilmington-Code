@@ -1,0 +1,39 @@
+CREATE proc [dbo].[cw_GetLetterOfCreditAttachments] 
+
+	@LCNo varchar(25)
+
+
+
+as
+
+
+
+SELECT 
+
+	DocID As [-Hidden-DocumentID], 
+
+	desc1 As [Description], 
+
+	--Docname, 
+
+	'IMG' As [-Hidden-Type], 
+
+	FileExt As [-Hidden-FileExt],
+
+	createddt as 'Created',
+
+	userdef.UserNm as 'User'
+
+from documentimage with (NOLOCK) 
+
+			left JOIN userdef ON DocumentImage.Createdby = userdef.UserID 
+
+where 
+
+	reftype='L' 
+
+	and refid=@LCNo
+
+	
+
+--cw_GetAllocationAttachments '1'

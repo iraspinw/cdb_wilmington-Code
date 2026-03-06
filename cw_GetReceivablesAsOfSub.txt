@@ -1,0 +1,780 @@
+CREATE PROC [dbo].[cw_GetReceivablesAsOfSub]  
+
+	@pAsofDate datetime, --
+
+	@pUseGrouping smallint, -- 
+
+    @DoSummary char(1), --
+
+	@CoID char(2), --
+
+	@ReportingGrp char(25), --
+
+	@ForCurrency char(3), -- 
+
+
+
+	@pCpID char(12) = '',
+
+	@InclUACash char(1) = 'N',
+
+	@RefID char(10) =  '',
+
+	@ShowShortPayOnly char(1) = 'N',
+
+	@Country varchar(35) = '',
+
+	@LCSONLY int = 0,
+
+	@SalesRepOnly bit = 0,
+
+	@TradeType varchar(25) = '',
+
+	@ExclNegWks bit = 0,
+
+    @CollateBySalesRep bit = 0,
+
+	@InclCreditInv bit = 1,
+
+	@IsDotNET bit  = 0,
+
+    @OrderBy bit = 0, 
+
+	@OverDueOnly BIT = 0
+
+AS
+
+BEGIN
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+-- 04/23/2020 MN: CREATED FOR .NET
+
+DECLARE @CreditLimitByDept tinyint
+
+SET @CreditLimitByDept =ISNULL((SELECT optionValue from options where optionName = 'CreditLimitByDept'),0)
+
+
+
+
+
+
+
+CREATE TABLE #ARCURRENT(
+
+	CompanyNm VARCHAR(100),
+
+	CPID CHAR(12),
+
+	BuySellNo CHAR(12),
+
+	InvoiceDt DATETIME,
+
+	ShipDt DATETIME,
+
+	InvoiceAmt MONEY,
+
+	SPayments MONEY,
+
+	SBalanceDue MONEY,
+
+	SAdjustment MONEY,
+
+	APContact VARCHAR(100),
+
+	APVoiceNo VARCHAR(25),
+
+	Terms VARCHAR(100),
+
+	CreditLimit MONEY,
+
+	DaysToPay SMALLINT,
+
+	DefTerms VARCHAR(100),
+
+	J1 VARCHAR(50),
+
+	FxRate DECIMAL(22,12),
+
+	FxInv MONEY,
+
+	SONumber CHAR(15),
+
+	GroupNm VARCHAR(100),
+
+	CurrencyCd CHAR(3),
+
+	UseUserDueDt BIT,
+
+	DueDt DATETIME,
+
+	ShipToID CHAR(45),
+
+	Approved CHAR(2),
+
+	FXSAdjustment MONEY,
+
+	IsOnLC BIT,
+
+	Country CHAR(35),
+
+	RelNo VARCHAR(25),
+
+	ReferrerNo1 CHAR(10),
+
+	ReferrerNo2 CHAR(10),
+
+	CustAddr VARCHAR(100),
+
+	StatementNo INT,
+
+	APEmail VARCHAR(150),
+
+	DaysPastDue INT
+
+	)
+
+
+
+
+
+-- ACCOUNTS RECEIVABLE CURRENT REPORT
+
+-------------------------------------
+
+IF @pASOfDate >= dateadd(d,-1,getdate() ) AND (@pUseGrouping = 0 OR @pUseGrouping = 1 OR @pUseGrouping = 2 OR @pUseGrouping = 3 OR 
+
+	@pUseGrouping = 8) 
+
+BEGIN
+
+       
+
+    -- CREATE A/R DETAIL. 
+
+	INSERT #ARCURRENT
+
+    SELECT 
+
+        CompanyNm, 
+
+        Counterparty.CpID, 
+
+        BuySellNo, 
+
+        InvoiceDt, 
+
+        ShippingDt AS ShipDt, 
+
+        InvoiceAmt=SalesAmt+SFreightChg+isnull(SalesTaxAmt,0), 
+
+        Spayments, 
+
+        SBalanceDue, 
+
+        SAdjustment+SalesTaxAdjAmt AS SAdjustment, 
+
+		(SELECT TOP 1 ct.ContactNm FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID WHERE roleNm = 'Collections' AND ct.CpID = Buysell.CustID AND (ct.Location = Address.Type or ct.Location = '')) as APContact, 
+
+        (SELECT TOP 1 ct.PhoneBusiness FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID WHERE roleNm = 'Collections' AND ct.CpID = Buysell.CustID AND (ct.Location = Address.Type or ct.Location = '')) as APVoiceNo, 
+
+        BuySell.Terms, 
+
+        CreditLimit, 
+
+        DaysToPay, 
+
+        DefTerms=Counterparty.Terms, 
+
+        j1=space(50), 
+
+        FxRate, 
+
+        FxInv=FxInvoiceAmt + isnull(FXSalesTaxAmt,0), 
+
+        (Select TOP 1 SPO FROM WksDetail  WITH(NOLOCK) where WksDetail.BuySellNo = BuySell.BuySellNo) AS SONumber,
+
+        Counterparty.GroupNm,
+
+        BuySell.CurrencyCd AS CurrencyCd, 
+
+        BillingTerm.UseUserDueDt, 
+
+        BuySell.DueDt, --FxSalesCurrency
+
+        isnull(BuySell.ShipToID,' ') AS ShipToID,
+
+        Approved = ' ', --=Counterparty.User_CreditCheck, 
+
+        BuySell.FXSAdjustment+BuySell.FXSalesTaxAdjAmt AS FXSAdjustment,
+
+        0 AS IsOnLC,
+
+        Address.Country,
+
+        BuySell.RelNo, 
+
+        BuySell.ReferrerNo1,
+
+        BuySell.ReferrerNo2,
+
+        dbo.xDoc_GetAddressFlat(Buysell.CustID,'',0) as CustAddr,
+
+		StatementNo,
+
+		(SELECT TOP 1 ct.Email FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID WHERE roleNm = 'Collections' AND ct.CpID = Buysell.CustID AND (ct.Location = Address.Type or ct.Location = '')) as APEmail,    
+
+		0
+
+    FROM BuySell WITH(NOLOCK) 
+
+    INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID
+
+    LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y' --buySell.ShipToID = address.type
+
+    LEFT JOIN BillingTerm WITH(NOLOCK) ON BuySell.Terms = BillingTerm.Term 
+
+    WHERE round(SBalanceDue,2) <> 0
+
+	AND BuySell.InvoiceDt <= @pAsofDate
+
+    AND Status = 'I'
+
+    AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+    AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+    AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd) --FxSalesCurrency
+
+    AND (@ExclNegWks = 0 OR (@ExclNegWks=1 AND SBalanceDue > 0)) 
+
+    AND (@InclCreditInv=1 OR (@InclCreditInv=0 AND SBalanceDue > 0))
+
+    AND (@ShowShortPayOnly <> 'Y' OR (round(SPayments,2) > 0 and round(SBalanceDue,2) > 0 ))
+
+    AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}' AND BuySell.CustID <> '(PLANT)')
+
+    AND (@Country = '' or Address.Country = @Country)
+
+    AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+    AND (@RefID = '' OR ((BuySell.ReferrerNo1 = @RefID AND @SalesRepOnly = 1)
+
+ 	OR (@SalesRepOnly = 0 AND (BuySell.ReferrerNo1 = @RefID OR BuySell.ReferrerNo2 = @RefID ))))
+
+	AND ISNULL(BuySell.IsAgency,0) <> 1
+
+
+
+    -- SUPPORT FOR CREDIT LIMIT BY DEPARTMENT
+
+	IF @CreditLimitByDept = 1 AND @COID <> '' 
+
+		UPDATE #ARCURRENT  SET #ARCURRENT.CreditLimit = CreditDepartment.CreditLimit
+
+		FROM #ARCURRENT  WITH(NOLOCK)
+
+		INNER JOIN Counterparty On #ARCURRENT.CPID = Counterparty.CPID 
+
+		INNER JOIN CreditDepartment ON CreditDepartment.ProtocolID = Counterparty.ActiveCreditProtocolID
+
+		WHERE ISNULL(Counterparty.ActiveCreditProtocolID,0) <> 0 AND CreditDepartment.COID = @COID
+
+
+
+
+
+	-- REMOVE INVOICES NOT OVERDUE (NOV 2018 COPAP)
+
+	IF @OverDueOnly = 1 BEGIN
+
+		UPDATE #ARCURRENT SET DaysPastDue = DATEDIFF(d,DueDt, GETDATE())
+
+		DELETE FROM #ARCURRENT WHERE DaysPastDue < 0 
+
+		--select DaysPastDue, duedt, * from #ARCURRENT
+
+		--return
+
+	END
+
+
+
+
+
+    
+
+    -- GET A/R AGING TOTALS (SUMMARY)
+
+    SELECT Sum(SBalanceDue) 
+
+    FROM #ARCURRENT
+
+
+
+
+
+    If @DoSummary <> 'N' RETURN
+
+
+
+	-- UPDATE Invoice Date and Due Date for Consolidated Invoices.
+
+	UPDATE #ARCURRENT SET 
+
+		#ARCURRENT.InvoiceDt = GroupInvoice.InvoiceDt,
+
+		#ARCURRENT.DueDt = GroupInvoice.DueDt,
+
+		#ARCURRENT.DefTerms = GroupInvoice.Terms,
+
+		#ARCURRENT.DaystoPay = DATEDIFF(d,GroupInvoice.DueDt, GroupInvoice.InvoiceDt)
+
+		FROM #ARCURRENT INNER JOIN GroupInvoice ON #ARCURRENT.StatementNo = GroupInvoice.StatementNo
+
+		WHERE COALESCE(#ARCURRENT.StatementNo,'') <> ''
+
+
+
+
+
+    -- ORDER RESULT SET
+
+    If @pUseGrouping = 0 Begin     
+
+            SELECT CompanyNm, CpID, BuySellNo, InvoiceDt, ShipDt, InvoiceAmt, Spayments, SBalanceDue, SAdjustment, APContact, APVoiceNo, Terms, CreditLimit, 
+
+            DaysToPay, DefTerms, j1, FxRate, FxInv, SONumber, GroupNm, CurrencyCd, UseUserDueDt, DueDt, Approved, FXSAdjustment, Country,CustAddr,APEmail
+
+            FROM #ARCURRENT ORDER BY CompanyNm, InvoiceDt 
+
+
+
+    END
+
+
+
+End
+
+
+
+
+
+
+
+-- ACCOUNTS RECEIVABLE AS OF REPORT
+
+-----------------------------------
+
+IF @pASOfDate < GetDate() -1 OR (@pUseGrouping <> 0 AND @pUseGrouping <> 1 AND @pUseGrouping <> 2 AND @pUseGrouping <> 3 AND @pUseGrouping <> 8) 
+
+BEGIN
+
+
+
+     /* Get sum of ADJUSTMENTS AFTER cutoff date for each Buy/Sell */     
+
+     SELECT BuySellNo=GPLedger.BuySellNo, PaymentsRcvd = Sum(GrossProfit+AdjSalesTaxAmt), FXPaymentsRcvd = Sum(AdjFXAmount+AdjFxSalesTaxAmt)
+
+        INTO #Adjustments
+
+        FROM GPLedger WITH(NOLOCK)  INNER JOIN BUYSELL WITH(NOLOCK)  ON BuySell.BuySellNo = GPLedger.BuySellNo 
+
+            INNER JOIN COUNTERPARTY WITH(NOLOCK) ON BUYSELL.CUSTID = COUNTERPARTY.CPID  
+
+	        LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'
+
+        WHERE AdjType = 'S' And AdjApproved = 'Y'
+
+            AND BuySell.InvoiceDt <= @pAsofDate
+
+            AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+            AND (@pCpID = '' OR @pCpID = BuySell.CustID) AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}' AND BuySell.CustID <> '(PLANT)')
+
+            AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+            AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd)  --FxSalesCurrency
+
+            --AND (@ExclNegWks = 0 OR (@ExclNegWks=1 AND BuySell.SalesAmt+BuySell.SFreightChg > 0 )) --09/22/2009 RS
+
+            AND (@ExclNegWks = 0 OR (@ExclNegWks=1 AND SBalanceDue > 0))   
+
+            AND (@InclCreditInv=1 OR (@InclCreditInv=0 AND SBalanceDue > 0))
+
+            AND (@RefID = ''  OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2)
+
+            AND GPLedger.TradeDt > @pAsofDate
+
+            AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+            GROUP By GPLedger.BuySellNo
+
+
+
+     /* Get sum of ADJUSTMENTS BEFORE cutoff date for each Buy/Sell */   
+
+     SELECT BuySellNo=GPLedger.BuySellNo, OldAdjAmt = Sum(GrossProfit+AdjSalesTaxAmt), FXOldAdjAmt = Sum(AdjFXAmount+AdjFxSalesTaxAmt)
+
+          INTO #OldAdjustments
+
+          FROM GPLedger WITH(NOLOCK)  INNER JOIN BuySell WITH(NOLOCK)  On BuySell.BuySellNo = GPLedger.BuySellNo
+
+          LEFT JOIN COUNTERPARTY WITH(NOLOCK) ON BUYSELL.CUSTID = COUNTERPARTY.CPID  
+
+	      LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'
+
+          WHERE AdjType = 'S' And AdjApproved = 'Y'
+
+          AND BuySell.InvoiceDt <= @pAsofDate
+
+          AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+          AND (@pCpID = '' OR @pCpID = BuySell.CustID) AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}' AND BuySell.CustID <> '(PLANT)')
+
+          AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+          AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd)  --FxSalesCurrency          
+
+          AND (@ExclNegWks = 0 OR (@ExclNegWks=1 AND SBalanceDue > 0 ))   
+
+          AND (@InclCreditInv=1 OR (@InclCreditInv=0 AND SBalanceDue > 0))
+
+          AND (@RefID = ''  OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2)
+
+          AND GPLedger.TradeDt <= @pAsofDate
+
+	  AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+          GROUP By GPLedger.BuySellNo
+
+
+
+
+
+     /* Get sum of RECEIPTS AFTER (since) cutoff date for each Buy/Sell */
+
+     SELECT BuySellNo=Receipt.BuySellNo, PaymentsRcvd = Sum(Amount), FXPaymentsRcvd = SUM(FXAmount)  
+
+        INTO #ReceiptsOnly
+
+        FROM Receipt WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK)  ON BuySell.BuySellNo = Receipt.BuySellNo 
+
+    INNER JOIN COUNTERPARTY WITH(NOLOCK) ON BuySell.CustID = Counterparty.CpID  
+
+	        LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'
+
+        WHERE 
+
+            BuySell.InvoiceDt <= @pAsofDate
+
+            AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+            AND (@pCpID = '' OR @pCpID = BuySell.CustID) AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}' AND BuySell.CustID <> '(PLANT)')
+
+            AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd)  --FxSalesCurrency
+
+            --AND (@ExclNegWks = 0 OR (@ExclNegWks=1 AND BuySell.SalesAmt+BuySell.SFreightChg > 0 )) --09/22/2009 RS
+
+            AND (@ExclNegWks = 0 OR (@ExclNegWks=1 AND SBalanceDue > 0 ))   
+
+            AND (@InclCreditInv=1 OR (@InclCreditInv=0 AND SBalanceDue > 0))
+
+            AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+            AND (@RefID = ''  OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2)
+
+            AND PaymentDt > @pAsofDate
+
+            AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+            GROUP By Receipt.BuySellNo
+
+
+
+   
+
+     /* GET LIST OF RECEIPTS LESS ADJUSTMENTS AFTER CUTOFF DATE FOR EACH WORKSHEET. */
+
+    SELECT BuySell.BuySellNo, 
+
+            Receipts=isnull(#ReceiptsOnly.PaymentsRcvd,0) - isnull(#Adjustments.PaymentsRcvd,0), AfterAdj=isnull(#Adjustments.PaymentsRcvd,0),
+
+            FXReceipts=isnull(#ReceiptsOnly.FXPaymentsRcvd,0) - isnull(#Adjustments.FXPaymentsRcvd,0), FXAfterAdj=isnull(#Adjustments.FXPaymentsRcvd,0)
+
+        INTO #RecentReceipts
+
+        FROM  BUYSELL WITH(NOLOCK) LEFT JOIN #ReceiptsOnly ON buySell.BuySellNo  = #ReceiptsOnly.BuySellNo 
+
+            LEFT JOIN Counterparty WITH(NOLOCK) ON BuySell.CustID = Counterparty.CpID
+
+	        LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'
+
+            LEFT JOIN #Adjustments ON  BuySell.BuySellNo = #Adjustments.BuySellNo 
+
+        WHERE 
+
+              (@CoID = '' OR @CoID = BuySell.CoID)
+
+          AND (@pCpID = '' OR @pCpID = BuySell.CustID) AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}' AND BuySell.CustID <> '(PLANT)')
+
+          AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd) --FxSalesCurrency
+
+            --AND (@ExclNegWks = 0 OR (@ExclNegWks=1 AND BuySell.SalesAmt+BuySell.SFreightChg > 0 )) --09/22/2009 RS
+
+            AND (@ExclNegWks = 0 OR (@ExclNegWks=1 AND SBalanceDue > 0 ))   
+
+          AND (@InclCreditInv=1 OR (@InclCreditInv=0 AND SBalanceDue > 0))
+
+          AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+          AND (@RefID = ''  OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2)
+
+          AND BuySell.InvoiceDt <= @pAsofDate
+
+          AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+
+
+
+
+    	-- CREATE AR DETAILS.
+
+        SELECT 
+
+            CompanyNm, 
+
+            CounterParty.CpID, 
+
+            BuySell.BuySellNo, 
+
+            InvoiceDt, 
+
+            ShippingDt AS ShipDt, 
+
+            InvoiceAmt=SalesAmt+SFreightChg+isnull(SalesTaxAmt,0), 
+
+            QPayments=Round(Spayments-Receipts-AfterAdj,2), 
+
+            QBalance=Round(ISNULL(SBalanceDue,0)+ISNULL(Receipts,0),2), 
+
+            SAdjustment=ISNULL(#OldAdjustments.OldAdjAmt,0), 
+
+			(SELECT TOP 1 ct.ContactNm FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID WHERE roleNm = 'Collections' AND ct.CpID = Buysell.CustID AND ct.Location = Address.Type) as APContact, 
+
+			(SELECT TOP 1 ct.PhoneBusiness FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID WHERE roleNm = 'Collections' AND ct.CpID = Buysell.CustID AND ct.Location = Address.Type) as APVoiceNo, 
+
+            BuySell.Terms, 
+
+            CreditLimit, 
+
+            DaysToPay, 
+
+            Counterparty.Terms AS DefTerms,
+
+            ISNULL(#OldAdjustments.OldAdjAmt,0) AS PREVADJ, 
+
+            FxRate, 
+
+            FxInvoiceAmt+isnull(FxSalesTaxAmt,0) AS FxInv,  
+
+            (Select TOP 1 SPO FROM WksDetail WITH(NOLOCK)  where WksDetail.BuySellNo = BuySell.BuySellNo order by spo desc) AS SONumber,
+
+            Counterparty.GroupNm + SPACE(90) AS GroupNm,
+
+            BuySell.CurrencyCd	As CurrencyCd, 
+
+            BillingTerm.UseUserDueDt, 
+
+            BuySell.DueDt, 
+
+            isnull(BuySell.ShipToID,' ') AS ShipToID,
+
+            ' ' As Approved,
+
+            ISNULL(#OldAdjustments.FXOldAdjAmt,0) AS FXSAdjustment,
+
+            0 AS IsOnLC, 
+
+            Address.Country,
+
+            BuySell.RelNo,
+
+            BuySell.ReferrerNo1,
+
+            BuySell.ReferrerNo2,
+
+            FxQBalance = Round(ISNULL(FxBalanceDue,0)+ISNULL(FxReceipts,0),2),	--02/14/2011 RS: Added
+
+			dbo.xDoc_GetAddressFlat(Buysell.CustID,'',0) as CustAddr,
+
+			0 AS LedgerID,
+
+			(SELECT TOP 1 ct.Email FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID WHERE roleNm = 'Collections' AND ct.CpID = Buysell.CustID AND ct.Location = Address.Type) as APEmail    
+
+    	INTO #ARASOF	
+
+        FROM BuySell WITH(NOLOCK)  INNER JOIN #RecentReceipts ON BuySell.BuySellNo = #RecentReceipts.BuySellNo
+
+        INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID
+
+        LEFT JOIN #OldAdjustments ON BuySell.BuySellNo = #OldAdjustments.BuySellNo 
+
+		LEFT JOIN Address WITH(NOLOCK) ON Buysell.CustID = Address.CpID and Address.InvoiceAddr = 'Y'        
+
+        LEFT JOIN BIllingTerm WITH(NOLOCK) ON BuySell.Terms = BillingTerm.Term
+
+        WHERE 
+
+             ((@PCpID = '' AND (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}'  AND BuySell.CustID <> '(PLANT)')) OR (@pCpID = BuySell.CustID))
+
+            AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+            AND BuySell.InvoiceDt <= @pAsofDate And BuySell.Invoiced = '1'        
+
+		    AND Round(ISNULL(SBalanceDue,0)+ISNULL(Receipts,0),2) <> 0
+
+            AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+            AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCD) --FxSalesCurrency            
+
+            AND (@ExclNegWks = 0 OR (@ExclNegWks=1 AND SBalanceDue > 0 ))   
+
+            AND (@InclCreditInv=1 OR (@InclCreditInv=0 AND SBalanceDue > 0))
+
+            AND (@ShowShortPayOnly = 'N' OR (Round(Spayments-Receipts,2) > 0 AND Round(SBalanceDue+Receipts,2) > 0))
+
+            AND (@Country = '' or Address.Country = @Country) 
+
+            AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+		    AND (@RefID = '' OR ((BuySell.ReferrerNo1 = @RefID AND @SalesRepOnly = 1) 
+
+ 		    OR (@SalesRepOnly = 0 AND (BuySell.ReferrerNo1 = @RefID OR BuySell.ReferrerNo2 = @RefID ))))
+
+		    AND ISNULL(BuySell.IsAgency,0) <> 1
+
+
+
+    -------------------------------------------------------------------------------------------------------------------------
+
+
+
+    -- SUPPORT FOR CREDIT LIMIT BY DEPARTMENT
+
+	IF @CreditLimitByDept = 1 AND @COID <> '' 
+
+		UPDATE #ARASOF  SET #ARASOF.CreditLimit = CreditDepartment.CreditLimit
+
+		FROM #ARASOF  WITH(NOLOCK)
+
+		INNER JOIN Counterparty On #ARASOF.CPID = Counterparty.CPID 
+
+		INNER JOIN CreditDepartment ON CreditDepartment.ProtocolID = Counterparty.ActiveCreditProtocolID
+
+		WHERE ISNULL(Counterparty.ActiveCreditProtocolID,0) <> 0 AND CreditDepartment.COID = @COID
+
+    
+
+ 
+
+    -- 01/20/2011 RS: Condition Added for .NET to return 1 recordset    
+
+    IF @IsDotNET = 0 BEGIN
+
+         -- GET A/R AGING TOTALS (SUMMARY)
+
+        If (@pUseGrouping = 0 OR @pUseGrouping = 1 OR @pUseGrouping = 2 OR @pUseGrouping = 3 OR @pUseGrouping = 8) 
+
+			-- Added @pUseGrouping = 0 to keep report 
+
+		    -- from crashing when include unapplied cash is checked  MCM - 2/23/2009
+
+            SELECT SUM(QBalance) FROM #ARASOF
+
+    END 
+
+
+
+
+
+	-- REMOVE INVOICES NOT OVERDUE (NOV 2018 COPAP)
+
+    UPDATE #ARASOF SET DaysToPay = datediff(day,#ARASOF.DueDt,@pAsofDate) where buysellno <> '(Unapplied)'
+
+    UPDATE #ARASOF SET DaysToPay=0, DueDt = #ARASOF.InvoiceDt where buysellno = '(Unapplied)'
+
+	IF @OverDueOnly = 1 BEGIN		
+
+		DELETE FROM #ARASOF  WHERE DaysToPay < 0 
+
+	END
+
+
+
+    
+
+    If @DoSummary <> 'N' RETURN
+
+
+
+
+
+    -- ORDER RESULT SET
+
+    If @pUseGrouping = 0 Begin
+
+            SELECT CompanyNm, CPID, BuySellNo, InvoiceDt, ShipDt, InvoiceAmt,
+
+                   QPayments, QBalance, SAdjustment, APContact, APVoiceNo, Terms, CreditLimit, DaysToPay, DefTerms, 
+
+                   PREVADJ, FxRate, FxInv, SONumber, GroupNm, CurrencyCd, UseUserDueDt, DueDt, Approved, 
+
+                   FXSAdjustment, Country, CustAddr, APEmail
+
+            FROM #ARASOF ORDER BY CompanyNm, InvoiceDt 
+
+    End
+
+
+
+    --FOR MULTICURRENCY BALANCE SHEET
+
+	If @pUseGrouping = 4 Begin
+
+            Declare @ARAcct varchar(12)
+
+            SELECT @ARAcct=GLAcct FROM GLAccount WHERE CAT = 'A/R'
+
+            UPDATE #ARASOF SET FxRate = 1 WHERE fxRate = 0 or FxRate Is NULL
+
+
+
+            Select 
+
+                @ARAcct As AccountNo, 'Accounts Receivable' As AccountNm, #ARASOF.CurrencyCd, 
+
+                sum(round(#ARASOF.QBalance / #ARASOF.FxRate,2)) AS FXBalance,
+
+                sum(#ARASOF.QBalance) AS Balance, 0 as rate                
+
+                FROM #ARASOF 
+
+                GROUP BY CurrencyCd
+
+
+
+	End  
+
+
+
+End
+
+END --PROC
+
+
+
+
+

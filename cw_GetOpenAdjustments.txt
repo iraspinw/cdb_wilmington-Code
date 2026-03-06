@@ -1,0 +1,80 @@
+
+
+
+
+
+
+CREATE proc [dbo].[cw_GetOpenAdjustments]  @UserId as char(10)  , @COID AS CHAR(12) as
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+--9/23/2020 Alex: Created for Inbox open sales adjs
+
+
+
+-- [dbo].[cw_GetOpenAdjustments] 'admin',''
+
+--[dbo].[web_GetAdjustments] '10018'
+
+    SELECT      
+
+		--CASE WHEN adjPosted = 'Y' OR IsNull(GPLedger.ReverseBatchNo,0) > 0 OR IsNull(Payables.ReverseBatchNo,0) > 0 THEN 'POSTED' ELSE 'OPEN' END as 'Status',
+
+	   GPLedger.BuySellNo as [Worksheet #],
+
+	   	adjMemoNo as 'Memo No',
+
+	   RTrim(glaccount.glacct) + '-' +  glaccount.Name as 'Sales Account',  
+
+	   CounterParty.CompanyNm as 'Customer',
+
+	   AdjFxAmount as 'Amount'  ,
+
+	   adjCurrencyCd as [Currency],
+
+	   AdjNotes as [Explanation],
+
+	   UserDef.UserNm as [User],
+
+	   AdjReqDate [Request date],
+
+	   CompanyInfo.CompanyNm [Dept],
+
+	   (select BuySell.CustID from BuySell where BuySellNo=GPLedger.BuySellNo) as '-hidden-CustID',
+
+	   (select BuySell.VendorID from BuySell where BuySellNo=GPLedger.BuySellNo) as '-hidden-VendorID'
+
+		
+
+
+
+    FROM GPLedger WITH (NOLOCK) LEFT JOIN CounterParty WITH (NOLOCK) ON GPLedger.AdjCpID = CounterParty.CpID
+
+    left JOIN UserDef WITH (NOLOCK) ON userdef.UserID = GPLedger.UserID    
+
+    LEFT JOIN PAYABLES WITH (NOLOCK) ON Payables.ItemID = GPLEDGER.LedgerID  AND PAYABLES.buysellno = GPLedger.BuySellNo and ADjType = 'P'
+
+	inner join GLAccount on GLAccount.GLAcct = GPLedger.GLAcct
+
+	left join CompanyInfo on CompanyInfo.COID =  GPLedger.AdjCOID 
+
+   -- where GPLedger.BuySellNo = '229751' --and GPLedger.Source = 'A'
+
+    where (ISUndo IS NULL OR ISUndo = 0)
+
+	and adjtype = 'S'
+
+	and adjPosted <> 'Y' and IsNull(GPLedger.ReverseBatchNo,0) <= 0 and IsNull(Payables.ReverseBatchNo,0) <= 0 
+
+	AND (@COID = '' OR @COID=GPLedger.AdjCOID)
+
+	AND (@UserId = '' OR @UserId=GPLedger.UserID)
+
+
+

@@ -1,0 +1,46 @@
+CREATE PROC [dbo].[cw_GetWarehouseCapacity] @UOM CHAR(1), @COID CHAR(2) = ''
+
+AS
+
+--6/29/2021 ZT: Report created
+
+--9/12/2022 ZT: Added @COID
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED	
+
+
+
+SELECT 
+
+	CAST( ISNULL(SUM(Weight),0) AS DECIMAL(18,2)) As [Contents], 
+
+	CAST(Capacity AS DECIMAL(18,2)) As [Capacity],
+
+	CAST(Capacity - ISNULL(SUM(Weight),0) AS DECIMAL(18,2)) As [Available],
+
+	WarehouseCapacity.Type As [Warehouse Name]
+
+INTO #Report
+
+FROM WarehouseCapacity 
+
+	LEFT JOIN Inventory ON Inventory.WarehouseNm = WarehouseCapacity.Type AND Inventory.WeightUOM = WarehouseCapacity.UOM
+
+	INNER JOIN Address ON Address.Type = WarehouseCapacity.Type AND CpID = '(INV)'
+
+WHERE UOM = @UOM
+
+AND (@COID = '' OR Address.WarehouseCOID = @COID)
+
+GROUP BY WarehouseCapacity.Type, UOM, Capacity
+
+
+
+UPDATE #Report SET Available = 0 WHERE Available < 0
+
+
+
+SELECT * FROM #Report
+

@@ -1,0 +1,28 @@
+CREATE  PROC [dbo].[cw_GetConvertingExpenses](@FromDt datetime, @ToDt as datetime, @COID as char(2), @TotalValue MONEY = 0 OUTPUT) as
+
+--11/21/2016 DSH: Created for Inventory Rollforward.
+
+SET NOCOUNT ON
+
+	
+
+	SELECT 
+
+		@TotalValue = ISNULL(SUM(Amount) ,0)
+
+	FROM 
+
+		Convertingjob_Expenses CE (NOLOCK) inner join ConvertingJob C (NOLOCK) ON CE.JobNo = C.JobNo
+
+	WHERE PostDt >= @FromDt and PostDt <= @ToDT
+
+	AND (@COID = '' OR @COID = C.COID)
+
+	AND C.Status = 'I' 
+
+	
+
+--GO
+
+--cw_GetConvertingExpenses '11/3/2016','11/3/2016', '', 0
+

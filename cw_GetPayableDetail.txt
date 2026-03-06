@@ -1,0 +1,26 @@
+CREATE proc [dbo].[cw_GetPayableDetail] @PayableID int as
+
+
+
+set nocount on 
+
+set transaction isolation level read uncommitted
+
+
+
+select payables.FxAmount as Amount, payables.APBatchNo, payables.InvoiceDt, RcvDt, SalesTaxAmt, GLAcct, payables.CurrencyCd, payables.CPID, 
+
+isnull(SalesTaxCodeID,'') as SalesTaxCodeID, payables.InvoiceNo, amount as HCAmount, PayableID, companynm
+
+from payables 
+
+inner join counterparty on counterparty.cpid = payables.cpid
+
+left join payablesbatch on PayablesBatch.APBatchNo = payables.APBatchNo
+
+where payableid=@PayableID
+
+
+
+
+

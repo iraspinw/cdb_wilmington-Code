@@ -1,0 +1,46 @@
+CREATE   PROCEDURE [dbo].[cw_GetCoverLetterDetail] @Title varchar(50)
+
+
+
+AS
+
+
+
+BEGIN
+
+
+
+-- 12/10/2018 MEC: Created for cieTrade.net 
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT
+
+		Title,
+
+		Contents
+
+	FROM
+
+		CoverLetters With (NoLock)
+
+	WHERE
+
+		Title = @Title
+
+END
+
+
+
+
+
+
+
+
+

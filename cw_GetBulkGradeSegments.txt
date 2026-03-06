@@ -1,0 +1,66 @@
+CREATE proc [dbo].[cw_GetBulkGradeSegments] @Warehouse varchar(65), @GradeID varchar(15), @AsOfDate datetime as
+
+	set nocount on
+
+	set transaction isolation level read uncommitted 
+
+	CREATE TABLE #BulkInvPos(
+
+	[Product] Varchar(100),
+
+	[GradeID] VARCHAR(100),	
+
+	[Quantity] DECIMAL(22,5) DEFAULT 0,
+
+	[Value] MONEY DEFAULT 0,
+
+	[Unit Cost] MONEY DEFAULT 0,
+
+	[Warehouse] VARCHAR(100),
+
+	[Supplier] VARCHAR(100),
+
+	[Location] VARCHAR(100),
+
+	[Class] VARCHAR(100),
+
+	[LocationName] VARCHAR(100),
+
+	Seq int identity
+
+	
+
+	)
+
+
+
+	if @AsOfDate = '' begin
+
+		set @AsOfDate= (select dateadd(d,-1,dateadd(M, 1, openmonth)) from systeminfo)
+
+	end
+
+		
+
+
+
+	insert into #BulkInvPos(Product,GradeiD, Quantity,[Value],class, [Location], Warehouse, LocationName) 
+
+	(select distinct [description], inventoryledger.GradeID, sum(Quantity), sum(Amount), InvClass, [Location], WarehouseNm, WL.LocationName
+
+	from InventoryLedger 
+
+	inner join grade on grade.gradeid = inventoryledger.gradeid 
+
+	left join WarehouseLocation WL on WL.ID = InventoryLedger.Location
+
+	where warehousenm=@Warehouse and inventoryledger.gradeid=@gradeid and PostDate<= @AsOfDate
+
+	group by grade.[description], inventoryledger.GradeID, WarehouseNm, InvClass, [location], LocationName)
+
+
+
+	select * from #BulkInvPos where Quantity > 0
+
+	
+

@@ -1,0 +1,36 @@
+CREATE   PROCEDURE [dbo].[cw_GetBillSheetLocations] 
+
+	@CustID char(12), 
+
+	@AdvanceOnly SMALLINT = 1 
+
+
+
+As
+
+
+
+SET NOCOUNT ON
+
+
+
+--09/25/2019 DSH Updated for Generate Bill Sheets
+
+--03/12/2020 MEC Updated for cieTrade.net
+
+
+
+	Select Distinct Location
+
+	From ServiceRecord D WITH(NOLOCK)
+
+	Inner join ServiceRecordExpense DE WITH(NOLOCK) On  D.DispatchScheduleKey = DE.DispatchScheduleKey
+
+	Where Account = @CustID
+
+	AND (@AdvanceOnly =0 OR (@AdvanceOnly = 1 AND DE.AdvBilling = 1)) 
+
+
+
+
+

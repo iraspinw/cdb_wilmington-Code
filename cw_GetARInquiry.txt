@@ -1,0 +1,966 @@
+CREATE PROC [dbo].[cw_GetARInquiry] 
+
+	@CustID char(12), 
+
+	@ReportType int, 
+
+	@DtFrom datetime, 
+
+	@DtTo datetime, 
+
+	@COID char(2),
+
+	@SalesRep char(10),
+
+	@DateType int,	
+
+	@OverdueDays int = 0,
+
+	@DateFormat CHAR(10) = 'MM/DD/yyyy',
+
+	@GroupedStatus char(1) = ''
+
+
+
+AS 
+
+
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+
+
+--10/01/2018 MEC : Copied for cieTrade.net
+
+--12/12/2019 ALEX : IsBillingSheet ADDED
+
+--09/0112020 Alex: CustomGroupInvDocFormID
+
+--02/04/2021 DSH: Corrected some of the home/fx columns being returned in wrong position. 
+
+--10/26/2022 ZT: Altered date filter so all dates are returned when @DtFrom is empty
+
+--11/16/2022 ZT: added @DateFormat param
+
+--03/28/2023 Nick: Added [Created By]
+
+--08/22/2023 MEC: Adde GroupedStatus Filter 
+
+--cw_GetARInquiry '',2,'','','','','0',0
+
+
+
+--@ReportType = 0 = ALL
+
+--@ReportType = 1 = RCVD
+
+--@ReportType = 2 = OPEN
+
+--@ReportType = 3 = OVERDUE
+
+--@ReportType = 4 = AS-OF
+
+
+
+
+
+	CREATE TABLE #wrkBuySellList(
+
+		BuySellNo CHAR(12),
+
+		CurrencyCd CHAR(3),
+
+		HCInvoice MONEY,
+
+		HCAdjustment MONEY,
+
+		HCPayments MONEY,
+
+		HCBalance MONEY,
+
+		FXInvoice MONEY,
+
+		FXAdjustment MONEY,
+
+		FXBalance MONEY
+
+	)
+
+
+
+
+
+	CREATE TABLE #LastPayment(
+
+		ReceiptID INT,
+
+		BuySellNo CHAR(12),
+
+		PaymentDt DATETIME,
+
+		CheckNo VARCHAR(15),
+
+		ReferenceNo VARCHAR(12),
+
+		ARBatchNo VARCHAR(15),
+
+	PRIMARY KEY (ReceiptID)
+
+	)
+
+
+
+
+
+	CREATE INDEX #PKLastPayment ON #LastPayment(BuySellNo)
+
+	
+
+
+
+	-- GET LAST PAYMENT INFO.
+
+	INSERT #LastPayment(BuySellNo,ReceiptID)		
+
+		SELECT
+
+			BuySell.BuySellNo,
+
+			MAX(Receipt.ReceiptID)			
+
+		FROM Receipt WITH(NOLOCK) 
+
+			INNER JOIN BUYSELL WITH(NOLOCK)  ON Receipt.BuySellno = BuySell.BuySellNo
+
+		WHERE 
+
+			ISNULL(BuySell.IsAgency,0) <> 1 AND Amount > 0 
+
+			AND Receipt.reversed <> 1
+
+			AND BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(PLANT)' AND BuySell.CustID <> '{C}'
+
+			AND (BuySell.CustID = @CustID OR @CustID='')
+
+			AND (@DtFrom ='' OR @ReportType=2 OR (@DateType = 1 AND BuySell.InvoiceDt >= @DtFrom  AND BuySell.InvoiceDt <= @DtTo) 
+
+						   OR (@DateType = 0 AND BuySell.ShippingDt >= @DtFrom  AND BuySell.ShippingDt <= @DtTo)
+
+						   OR (@DateType = 2 AND PaymentDt >= @DtFrom  AND PaymentDt <= @DtTo))
+
+			AND (@COID = '' or (Buysell.coid = @COID))		
+
+			AND (@GroupedStatus = '' OR (@GroupedStatus = 'G' And IsNull(StatementNo,'') <> '') OR @GroupedStatus = 'N' And IsNull(StatementNo,'') = '')
+
+		GROUP BY BuySell.BuySellNo
+
+
+
+	
+
+	UPDATE #LastPayment SET 
+
+		PaymentDt=Receipt.PaymentDt, 
+
+		CheckNo=Receipt.CheckNo,
+
+		ReferenceNo=Receipt.Reference, 
+
+		ARBatchNo=Receipt.ARBatchNo
+
+		FROM #LastPayment INNER JOIN Receipt ON #LastPayment.ReceiptID = Receipt.ReceiptID
+
+
+
+
+
+
+
+	-- GET LAST PAYMENT USING UNAPPLIED CASH.
+
+	SELECT RECEIPT.BuySellNo, PaymentDt=max(UACashLedger.EntryDt)
+
+	INTO #UACLastPayment 
+
+	FROM Receipt WITH(NOLOCK) INNER JOIN UACashLedger ON Receipt.LedgerID = UACashLedger.LedgerID
+
+	INNER JOIN BUYSELL WITH(NOLOCK)  ON Receipt.BuySellno = BuySell.BuySellNo
+
+	WHERE ISNULL(BuySell.IsAgency,0) <> 1 AND Amount > 0 
+
+	AND Receipt.reversed <> 1
+
+	AND BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(PLANT)' AND BuySell.CustID <> '{C}'
+
+	AND (BuySell.CustID = @CustID OR @CustID='')
+
+	AND (@DtFrom ='' OR @ReportType=2 OR (@DateType = 1 AND BuySell.InvoiceDt >= @DtFrom  AND BuySell.InvoiceDt <= @DtTo) 
+
+				   OR (@DateType = 0 AND BuySell.ShippingDt >= @DtFrom  AND BuySell.ShippingDt <= @DtTo)
+
+				   OR (@DateType = 2 AND PaymentDt >= @DtFrom  AND PaymentDt <= @DtTo))
+
+	AND (@COID = '' or (Buysell.coid = @COID))
+
+	AND (@GroupedStatus = '' OR (@GroupedStatus = 'G' And IsNull(StatementNo,'') <> '') OR @GroupedStatus = 'N' And IsNull(StatementNo,'') = '')
+
+	GROUP BY Receipt.BuySellNo
+
+
+
+	
+
+	UPDATE #LastPayment SET #LastPayment.PaymentDt = #UACLastPayment.PaymentDt 
+
+		FROM #LastPayment INNER JOIN #UACLastPayment ON #LastPayment.BuySellNo = #UACLastPayment.BuySellNo 
+
+		WHERE #UACLastPayment.PaymentDt > #LastPayment.PaymentDt
+
+	
+
+		
+
+
+
+
+
+	-- FILTER ON PAST-DUE ACCOUNTS
+
+	------------------------------
+
+	CREATE TABLE #PastDueAcctList(
+
+		CPID CHAR(12)
+
+		CONSTRAINT PKPastDueAcctList PRIMARY KEY (CPID)
+
+	)
+
+	IF @CustID = '(PASTDUE)' BEGIN		
+
+		INSERT #PastDueAcctList
+
+			Select DISTINCT CustID 
+
+				FROM BuySell WHERE SBalanceDue <> 0 AND BuySell.Status = 'I' AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND CustID <> '(OTHER)'
+
+				AND DateDiff(day,DueDt,GETDATE()) >= 1
+
+			SET @ReportType = 5		
+
+			SET @CustID = ''
+
+	END
+
+
+
+
+
+
+
+	--BUILD LIST OF INVOICES TO REPORT ON.
+
+	--------------------------------------
+
+
+
+	-- REPORT TYPE (0) ALL WORKSHEETS IN DATE RANGE.
+
+	IF @ReportType = 0 BEGIN
+
+		
+
+		IF @DateType = 0 BEGIN --Ship Date
+
+			INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)
+
+				SELECT	BuySell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+					SalesAmt+SFreightChg+SalesTaxAmt,SAdjustment+SalesTaxAdjAmt,BuySell.FxBalanceDue,BuySell.SBalanceDue								
+
+				FROM BuySell 
+
+				WHERE  ((BuySell.ShippingDt >= @DtFrom  AND BuySell.ShippingDt <= @DtTo AND InvoiceDt <= getdate() ) or @DtFrom ='')
+
+				AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I'  AND ISNULL(BuySell.IsAgency,0) <> 1 AND IsNull(IsInvoiceBooked,0) <> 1
+
+		END	
+
+
+
+		IF @DateType = 1 BEGIN --Invoice Date
+
+			INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)
+
+				SELECT	BuySell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+					SalesAmt+SFreightChg+SalesTaxAmt,SAdjustment+SalesTaxAdjAmt,BuySell.FxBalanceDue,BuySell.SBalanceDue
+
+				FROM BuySell 
+
+				WHERE ((BuySell.InvoiceDt >= @DtFrom  AND BuySell.InvoiceDt <= @DtTo AND  InvoiceDt <= getdate())  or @DtFrom ='')
+
+				AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I'  AND ISNULL(BuySell.IsAgency,0) <> 1 AND IsNull(IsInvoiceBooked,0) <> 1
+
+		END	
+
+
+
+		IF @DateType = 2 BEGIN --Last Payment
+
+			INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)			
+
+				SELECT	BuySell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+					SalesAmt+isNull(SFreightChg,0)+isNull(SalesTaxAmt,0),isNull(SAdjustment,0)+isNull(SalesTaxAdjAmt,0),BuySell.FxBalanceDue,BuySell.SBalanceDue
+
+				FROM BuySell INNER JOIN #LastPayment ON (BuySell.BuySellNo = #LastPayment.BuySellNo)	
+
+				WHERE  ((#LastPayment.PaymentDt >= @DtFrom  AND #LastPayment.PaymentDt <= @DtTo AND InvoiceDt <= getdate() ) or @DtFrom ='')
+
+				AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I'  AND ISNULL(BuySell.IsAgency,0) <> 1	  AND IsNull(IsInvoiceBooked,0) <> 1
+
+		END	
+
+
+
+	END
+
+
+
+
+
+
+
+	-- REPORT TYPE (1) ALL INVOICES WITH A RECEIVED PAYMENT IN REPORT DATE RANGE.
+
+	IF @ReportType = 1 BEGIN
+
+		
+
+		IF @DateType = 0 BEGIN --Ship Date
+
+			INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)
+
+				SELECT	BuySell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+					SalesAmt+SFreightChg+SalesTaxAmt,SAdjustment+SalesTaxAdjAmt,BuySell.FxBalanceDue,BuySell.SBalanceDue
+
+				FROM BuySell INNER JOIN #LastPayment ON BuySell.BuySellNo = #LastPayment.BuySellNo	
+
+				WHERE ( BuySell.ShippingDt >= @DtFrom  AND BuySell.ShippingDt <= @DtTo AND InvoiceDt <= getdate() ) or @DtFrom =''
+
+				AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I'  AND ISNULL(BuySell.IsAgency,0) <> 1 AND IsNull(IsInvoiceBooked,0) <> 1
+
+				AND (@GroupedStatus = '' OR (@GroupedStatus = 'G' And IsNull(StatementNo,'') <> '') OR @GroupedStatus = 'N' And IsNull(StatementNo,'') = '')
+
+		END	
+
+		IF @DateType = 1 BEGIN --Invoice Date
+
+			INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)
+
+				SELECT	BuySell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+					SalesAmt+SFreightChg+SalesTaxAmt,SAdjustment+SalesTaxAdjAmt,BuySell.FxBalanceDue,BuySell.SBalanceDue
+
+				FROM BuySell INNER JOIN #LastPayment ON BuySell.BuySellNo = #LastPayment.BuySellNo	
+
+				WHERE (BuySell.InvoiceDt >= @DtFrom  AND BuySell.InvoiceDt <= @DtTo AND  InvoiceDt <= getdate()) or @DtFrom =''
+
+				AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I'  AND ISNULL(BuySell.IsAgency,0) <> 1 AND IsNull(IsInvoiceBooked,0) <> 1
+
+				AND (@GroupedStatus = '' OR (@GroupedStatus = 'G' And IsNull(StatementNo,'') <> '') OR @GroupedStatus = 'N' And IsNull(StatementNo,'') = '')
+
+		END	
+
+		IF @DateType = 2 BEGIN --Last Payment
+
+			INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)
+
+				SELECT	Buysell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+					SalesAmt+SFreightChg+SalesTaxAmt,SAdjustment+SalesTaxAdjAmt,BuySell.FxBalanceDue,BuySell.SBalanceDue
+
+				FROM BuySell INNER JOIN #LastPayment ON (BuySell.BuySellNo = #LastPayment.BuySellNo)	
+
+				WHERE  (#LastPayment.PaymentDt >= @DtFrom  AND #LastPayment.PaymentDt <= @DtTo AND InvoiceDt <= getdate() ) or @DtFrom =''
+
+				AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I'  AND ISNULL(BuySell.IsAgency,0) <> 1 AND IsNull(IsInvoiceBooked,0) <> 1
+
+				AND (@GroupedStatus = '' OR (@GroupedStatus = 'G' And IsNull(StatementNo,'') <> '') OR @GroupedStatus = 'N' And IsNull(StatementNo,'') = '')
+
+		END	
+
+	END
+
+
+
+	-- REPORT TYPE (2) ALL INVOICES THAT ARE CURRENTLY OPEN.
+
+	IF @ReportType = 2 
+
+		INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)
+
+			SELECT	BuySell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+					SalesAmt+isNull(SFreightChg,0)+isNull(SalesTaxAmt,0),SAdjustment+isNull(SalesTaxAdjAmt,0),BuySell.FxBalanceDue,BuySell.SBalanceDue
+
+			FROM BuySell 
+
+			WHERE round(SBalanceDue,2) <> 0 AND InvoiceDt <= getdate() 
+
+			AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I'  AND ISNULL(BuySell.IsAgency,0) <> 1 AND IsNull(IsInvoiceBooked,0) <> 1
+
+			AND (@GroupedStatus = '' OR (@GroupedStatus = 'G' And IsNull(StatementNo,'') <> '') OR @GroupedStatus = 'N' And IsNull(StatementNo,'') = '')
+
+
+
+
+
+	-- REPORT TYPE (3) ALL OVERDUE INVOICES THAT ARE CURRENTLY OPEN.
+
+	IF @ReportType = 3 
+
+		INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)
+
+			SELECT	BuySell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+				SalesAmt+SFreightChg+SalesTaxAmt,SAdjustment+SalesTaxAdjAmt,BuySell.FxBalanceDue,BuySell.SBalanceDue
+
+			FROM BuySell INNER JOIN COUNTERPARTY ON BuySell.CustID = Counterparty.CPID 
+
+			WHERE  round(SBalanceDue,2) <> 0 AND InvoiceDt <= getdate() AND DateDiff(day,BuySell.DueDt,getdate())>0 AND ISNULL(CounterParty.IsInterCompany,0) = 0 
+
+			AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I' AND ISNULL(BuySell.IsAgency,0) <> 1 AND IsNull(IsInvoiceBooked,0) <> 1
+
+			AND (@GroupedStatus = '' OR (@GroupedStatus = 'G' And IsNull(StatementNo,'') <> '') OR @GroupedStatus = 'N' And IsNull(StatementNo,'') = '')
+
+
+
+
+
+	-- REPORT TYPE (4) WORKSHEET LIST FOR "AS OF" REPORT.
+
+	IF @ReportType = 4 BEGIN
+
+		INSERT #wrkBuySellList
+
+			EXEC q_GetReceivablesAsOf @DtFrom,'',9,'N','','','N','', '','N','INVOICE','',0,0,''
+
+
+
+	END
+
+		
+
+		
+
+	-- REPORT TYPE (5) ALL OPEN INVOICES ON PAST-DUE ACCOUNTS.
+
+	IF @ReportType = 5 BEGIN 
+
+		INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)
+
+		SELECT	BuySell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+				SalesAmt+SFreightChg+SalesTaxAmt,SAdjustment+SalesTaxAdjAmt,BuySell.FxBalanceDue,BuySell.SBalanceDue
+
+			FROM BuySell INNER JOIN #PastDueAcctList ON BuySell.CustID = #PastDueAcctList.CPID
+
+			WHERE round(SBalanceDue,2) <> 0 AND InvoiceDt <= getdate() 
+
+			AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I'  AND ISNULL(BuySell.IsAgency,0) <> 1 AND IsNull(IsInvoiceBooked,0) <> 1
+
+			AND (@GroupedStatus = '' OR (@GroupedStatus = 'G' And IsNull(StatementNo,'') <> '') OR @GroupedStatus = 'N' And IsNull(StatementNo,'') = '')
+
+			
+
+	END	
+
+	
+
+
+
+
+
+	SELECT 
+
+		Counterparty.CompanyNm as CustomerNm, 
+
+        BuySell.BuySellNo, 
+
+		BuySell.TradeType,
+
+		CompanyInfo.CompanyDesc  ,
+
+		Buysell.RefSONo AS SO,	--(SELECT TOP 1 SPo FROM wksdetail WITH(NOLOCK)  WHERE wksDetail.BuysellNo = Buysell.BuysellNo) AS SO,         
+
+		InvoiceDate=InvoiceDt, 		
+
+		ShippingDate=ShippingDt,	    
+
+        PostingDate=InvoiceDt,
+
+	    PaymentDate=convert(sql_variant,  DATEADD(dd, DATEDIFF(dd, 0, #LastPayment.PaymentDt), 0)), 
+
+		BuySell.DueDt,    
+
+		CountryNm=Address.Country,   
+
+		Address.Region ShipToRegion,  
+
+		PickupFrom.Region ShipFromRegion, 
+
+		BuySell.PriceBasis,
+
+		BuySell.RefEquipNo,
+
+		Referrer.Name,
+
+		BuySell.CurrencyCd,
+
+		FXInvoiceAmt=FXInvoice,
+
+		FXAdjAmt=FXAdjustment,
+
+		InvoiceAmt=HCInvoice,
+
+		AdjAmt=HCAdjustment,
+
+		BuySell.Terms, 
+
+		Supplier.CompanyNm as SupplierNm,
+
+		Counterparty.CreditLimit,
+
+		(SELECT TOP 1 ExpDt FROM Credit WITH(NOLOCK) WHERE Credit.CpID = BuySell.CustID ORDER BY ProtocolID Desc) AS ExpDt,
+
+		Ship_Post_Days=DateDiff(day,ShippingDt,InvoicePrintDt), 
+
+        Post_Pay_Days=DateDiff(day,InvoicePrintDt,PaymentDt),
+
+	    Ship_Pay_Days=DateDiff(day,ShippingDt,PaymentDt),
+
+		LastPaymentDt=#LastPayment.PaymentDt,
+
+		FxBalanceDue=FXBalance,												--FX Balance Due
+
+		SBalanceDue=HCBalance,												--HC Balance Due
+
+		#LastPayment.CheckNo,
+
+		#LastPayment.ReferenceNo,
+
+		PastDueDays=DateDiff(day,BuySell.DueDt,getdate()),					--Days Currently Past Due Date
+
+		DBAAddress.CoName as DBAName,
+
+		BuySell.RelNo,
+
+		Address.[Type] Location,
+
+		Vessel.VesselName as Vessel,
+
+		BuySell.BunkerPort as PlaceOfDeliv,
+
+		Convert(Money,'0') A31_60,
+
+		Convert(Money,'0') A61_90,
+
+		Convert(Money,'0') A91,
+
+		Convert(Money,'0') A1_30,
+
+		Convert(Money,'0') CurrentBalance,
+
+		Buysell.Notes,
+
+		Convert(VARCHAR(25),'') as SORef,
+
+		BuySell.BookingNo,
+
+		BookSheet.LoadPort,
+
+		(SELECT TOP 1 ContainerNo FROM Container WITH(NOLOCK) WHERE BuySell.BuySellno = Container.RcvBuySellNo) AS ContainerNo,
+
+		RiskCover,		
+
+		Buysell.PSupplierCost HCSupplierCost,
+
+		Buysell.PCurrencyCd HCSupplierCurrCd,
+
+		Buysell.FXSupplierCost,
+
+		Buysell.PFreightChg HCExpenses,
+
+		CounterParty.ActiveCreditProtocolID,
+
+		SPACE(100) ProtocolComment,
+
+		CASE Billingterm.ExcludeFromCreditCheck WHEN 1 THEN 'YES' ELSE 'NO' END IsSecured,
+
+		#LastPayment.ARBatchNo,
+
+		Buysell.ProblemNotes,
+
+		SPACE(3) ProtocolCurrCode,
+
+		SPACE(100) ProtocolReference,
+
+		FactorName,
+
+		'Wks   ' as InvType,
+
+		CounterParty.UserDefined1,
+
+		CustMainAddr.TaxID, 
+
+		CustMainAddr.Country CtryCode,
+
+		BookSheet.ETA,
+
+		CounterParty.CurrCode as CustDefCurrCode,
+
+		BookSheet.ETS,
+
+		BuySell.CustID,
+
+		BuySell.VendorID,
+
+		BuySell.StatementNo,
+
+		BuySell.COID,
+
+		case when isnull(BuySell.IsBillingSheet,0)=1 then 'BILLING' else 'STANDARD' end AS IsBillingSheet,
+
+		UserDef.UserNm as UserNm
+
+	INTO #Data
+
+	FROM BuySell WITH(NOLOCK) 
+
+	INNER JOIN #wrkBuySellList ON #wrkBuySellList.BUYSELLNO = BUYSELL.BUYSELLNO
+
+	INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID 
+
+	INNER JOIN Counterparty Supplier WITH(NOLOCK) ON BuySell.VendorID = Supplier.CpID	
+
+	INNER JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.COID = BuySell.COID
+
+	LEFT JOIN DBAAddress WITH(NOLOCK) ON DBAAddress.CoAddrID = BuySell.DBAAddrID	    
+
+    LEFT JOIN Address WITH(NOLOCK) ON Address.CpID = BuySell.CustID AND Address.Type = BuySell.ShipToID
+
+    LEFT JOIN Address CustMainAddr WITH(NOLOCK) ON CustMainAddr.CpID = BuySell.CustID AND CustMainAddr.InvoiceAddr = 'Y'
+
+	LEFT JOIN Address PickupFrom WITH(NOLOCK) ON PickupFrom.CpID = BuySell.VendorID AND PickupFrom.Type = BuySell.ShipFromID 
+
+	LEFT JOIN Referrer WITH(NOLOCK) ON BuySell.ReferrerNo1 = Referrer.ReferrerNo    
+
+	LEFT JOIN Billingterm ON BuySell.Terms = Billingterm.term
+
+	LEFT JOIN #LastPayment ON (BuySell.BuySellNo = #LastPayment.BuySellNo)	
+
+	LEFT JOIN BookSheet WITH(NOLOCK) ON BuySell.BookingNo = BookSheet.BookingNo
+
+	LEFT JOIN Vessel WITH(NOLOCK) ON BuySell.VesselID = Vessel.VesselID
+
+    LEFT JOIN Factor WITH(NOLOCK) ON BuySell.FactorID = Factor.FactorID
+
+	LEFT JOIN UserDef WITH(NOLOCK) ON UserDef.UserID = BuySell.UserID
+
+	WHERE 
+
+	    BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(PLANT)' AND BuySell.CustID <> '{C}'
+
+		AND (@CustID = '' OR BuySell.CustID = @CustID) 
+
+		AND (@COID = '' OR Buysell.coid = @COID) 	
+
+		AND (@SalesRep = '' OR BuySell.ReferrerNo1 = @SalesRep)  
+
+		AND (@GroupedStatus = '' OR (@GroupedStatus = 'G' And IsNull(StatementNo,'') <> '') OR @GroupedStatus = 'N' And IsNull(StatementNo,'') = '')
+
+	
+
+
+
+
+
+	--UPDATE #DATA SET InvType = 'BillSh' 
+
+	--FROM #DATA INNER JOIN BillSheet ON BillSheet.BillSheetID = #DATA.BuySellNo
+
+
+
+
+
+
+
+	--Update Protocol Comment
+
+	UPDATE #DATA SET ProtocolComment = SUBSTRING(Remarks,1,100),
+
+					 ProtocolCurrCode = CurCode,
+
+					 ProtocolReference = AgendaRef
+
+		FROM #DATA INNER JOIN Credit ON #Data.ActiveCreditProtocolID = Credit.ProtocolID
+
+		WHERE #DATA.ActiveCreditProtocolID IS NOT NULL 
+
+
+
+	UPDATE #DATA SET ProtocolCurrCode = dbo.xDoc_GetSYSCURRENCY() 
+
+	WHERE RTRIM(ProtocolCurrCode) = '' AND CreditLimit <> 0 
+
+
+
+
+
+
+
+	UPDATE #DATA SET CountryNm = Country.Name FROM #DATA INNER JOIN Country WITH(NOLOCK) ON #DATA.CountryNm = Country.CountryID	
+
+	
+
+	--For ASOF Reporting: Change past due days to as of date.
+
+	IF @ReportType = 4 BEGIN
+
+		UPDATE #DATA SET PastDueDays = DateDiff(day,DueDt,@DtFrom) FROM #DATA 
+
+	END
+
+		
+
+	--Set Past Due Days to last payment date if balance is zero.
+
+	UPDATE #DATA SET PastDueDays = DateDiff(day,DueDt,LastPaymentDt) FROM #DATA WHERE SBalanceDue = 0
+
+	
+
+	
+
+	
+
+	IF @OverdueDays = -1
+
+		DELETE FROM #DATA WHERE ISNULL(PastDueDays,0) < 1  
+
+	IF @OverdueDays = 30
+
+		DELETE FROM #DATA WHERE ISNULL(PastDueDays,0) < 1 OR ISNULL(PastDueDays,0) > 30
+
+	IF @OverdueDays = 60
+
+		DELETE FROM #DATA WHERE ISNULL(PastDueDays,0) < 31 OR ISNULL(PastDueDays,0) > 60
+
+	IF @OverdueDays = 90
+
+		DELETE FROM #DATA WHERE ISNULL(PastDueDays,0) < 61 OR ISNULL(PastDueDays,0) > 90
+
+	IF @OverdueDays = 120
+
+		DELETE FROM #DATA WHERE ISNULL(PastDueDays,0) < 91 OR ISNULL(PastDueDays,0) > 120
+
+	IF @OverdueDays = 121
+
+		DELETE FROM #DATA WHERE ISNULL(PastDueDays,0) < 121
+
+	
+
+	
+
+
+
+	UPDATE #DATA SET PaymentDate = CONVERT(varchar, PaymentDate, 101) FROM #DATA
+
+    UPDATE #DATA SET PaymentDate = 'OPEN' FROM #DATA WHERE PaymentDate IS NULL
+
+    UPDATE #DATA SET PaymentDate = 'OPEN' FROM #DATA WHERE SBalanceDue > 0  --*1
+
+    UPDATE #DATA SET SORef = POReference FROM #DATA INNER JOIN PO WITH(NOLOCK) ON PO.PONumber = #DATA.SO 
+
+	
+
+	
+
+	--UPDATE AGING BUCKETS
+
+	UPDATE #DATA SET A1_30 = SBalanceDue WHERE PastDueDays>=1 AND PastDueDays<=30  AND PaymentDate = 'OPEN'
+
+	UPDATE #DATA SET A31_60 = SBalanceDue WHERE PastDueDays>=31 AND PastDueDays<=60  AND PaymentDate = 'OPEN'
+
+	UPDATE #DATA SET A61_90 = SBalanceDue WHERE PastDueDays>=61 AND PastDueDays<=90  AND PaymentDate = 'OPEN'
+
+	UPDATE #DATA SET A91 = SBalanceDue WHERE PastDueDays>=91 AND PaymentDate = 'OPEN'	
+
+	UPDATE #DATA SET CurrentBalance = SBalanceDue WHERE PastDueDays<1 AND PaymentDate = 'OPEN'	
+
+    
+
+	
+
+	--**FINAL RESULT SET--**
+
+	SELECT 
+
+		Case When #Data.StatementNo = 0 Then '' Else CONVERT(varchar, #Data.StatementNo) End [Group Invoice],
+
+		CustomerNm [Customer],
+
+		BuySellNo [Wks#],
+
+		TradeType [Trade Type],
+
+		CompanyDesc [Dept],
+
+		SO [Sales Order],
+
+		RelNo [Release#],		
+
+		PostingDate [Posting Date],
+
+		ShippingDate [Shipping Date],
+
+		PaymentDate [Payment Date],
+
+		#Data.DueDt [Due Date],
+
+		PriceBasis [Ship-Terms],
+
+		RefEquipNo [Equipment#],
+
+		[Name] As [Sales Rep],
+
+		#Data.CurrencyCd [Currency],		
+
+		#Data.FXInvoiceAmt [{C}Amount],
+
+		#Data.FXAdjAmt [{C}Adjustment],
+
+		#Data.FxBalanceDue [{C}Balance],
+
+
+
+
+
+		#Data.InvoiceAmt [{C}HC Amount],		
+
+		#Data.AdjAmt [{C}HC Adjustment],
+
+		#Data.SBalanceDue[{C}HC Balance],
+
+
+
+		#Data.CurrencyCd [-Hidden-Currency],
+
+		#Data.FxInvoiceAmt [-Hidden-InvoiceAmt],
+
+		FxInvoiceAmt [-Hidden-FxInvoiceAmt],
+
+
+
+		#Data.Terms [Payment Terms],
+
+		SupplierNm [Supplier],
+
+		CreditLimit [{C}Credit Limit],
+
+		LastPaymentDt [Last Payment],
+
+		CheckNo [Payment#],
+
+		ReferenceNo [Pmt Reference],
+
+		PastDueDays [Past Due],
+
+		[Location],
+
+		Vessel,
+
+		PlaceOfDeliv [Port],
+
+		#Data.BookingNo [Booking#],
+
+		CurrentBalance [{C}Current Balance],
+
+		SORef [SO Ref#],
+
+		LoadPort [POL],
+
+		ContainerNo [Container#],
+
+		FORMAT( ETA, @DateFormat) [ETA],
+
+		FORMAT( ETS, @DateFormat) [ETD],
+
+		#Data.CustID [-Hidden-CustID],
+
+		VendorID [-Hidden-SupplierCPID],
+
+		#Data.StatementNo [-Hidden-StmtNo],
+
+		BuySellNo [-Hidden-BuySellNo],
+
+		#Data.COID [-Hidden-COID],
+
+		CompanyDesc [-Hidden-Dept],
+
+		IsBillingSheet [-Hidden-WksType],
+
+		IsBillingSheet as [Wks Type],
+
+		isnull(GroupInvoice.CustomGroupInvDocFormID,'') as [-Hidden-CustomGroupInvDocFormID],
+
+		#Data.UserNm as [Created By]
+
+	FROM #Data 
+
+	left join GroupInvoice on GroupInvoice.StatementNo =#Data.StatementNo
+
+	WHERE
+
+		(@DateType = 0 AND 
+
+			(
+
+				(@DtFrom = '' OR ShippingDate >= @DtFrom) 
+
+					AND 
+
+				(@DtTo = '' OR ShippingDate <= @DtTo)
+
+			)
+
+		)
+
+		OR 
+
+		(@DateType = 1 AND 
+
+			(
+
+				(@DtFrom = '' OR InvoiceDate >= @DtFrom) 
+
+					AND 
+
+				(@DtTo = '' OR InvoiceDate <= @DtTo)
+
+			)
+
+		)
+
+	ORDER BY CustomerNm, InvoiceDate, Paymentdate DESC
+
+
+

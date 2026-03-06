@@ -1,0 +1,186 @@
+CREATE   PROCEDURE [dbo].[cw_GetInventoryRecord]  @ItemNo char(25) AS
+
+--02/16/2016 MEC: Copied for cieTrade.Net 
+
+--08/22/2016 DSH Corrected address to support manual inventory.
+
+--04/11/2023 DSH Added Natural Original Value
+
+--05/08/2023 Nick: Added ContainerNo
+
+-- cw_GetInventoryRecord '2155-1'
+
+
+
+BEGIN
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+
+
+
+
+	SELECT 
+
+		Inventory.LotNo, Inventory.UnitType, Inventory.VendorID, Inventory.Location, 		
+
+		
+
+		CASE WHEN BuySell.ShipFromID IS NOT NULL THEN 
+
+			dbo.xDoc_GetLocationAddress(Inventory.VendorID, BuySell.ShipFromID)  
+
+		ELSE
+
+			dbo.xDoc_GetLocationAddress(Inventory.VendorID, (select Type from address where CPID = Inventory.VendorID AND InvoiceAddr = 'Y'))  
+
+		END As ShipFromID,
+
+
+
+		WarehouseNm Warehouse, 
+
+		BuySell.ReferrerNo2 BuyRep, PONumber, 
+
+		Inventory.GradeID, Inventory.[Weight], Inventory.WeightUOM, Inventory.Price, Inventory.PriceUOM, Inventory.BuySellNo, 
+
+		DATEADD(dd, DATEDIFF(dd,0,RcvDt),0) As RcvDt, Location, Inventory.DesignatedCpID, QtyOnHand, Inventory.Comments, dbo.cw_RemoveTrailingZeros(Inventory.Diameter, 0) as Diameter,
+
+		Inventory.BasisWt, Inventory.RollWd, Inventory.Caliper, Inventory.Acid_Alkaline, OtherCosts, Inventory.InvClass, Inventory.SerialNo, Inventory.RollWdUOM, 
+
+		Inventory.BasisWtUOM, Inventory.DiameterUOM, Inventory.Color, Inventory.CoreSize, ManualEntry, Inventory.Units, Inventory.SheetSize, Inventory.SheetSizeUOM, 
+
+		Inventory.SheetGrain, Inventory.NoSheets, Inventory.COID, Inventory.Mill, Inventory.Brand, Inventory.Finish, Inventory.JobLot, Inventory.MWeight, Inventory.WarehouseLocation, 
+
+		Inventory.WarehouseBin, ConvertingJobNo, WriteOffWeight, Inventory.LinearLen, Manifest, Hold, RefID, ConvertedFrom_LotNo, 
+
+		Inventory.CoreSizeUOM, Inventory.Condition, Inventory.SheetSizeWd, Inventory.SpeciesID, convert(int,Inventory.LastEdit) As LastEdit, Inventory.LengthUOM, Inventory.WoodThickness,
+
+		Inventory.WoodWidth, Inventory.WoodSzUOM, Inventory.WoodLength, Inventory.WoodLengthUOM, Inventory.WoodGrade, Inventory.WoodGrain,Inventory.GrossMT, Inventory.AirDryPct, 
+
+		Inventory.MoisturePct, InDate, ReservePONumber, ReserveDate, ReserveUserID, BookingReference, 
+
+		
+
+		Inventory.CurrencyCd, 
+
+		IsNull(Inventory.FxRate,1) As FxRate, 
+
+		OrigPrice, 
+
+		CONVERT(DECIMAL(24,2),ISNULL(InvValue, 0)) as [InvValue],		
+
+		CONVERT(DECIMAL(24,2),round(InvValue / (CASE WHEN IsNull(Inventory.FxRate,0) = 0 THEN 1 ELSE Inventory.FxRate END),2)) as [Extension],
+
+		OrigInvValue, 
+
+		
+
+		ReserveSalesRep, 
+
+		IIF(ISNULL(Inventory.TareWt, 0) = 0, ConvertingAllocation.TareWt,Inventory.TareWt) AS [TareWt], IIF(ISNULL(Inventory.GrossWt, 0) = 0, ConvertingAllocation.GrossWt,Inventory.GrossWt) AS [GrossWt], PackingSlipNo, ExcludeItem, MfgEquipment,
+
+		InTime, isBulkLot, Inventory.SpecString, Inventory.PlasticForm, Inventory.PlasticType, Inventory.Area, Inventory.AreaUOM, Inventory.PlasticMelt,
+
+		Inventory.WarehouseLocation,
+
+		OldLotNo,
+
+		Inventory.ReserveDate,
+
+		Inventory.ReservePONumber,
+
+		Inventory.ReserveCustID,
+
+		Inventory.ReserveSalesRep,
+
+		Inventory.IsReserved,
+
+		Inventory.UserDefined1,Inventory.UserDefined2,Inventory.UserDefined3,Inventory.UserDefined4,Inventory.UserDefined5,
+
+		Inventory.UserDefinedSecond1,Inventory.UserDefinedSecond2,Inventory.UserDefinedSecond3,Inventory.UserDefinedSecond4,Inventory.UserDefinedSecond5,
+
+		Inventory.UserDefinedThird1,Inventory.UserDefinedThird2,Inventory.UserDefinedThird3,Inventory.UserDefinedThird4,Inventory.UserDefinedThird5,
+
+		Inventory.UserDefinedFourth1,Inventory.UserDefinedFourth2,Inventory.UserDefinedFourth3,Inventory.UserDefinedFourth4,Inventory.UserDefinedFourth5,
+
+		Inventory.UserDefinedFourth6,Inventory.UserDefinedFourth7,Inventory.UserDefinedFourth8,Inventory.UserDefinedFourth9,Inventory.UserDefinedFourth10,
+
+
+
+
+
+		CONVERT(DECIMAL(24,2),	ROUND(OrigInvValue / IsNull(Inventory.FxRate,1),2)) FxOrigInvValue,
+
+		Container.ContainerNo,
+
+		Container.ContainerID,
+
+		Container.ContainerType,
+
+		Container.RcvBuySellNo
+
+
+
+		FROM Inventory WITH(NOLOCK) 
+
+		LEFT JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = Inventory.BuySellNo  
+
+		LEFT JOIN WksDetail WITH(NOLOCK) ON WksDetail.LotNo = Inventory.LotNo	
+
+		LEFT JOIN ConvertingAllocation WITH(NOLOCK) ON ConvertingAllocation.LotDesc = Inventory.LotNo
+
+		LEFT JOIN ContainerContents WITH(NOLOCK) ON ContainerContents.LotNo = Inventory.LotNo
+
+		LEFT JOIN Container WITH(NOLOCK) ON Container.ContainerID = ContainerContents.ContainerID
+
+		WHERE Inventory.LotNo = @ItemNo
+
+	
+
+	
+
+
+
+	
+
+	DECLARE @BUYSELLNO CHAR(12)
+
+	SELECT @BuySellNo = BuySellNo FROM Inventory WHERE LotNo = @ItemNo
+
+	
+
+	Declare @IsPaid bit
+
+	SET @IsPaid = 0
+
+	IF EXISTS(SELECT * FROM PAYABLES WITH (NOLOCK) WHERE BUYSELLNO = @BUYSELLNO AND POSTED='1' AND (reversed=0 OR Reversed IS NULL))
+
+        SET @IsPaid = 1
+
+        
+
+    IF ISNULL(@IsPaid,0) <> 1 AND EXISTS(SELECT * FROM PAYABLES WITH (NOLOCK) WHERE BUYSELLNO = @BUYSELLNO AND REVERSEBATCHNO>0 AND (reversed=0 OR Reversed IS NULL))
+
+        SET @IsPaid = 1
+
+    
+
+    SELECT @IsPaid As IsPaid
+
+
+
+END
+
+
+
+
+
+--GO
+
+--cw_GetInventoryRecord @ItemNo=N'11562'
+

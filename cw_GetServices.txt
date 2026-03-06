@@ -1,0 +1,14 @@
+Create proc [dbo].[cw_GetServices] @BuySellNo char(12) as
+
+--06/24/2020 MN: Created
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT * FROM Counterparty_Charge
+
+   
+

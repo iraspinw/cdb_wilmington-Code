@@ -1,0 +1,50 @@
+CREATE proc [dbo].[cw_GetOrderEmailList] 
+
+	@OrderNo varchar(25),
+
+	@Source char(2) = 'PO'
+
+as
+
+
+
+IF @Source = 'SO' Begin
+
+
+
+	select ContactNm as [Name], Email as Email, 'Customer' as [Type], dbo.GetContactRoleList([CT_ID]) as [Contact Role],Contact.Location
+
+	from Contact 
+
+	inner join po on po.cpid = Contact.cpid
+
+	where po.PONumber = @OrderNo and po.source = 'SO' and isnull(Email,'') <> ''
+
+
+
+End
+
+Else Begin 
+
+
+
+	select ContactNm as [Name], Email as Email, 'Supplier' as [Type], dbo.GetContactRoleList([CT_ID]) as [Contact Role],Contact.Location
+
+	from Contact 
+
+	inner join po on po.cpid = Contact.cpid
+
+	where po.PONumber = @OrderNo and po.source = 'PO' and isnull(Email,'') <> ''
+
+
+
+	
+
+End
+
+
+
+
+
+
+

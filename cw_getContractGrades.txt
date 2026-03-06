@@ -1,0 +1,152 @@
+CREATE proc [dbo].[cw_getContractGrades] @SONO varchar(15) as
+
+
+
+--2/18/2020 Alex: AddedBasisWt,BasisWtUOM, Caliper,RollWd,RollWdUOM,Color,Diameter, DiameterUOM,CoreSize,CoresizeUOM, PODetail.LinearLen,PODetail.LengthUOM,SheetSize, 
+
+-- SheetSizeUOM,SheetGrain,PODetail.MWeight,NoSheets,PODetail.PlasticMelt,PODetail.PlasticType ,PODetail.PlasticForm 
+
+--12/13/2022 MEC: Converted PO_ID to allow "C" prefix for contract grades
+
+
+
+			SELECT 
+
+				Grade.Description, 
+
+				PODetail.GradeID,
+
+				UnitType,
+
+				Specifications,
+
+				Price,
+
+				PriceUOM, 
+
+				CurrencyCd, 
+
+				100 As Factor, 
+
+				PODesc, 
+
+				CONVERT(varchar(100), PO_ID) PO_ID,
+
+				po.Terms,
+
+				po.PriceBasis,
+
+				Grade.InventoryType,
+
+
+
+				BasisWt,
+
+				BasisWtUOM, 
+
+				Caliper,
+
+				RollWd,
+
+		        RollWdUOM,
+
+				Color,
+
+				Diameter, 
+
+                DiameterUOM, 		        
+
+				CoreSize,
+
+				CoresizeUOM,
+
+			    PODetail.LinearLen,
+
+				PODetail.LengthUOM,
+
+				SheetSize, 
+
+				SheetSizeUOM,
+
+				SheetGrain,
+
+				PODetail.MWeight,
+
+			    NoSheets,
+
+		        PODetail.PlasticMelt,
+
+		        PODetail.PlasticType ,
+
+		        PODetail.PlasticForm ,
+
+			    PODetail.UserDefined1,
+
+		        PODetail.UserDefined2,
+
+			    PODetail.UserDefined3,
+
+			    PODetail.UserDefined4,
+
+			    PODetail.UserDefined5,
+
+
+
+			    PODetail.UserDefinedSecond1,
+
+		        PODetail.UserDefinedSecond2,
+
+			    PODetail.UserDefinedSecond3,
+
+			    PODetail.UserDefinedSecond4,
+
+			    PODetail.UserDefinedSecond5,
+
+
+
+			    PODetail.UserDefinedThird1,
+
+		        PODetail.UserDefinedThird2,
+
+			    PODetail.UserDefinedThird3,
+
+			    PODetail.UserDefinedThird4,
+
+			    PODetail.UserDefinedThird5,
+
+
+
+			    PODetail.UserDefinedFourth1,
+
+		        PODetail.UserDefinedFourth2,
+
+			    PODetail.UserDefinedFourth3,
+
+			    PODetail.UserDefinedFourth4,
+
+			    PODetail.UserDefinedFourth5,
+
+			    PODetail.UserDefinedFourth6,
+
+		        PODetail.UserDefinedFourth7,
+
+			    PODetail.UserDefinedFourth8,
+
+			    PODetail.UserDefinedFourth9,
+
+			    PODetail.UserDefinedFourth10,
+
+				(select top 1 podetail.WeightUOM from podetail where PONumber = @SONO) as Top1WeightUOMFromPO
+
+			FROM PO WITH(NOLOCK) 
+
+			
+
+			inner join podetail on po.PONumber = podetail.PONumber
+
+			left JOIN Grade WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID			
+
+			WHERE PO.PONumber = @SONO
+
+
+

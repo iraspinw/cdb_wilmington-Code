@@ -1,0 +1,16 @@
+CREATE proc [dbo].[cw_GetEmailTemplates]
+
+as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+select TemplateID as [-Hidden-TemplateID], TemplateName as [Name], TemplateType as [Template Type], EmailSubject as [Email Subject], OriginType As [-Hidden-OriginType]
+
+from EmailTemplates
+
+
+

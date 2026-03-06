@@ -1,0 +1,20 @@
+CREATE proc [dbo].[cw_GetInventoryEmailList] 
+
+	@LotNo char(25)
+
+as
+
+
+
+
+
+	select ContactNm as [Name], Email as Email, 'Supplier' as [Type], dbo.GetContactRoleList([CT_ID]) as [Contact Role]
+
+	from Contact 
+
+	inner join Inventory on Inventory.VendorID = Contact.cpid
+
+	where Inventory.LotNo = @LotNo --and isnull(Email,'') <> ''
+
+
+

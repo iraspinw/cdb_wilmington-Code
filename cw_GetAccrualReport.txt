@@ -1,0 +1,610 @@
+CREATE   PROCEDURE [dbo].[cw_GetAccrualReport] @ReportType CHAR(6), @FromDt date, @Asof_ToDt date, @COID char(2) = NULL, @TradeType char(25) = NULL, @InvPurchases bit = 0 ,@NoEstimates bit = 0, @ApprovedOnly bit = 0, @SalesRep char(10) = ''
+
+AS
+
+Set NoCount On
+
+Begin
+
+-- 11/19/2007 DSH Accrual Report created For Rock-Tenn Recycling.
+
+-- 11/20/2007 DSH Added BL No.
+
+-- 11/28/2007 MCM Corrected @AsofDate Date Filter
+
+-- 11/28/2007 DSH Minor Revisions /0 error
+
+-- 12/03/2007 DSh Added logic to calc sales and cost amounst when price is on worksheet with no weight.
+
+-- 12/18/2007 DSH Corrected problem with avg costs being misapplied.  
+
+-- 02/13/2008 DSH Added IsEstimate Flag and coded TYPEs
+
+-- 03/05/2008 DSH Revised to calculate average price by custommer & supplier and changed to use true 
+
+        --average price basis instead of a derived average from average tx amount.
+
+--03/26/2008 DSH Revised for problems with estimate flag.
+
+--11/28/2008 DSH Adapted as a Generic report for internal use in cieTrade.
+
+--06/03/2009 RS: Expenses added
+
+--08/31/2009 MCM: Added @InvPurchases
+
+--09/03/2009 DSH Revised to include Recurring Invoices (ARC) and Expenses Only worksheets METRO
+
+--09/03/2009 DSH Gross Margin now includes freight expense
+
+--10/05/2009 RS: @NoEstimates added
+
+--12/03/2009 DSH Corrected Gross Margin with no estimates
+
+--08/24/2011 RS: @ApprovedOnly added
+
+--01/04/2012 MCM: Changed the IsRecurring filter to work with the new char system
+
+--12/05/2012 MCM: Added Ship Status A & R
+
+--05/09/2014 DSH Switched to using Wls Status field and exclude cancelled status
+
+--07/24/2018 MN: Added sales rep
+
+--08/30/2018 MN: Added Todt, fromdt. Removed AsOfDt
+
+    --SET @AsofLastMonth = @AsOfDate
+
+-- 09/04/2018 DSH Added option for as of vs period reporting :  @ReportType = "ASOF" or "PERIOD"
+
+
+
+
+
+
+
+
+
+
+
+    Declare @AsofLastMonth datetime, @qMonth varchar(2), @qYear varchar(4)
+
+	SET @AsofLastMonth = @FromDt
+
+    SET @AsofLastMonth = DateAdd(Month,-1,@AsofLastMonth)
+
+    SET @QMonth = Datepart(Month,@AsofLastMonth )
+
+    SET @QYear = Datepart(Year,@AsofLastMonth )
+
+    SET @AsofLastMonth = cast(@QMonth+'/1/'+@QYear AS Datetime)
+
+
+
+
+
+	-- ASSIGN REPORTING PERIOD.
+
+	DECLARE @ToDt DATE
+
+	IF @ReportType= 'ASOF' BEGIN
+
+		SET @FromDt = CONVERT(VARCHAR(12),DATEADD(YEAR,-20,GETDATE()),102)
+
+		SET @ToDt = @Asof_ToDt
+
+	END
+
+	IF @ReportType= 'PERIOD' BEGIN		
+
+		SET @FromDt = CONVERT(VARCHAR(12),@FromDt,102)
+
+		SET @ToDt = @Asof_ToDt
+
+	END
+
+
+
+
+
+    Select 
+
+        COID,
+
+        TradeType,
+
+        BuySellNo, 
+
+        RelNo, 
+
+        ShippingDt, 
+
+        Vendor.CompanyNm As Vendor, 
+
+        Convert(Float,isnull(BuySell.TotalWeightLbs,0)) LoadWeight, 
+
+        Convert(Money,0) As PurchPerTon, 
+
+        BuySell.PSupplierCost, 
+
+        Customer.CompanyNm As Buyer, 
+
+        Convert(Money,0) as SalesPerTon, 
+
+        Convert(Numeric(18,2),BuySell.SalesAmt+ISNULL(BuySell.SFreightChg,0)) As SalesAmt, 
+
+        convert(Numeric(18,2),0) AS GrossMargin, 
+
+        BuySell.CustID, 
+
+        BuySell.VendorID,         
+
+        '   ' AS IsEstimate,         
+
+        ISNULL(BuySell.PFreightChg,0) AS FRT,
+
+        convert(bit,1) DoEstimate,
+
+        IsRecurring
+
+        Into #Report
+
+        From BuySell WITH (NOLOCK) 
+
+        Inner Join Counterparty Vendor WITH (NOLOCK) On BuySell.VendorID = Vendor.CPID
+
+        Inner Join Counterparty Customer WITH (NOLOCK) On BuySell.CustID = Customer.CPID
+
+        Where 
+
+			(Buysell.ShippingDt >= @FromDt AND Buysell.ShippingDt <= @ToDt)
+
+			AND Buysell.Status<>'I' AND Buysell.Status<>'X'
+
+		    AND (
+
+					(@ApprovedOnly=1 AND BuySell.Approved = 1) 
+
+				OR 
+
+					(@ApprovedOnly = 0 AND ShippingOk IN ('S','A','R'))
+
+				)
+
+			AND (@InvPurchases = 1 OR (CustID <> '(INV)' AND CustID <> '(PLANT)'))
+
+			AND (@COID = '' OR BuySell.COID = @COID)
+
+			AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+			AND (@SalesRep = '' OR @SalesRep = ReferrerNo1 OR @SalesRep = ReferrerNo2 )
+
+
+
+		-- SET DO NOT ESTIMATE -- 
+
+		Update #Report Set DoEstimate=0 WHERE (custID = '(OTHER)' OR VendorID ='(OTHER)') OR ISNULL(RTRIM(IsRecurring),'')<>''
+
+
+
+        -- SET DEFAULT WEIGHT WHERE MISSING.
+
+        Update #Report Set LoadWeight=40000, IsEstimate='*W' where LoadWeight = 0 AND DoEstimate=1 
+
+
+
+        -- ASSIGN: SALES & PURCHASE UNIT PRICES WHERE WEIGHT & AMOUNT IS AVAILBLE.
+
+		UPDATE #REPORT SET 
+
+			SalesPerTon = SalesAmt / (LoadWeight/2000),
+
+			PurchPerTon = PSupplierCost / (LoadWeight/2000)
+
+			FROM #REPORT WHERE SalesAmt <> 0 AND PSupplierCost <> 0  AND DoEstimate=1
+
+
+
+		-- GET SALES & PURCHASE PRICES ONLY FOR LOADS THAT WERE MISSING AMOUNTS (EITHER FROM MISSING WEIGHT OR PRICE.)
+
+		SELECT WksDetail.BuySellNo, SPrice, SPriceUOM, PPrice, PUOM 
+
+			INTO #MissingPrices
+
+			FROM WksDetail WITH (NOLOCK) INNER JOIN #Report ON WksDetail.BuySellNo = #Report.BuySellNo 
+
+			WHERE #Report.SalesAmt = 0  AND DoEstimate=1
+
+
+
+        -- ASSIGN: SALES & PURCHASE UNIT PRICES.
+
+		UPDATE #REPORT SET 
+
+			SalesPerTon = dbo.CALCPRICEPERLBS(#MissingPrices.SPrice,#MissingPrices.SPriceUOM) * 2000,
+
+			PurchPerTon = dbo.CALCPRICEPERLBS(#MissingPrices.PPrice,#MissingPrices.PUOM) * 2000            
+
+			FROM #REPORT INNER JOIN #MissingPrices ON #REPORT.BuySellNo = #MissingPrices.BuySellNo	
+
+
+
+        -- ASSIGN: SALES & PURCHASE EXTENSIONS.
+
+		UPDATE #REPORT SET SalesAmt=LoadWeight*(SalesPerTon/2000) WHERE SalesAmt=0 AND SalesPerTon <> 0  AND DoEstimate=1
+
+		UPDATE #REPORT SET PSupplierCost=LoadWeight*(PurchPerTon/2000) WHERE PSupplierCost=0 AND PurchPerTon <> 0  AND DoEstimate=1
+
+
+
+        -- SET ESTIMATE FLAG FOR MISSING PRICES
+
+        UPDATE #REPORT SET IsEstimate='*P' WHERE (SalesPerTon=0 OR PurchPerTon=0) and IsEstimate<>'*W'  AND DoEstimate=1
+
+        UPDATE #REPORT SET IsEstimate='*PW' WHERE (SalesPerTon=0 OR PurchPerTon=0) and IsEstimate='*W'  AND DoEstimate=1
+
+
+
+
+
+        -- BUILD AVERAGE SALES PRICE TABLE (By Customer & Supplier).
+
+        Select Distinct CustID, VendorID Into #MissingSales FROM #Report WHERE SalesPerTon = 0      
+
+        Select  BuySell.CustID, BuySell.VendorID,
+
+                convert(Money,0) AS AvgSalesPrice, 
+
+                convert(Money,0) AS AvgPurchPrice, 
+
+                Sum(SalesAmt) As SalesAmt, 
+
+                Sum(PSupplierCost) As PurchAmt, 
+
+                Sum(TotalWeightLbs) As Wt, 
+
+                count(*) as Items
+
+            Into #UpdateMissingSales 
+
+            FROM Buysell WITH (NOLOCK) Inner Join #MissingSales ON Buysell.CustID = #MissingSales.CustID 
+
+                AND Buysell.VendorID = #MissingSales.VendorID
+
+            Where SalesAmt <> 0 and Buysell.ShippingDt >= @AsofLastMonth 
+
+            Group By Buysell.CustID, BuySell.VendorID
+
+        Update #UpdateMIssingSales SET 
+
+            AvgSalesPrice = round((SalesAmt/Wt)*2000,2), 
+
+            AvgPurchPrice = round((PurchAmt/Wt)*2000,2) 
+
+            Where Wt <> 0
+
+        Update #UpdateMIssingSales SET AvgSalesPrice = 0, AvgPurchPrice=0 Where Items=0      
+
+
+
+        -- BUILD AVERAGE SALES PRICE TABLE (By Customer ONLY).
+
+        Select Distinct CustID Into #MissingSales_C FROM #Report WHERE SalesPerTon = 0      
+
+        Select  BuySell.CustID,
+
+                convert(Money,0) AS AvgSalesPrice, 
+
+                Sum(SalesAmt) As SalesAmt, 
+
+                Sum(TotalWeightLbs) As Wt, 
+
+                count(*) as Items
+
+            Into #UpdateMissingSales_C 
+
+            FROM Buysell WITH (NOLOCK) Inner Join #MissingSales ON Buysell.CustID = #MissingSales.CustID 
+
+                AND Buysell.VendorID = #MissingSales.VendorID
+
+            Where SalesAmt <> 0 and Buysell.ShippingDt >= @AsofLastMonth 
+
+            Group By Buysell.CustID
+
+        Update #UpdateMIssingSales_C SET AvgSalesPrice = round((SalesAmt/Wt)*2000,2) Where Wt <> 0
+
+        Update #UpdateMIssingSales_C SET AvgSalesPrice = 0 Where Items=0      
+
+
+
+       -- BUILD AVERAGE PURCHASE PRICE TABLE (By Supplier ONLY).
+
+       Select Distinct VendorID Into #MissingPurchases FROM #Report WHERE PurchPerTon = 0      
+
+       Select  BuySell.VendorID,
+
+                convert(Money,0) AS AvgPurchPrice, 
+
+                Sum(PSupplierCost) As PurchAmt, 
+
+                Sum(TotalWeightLbs) As Wt, 
+
+                count(*) as Items
+
+            Into #UpdateMissingPurchases 
+
+            FROM Buysell WITH (NOLOCK) Inner Join #MissingPurchases ON Buysell.VendorID = #MissingPurchases.VendorID
+
+            Where PSupplierCost <> 0 and Buysell.ShippingDt >= @AsofLastMonth 
+
+            Group By BuySell.VendorID
+
+        Update #UpdateMissingPurchases SET AvgPurchPrice = round((PurchAmt/Wt)*2000,2) Where Wt <> 0
+
+        Update #UpdateMissingPurchases SET AvgPurchPrice = 0 Where Items=0      
+
+
+
+        
+
+        -- GET COMPOSITE PURCHASE AVERAGE.
+
+        Declare @AvgCompPurchPrice money
+
+        Select  @AvgCompPurchPrice = Sum(PSupplierCost) / Sum(TotalWeightLbs) * 2000
+
+            FROM Buysell WITH (NOLOCK) 
+
+            WHERE PSupplierCost <> 0 and TotalWeightLbs <> 0 AND Buysell.ShippingDt >= @AsofLastMonth 
+
+
+
+        -- GET COMPOSITE SALES AVERAGE.
+
+        Declare @AvgCompSalesPrice money
+
+        Select  @AvgCompSalesPrice = Sum(SalesAmt) / Sum(TotalWeightLbs) * 2000
+
+            FROM Buysell WITH (NOLOCK) 
+
+            WHERE SalesAmt <> 0 and TotalWeightLbs <> 0 AND Buysell.ShippingDt >= @AsofLastMonth 
+
+
+
+
+
+
+
+
+
+
+
+        -- ASSIGN: AVERAGE SALES & PURCHASES PRICES WHERE MISSING (For Customer & Supplier).
+
+               
+
+        Update #Report Set 
+
+            #Report.SalesPerTon = #UpdateMIssingSales.AvgSalesPrice            
+
+            From #Report Inner Join #UpdateMIssingSales ON  #Report.CustID = #UpdateMIssingSales.CustID                 
+
+                AND #Report.VendorID = #UpdateMIssingSales.VendorID
+
+            Where #Report.SalesPerTon = 0  AND DoEstimate=1
+
+        Update #Report Set 
+
+            #Report.PurchPerTon = #UpdateMIssingSales.AvgPurchPrice
+
+            From #Report Inner Join #UpdateMIssingSales ON  #Report.CustID = #UpdateMIssingSales.CustID                 
+
+                AND #Report.VendorID = #UpdateMIssingSales.VendorID
+
+            Where #Report.PurchPerTon = 0  AND DoEstimate=1
+
+
+
+        -- ASSIGN: AVERAGE SALES PRICES WHERE MISSING (For Customer Only).
+
+        Update #Report Set #Report.SalesPerTon = #UpdateMIssingSales_C.AvgSalesPrice
+
+            From #Report Inner Join #UpdateMIssingSales_C ON #Report.CustID = #UpdateMIssingSales_C.CustID                             
+
+            Where #Report.SalesPerTon = 0  AND DoEstimate=1
+
+
+
+        -- ASSIGN: AVERAGE PURCHASE PRICES WHERE MISSING. (For Supplier Only).
+
+        Update #Report Set #Report.PurchPerTon = #UpdateMissingPurchases.AvgPurchPrice
+
+            From #Report Inner Join #UpdateMissingPurchases ON #Report.VendorID = #UpdateMissingPurchases.VendorID
+
+            Where #Report.PurchPerTon = 0  AND DoEstimate=1
+
+
+
+        -- ASSIGN: AVERAGE SALES PRICE WHERE MISSING (For Month)
+
+        Update #Report Set #Report.SalesPerTon = @AvgCompSalesPrice Where #Report.SalesPerTon = 0  AND DoEstimate=1
+
+
+
+        -- ASSIGN: AVERAGE PURCHASE PRICE WHERE MISSING (For Month)
+
+        Update #Report Set #Report.PurchPerTon = @AvgCompPurchPrice Where #Report.PurchPerTon = 0  AND DoEstimate=1
+
+
+
+
+
+        -- UPDATE: EXTEND SALES, PURCHASE & GROSS PROFIT AMOUNTS.
+
+		Update #Report Set SalesAmt = (SalesPerTon * (LoadWeight/2000)) Where (LoadWeight <> 0 and LoadWeight IS Not Null and SalesPerTon <> 0) AND SalesAmt =0  AND DoEstimate=1
+
+        Update #Report Set PSupplierCost = (PurchPerTon * (LoadWeight/2000)) Where (LoadWeight <> 0 and LoadWeight IS Not Null and PurchPerTon <> 0) AND PSupplierCost =0  AND DoEstimate=1
+
+        Update #Report SET GrossMargin = ISNULL(SalesAmt,0)-ISNULL(PSupplierCost,0)-ISNULL(FRT,0)
+
+        
+
+        
+
+
+
+
+
+    -------- FINAL REPORT -------
+
+	IF @NoEstimates = 0 BEGIN
+
+      SELECT BuySellNo AS [Wks No], RelNo aS [Rel No], ShippingDt AS [Ship Date], Vendor, LoadWeight AS [Weight LBS], PurchPerTon AS [Price/Ton], PSupplierCost AS [Purchase Amount],
+
+		Buyer, SalesPerTon AS [Sales Price/Ton],  FRT AS [Exp Amount], SalesAmt AS [Sales Amount], GrossMargin AS [Gross Margin], CustID--, @AsofLastMonth AS [AOLM]
+
+        from #Report     
+
+        Where (SalesAmt <> 0 AND DoEstimate=1) OR DoEstimate=0
+
+        order By ShippingDt
+
+		RETURN
+
+    END
+
+
+
+
+
+
+
+	----- DO NOT ESTIMATE PRICE AND WEIGHT OPTION
+
+    IF @NoEstimates = 1 BEGIN
+
+    
+
+		Select 
+
+			COID,
+
+			TradeType,
+
+			BuySellNo, 
+
+			RelNo, 
+
+			ShippingDt, 
+
+			Vendor.CompanyNm As Vendor, 
+
+			Convert(Float,isnull(BuySell.TotalWeightLbs,0)) LoadWeight, 
+
+			Convert(Money,0) As PurchPerTon, 
+
+			BuySell.PSupplierCost,		--round(PSupplierCost/PFxRate,0) as PSupplierCost,
+
+			Customer.CompanyNm As Buyer, 
+
+			Convert(Money,0) as SalesPerTon, 
+
+			Convert(Numeric(18,2),BuySell.SalesAmt+ISNULL(BuySell.SFreightChg,0)) As SalesAmt, --FxInvoiceAmt As SalesAmt,
+
+			convert(Numeric(18,2),0) AS GrossMargin, 
+
+			BuySell.CustID, 
+
+			BuySell.VendorID,         
+
+			'   ' AS IsEstimate,         
+
+			ISNULL(BuySell.PFreightChg,0) AS FRT,	--round(BuySell.PFreightChg/PFxRate,2) AS FRT,
+
+			convert(bit,1) DoEstimate,
+
+			IsRecurring
+
+			Into #Report2
+
+			From BuySell WITH (NOLOCK) 
+
+			Inner Join Counterparty Vendor WITH (NOLOCK) On BuySell.VendorID = Vendor.CPID
+
+			Inner Join Counterparty Customer WITH (NOLOCK) On BuySell.CustID = Customer.CPID
+
+			Where  
+
+				(Buysell.ShippingDt >= @FromDt AND Buysell.ShippingDt <= @ToDt)
+
+				AND BuySell.Status <> 'I' AND Buysell.Status <> 'X'
+
+				AND (
+
+					(@ApprovedOnly = 1 AND BuySell.Approved = 1) 
+
+				OR 
+
+					(@ApprovedOnly = 0 AND ShippingOk IN ('S','A','R'))
+
+				)
+
+				AND (@InvPurchases = 1 OR (CustID <> '(INV)' AND CustID <> '(PLANT)'))
+
+				AND VendorID <> '(OTHER)' 
+
+				AND (@COID = '' OR BuySell.COID = @COID)
+
+				AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+				AND (@SalesRep = '' OR @SalesRep = ReferrerNo1 OR @SalesRep = ReferrerNo2 )
+
+			
+
+			
+
+		DELETE FROM #REPORT2 WHERE SalesAmt = 0 AND PSupplierCost = 0
+
+    
+
+		UPDATE #REPORT2 SET SalesPerTon = SalesAmt / (LoadWeight/2000)
+
+			FROM #REPORT2 WHERE LoadWeight<>0 AND SalesAmt <> 0
+
+			
+
+		UPDATE #REPORT2 SET PurchPerTon = PSupplierCost / (LoadWeight/2000)
+
+			FROM #REPORT2 WHERE LoadWeight<>0 AND PSupplierCost <> 0  
+
+
+
+		UPDATE #Report2 SET GrossMargin = ISNULL(SalesAmt,0)-ISNULL(PSupplierCost,0)-ISNULL(FRT,0)
+
+    
+
+		--SELECT COID, TradeType, Buysellno, RelNo, ShippingDt, Vendor,  LoadWeight, PurchPerTon, 
+
+		--PSupplierCost,Buyer, SalesPerTon, SalesAmt, GrossMargin, IsEstimate, FRT  
+
+		SELECT BuySellNo AS [Wks No], ISNULL(RelNo, '') aS [Rel No], ShippingDt AS [Ship Date], Vendor, LoadWeight AS [Weight LBS], PurchPerTon AS [Price/Ton], ISNULL(PSupplierCost, 0) AS [Purchase Amount],
+
+		Buyer, SalesPerTon AS [Sales Price/Ton],  FRT AS [Exp Amount], ISNULL(SalesAmt, 0) AS [Sales Amount], GrossMargin AS [Gross Margin], CustID
+
+		FROM #Report2  
+
+		order By ShippingDt
+
+    END
+
+
+
+End
+
+
+
+--GO
+
+--cw_GetAccrualReport 'ASOF', NULL, '2018-09-04',@COID=N'',@TradeType=N'',@InvPurchases=0,@NoEstimates=0,@ApprovedOnly=0,@SalesRep=N''
+
+
+

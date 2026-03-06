@@ -1,0 +1,42 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetWhseLocationInfo] @WhseID int
+
+AS
+
+BEGIN
+
+
+
+-- 05/02/2017 MEC: Created for cieTrade.net 
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT
+
+		ID,
+
+		LocationName,
+
+		ISNULL(WarehouseType, '')
+
+	FROM
+
+		WarehouseLocation With (NoLock)
+
+	WHERE
+
+		ID = @WhseID
+
+END
+
+
+

@@ -1,0 +1,258 @@
+CREATE   PROCEDURE [dbo].[cw_GetAPVoucherInquiry] 
+
+	@postingfromdt datetime, 
+
+	@postingtodt datetime, 
+
+	@vendorid char(12), 
+
+	@COID char(2) = '', 
+
+	@Status varchar(15) = 'POSTED',
+
+	@ExlOffsets bit = 1
+
+AS 
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--DSH 01/11/2008 Created by David Watson for AP Voucher Inquiry
+
+--DSH 01/14/2008 Revised to bring back check numbers and payment dates for MAS500.
+
+--RS 11/22/2013 RS: @COID added 
+
+--EMR 01/31/2014 AP offset exlusion check added
+
+--DSH 06/06/2016 Default excluded Offsets
+
+--DSH 08/15/2016 Exclude Zero Vouchers
+
+--DSH 06/15/2020 Revised + added Home currency amount
+
+--MEC 07/29/2020 Alter HCAmount calculation to correct sales tax issue
+
+--DN 04/12/2023: Added Dept column
+
+
+
+
+
+	--DECLARE @OffsetAc CHAR(12)
+
+	--SELECT @OffsetAc = GLAcct FROM glaccount WHERE Cat = 'OFFSET'
+
+
+
+
+
+    --CREATE TABLE #VOUCHERS(
+
+    --    mVoucherkey int,
+
+    --    mVouchNo varchar(30),
+
+    --    mAPBatchNo char(15)  
+
+    --    )
+
+		
+
+	SELECT 
+
+        convert(varchar(15),Payablesbatch.APBatchNo) as [AP-Batch#], 
+
+        PostingDt as [Posting Date], 
+
+        counterparty.CompanyNm as [Vendor Name], 
+
+        Payablesbatch.InvoiceNo as [Invoice No], 
+
+        apterms as [Payment Terms], 
+
+        Payablesbatch.fxamount + isnull(PayablesBatch.SalesTaxAmtFx,0) as [{C}Payment Amount], 
+
+        Payablesbatch.currencycd as [Currency],		
+
+		PostedInAccting,
+
+        RecordDate as [Record Date],
+
+        UserNm as [User Name],
+
+		Comment,
+
+        NumOfItems,                
+
+        convert(varchar(20),' ') PaymentNo,
+
+        convert(datetime,null) PaymentDate,
+
+        convert(varchar(30),' ') VouchNo,
+
+        convert(int,null) VoucherKey,
+
+        rtrim(acctingidvendor) AS VendNo,
+
+		ISNULL(SalesTaxAmt, 0.00) AS [{C}Sales Tax],
+
+		((FXAmount + isnull(SalesTaxAmtFx,0)) * FxRate) HCAmount,
+
+		Payablesbatch.APBatchNo,
+
+		CompanyInfo.CompanyDesc
+
+    INTO #REPORT
+
+	FROM Payablesbatch 		
+
+		inner join counterparty on payablesbatch.cpid = counterparty.cpid
+
+		left join CompanyInfo on PayablesBatch.COID = CompanyInfo.COID
+
+		inner join userdef on userdef.userid = PayablesBatch.UserID
+
+	WHERE 
+
+		(@postingfromdt = '' or (postingdt >= @postingfromdt) and (postingdt <= @postingtodt))
+
+		AND (Payablesbatch.cpid = @vendorid or @vendorID ='')
+
+		AND (@COID = '' OR Payablesbatch.coid = @COID)
+
+		AND (@ExlOffsets = 0 OR (@ExlOffsets = 1 AND Payablesbatch.InvoiceNo <> 'AP-OFFSET'))
+
+		AND ((@Status = 'POSTED' and isnull(payablesbatch.Reversed,0) = 0) OR (@Status='REVERSED' and isnull(payablesbatch.Reversed, 0) = 1) OR @Status='ALL')
+
+		and isnull(prepay,0) =0
+
+
+
+	--DECLARE @SYSTEMCURRENCY  CHAR(3)
+
+	--SELECT @SYSTEMCURRENCY  = CurrCode FROM SYSTEMINFO
+
+
+
+	--CREATE TABLE #HCVALUES(
+
+	--	APBatchNo CHAR(15),
+
+	--	HCAmount MONEY
+
+	--	)
+
+
+
+
+
+	--INSERT #HCVALUES
+
+	--	SELECT #REPORT.APBatchNo, SUM(Amount) 
+
+	--	FROM payables INNER JOIN #REPORT ON payables.APBatchNo = #REPORT.APBatchNo
+
+	--	WHERE #REPORT.[Currency] <> @SYSTEMCURRENCY 
+
+	--	GROUP BY #REPORT.APBatchNo
+
+
+
+
+
+	--UPDATE #REPORT SET #REPORT.HCAmount = #HCVALUES.HCAmount
+
+	--	FROM #REPORT INNER JOIN #HCVALUES ON #REPORT.APBatchNo = #HCVALUES.APBatchNo
+
+	
+
+	--UPDATE #REPORT SET #REPORT.HCAmount = [{C}Payment Amount]
+
+	--	WHERE #REPORT.[Currency] = @SYSTEMCURRENCY 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    -- GET VENDOR KEY FILTER.
+
+    --DECLARE @VendID varchar(12) 
+
+    --DECLARE @VendKey INT
+
+    --IF @Vendorid <> '' BEGIN
+
+    --    SELECT @VendID=rtrim(acctingidvendor) FROM Counterparty Where CPID=@vendorid
+
+    --END
+
+
+
+    ----CLEANUP PAYMENT NUMBERS.
+
+    --UPDATE #REPORT SET PaymentNo=RTRIM(SUBSTRING(PaymentNo,1,CHARINDEX('-CK',PaymentNo)-1 ))  
+
+    --    WHERE PaymentNo IS NOT NULL AND CHARINDEX('-CK',PaymentNo) <> 0
+
+    --UPDATE #REPORT SET PaymentNo=convert(integer,PaymentNo) WHERE isnumeric(PaymentNo) =1
+
+    
+
+
+
+    SELECT 
+
+		[AP-Batch#], 
+
+        [Posting Date], 
+
+        [Vendor Name], 
+
+        [Invoice No], 
+
+[Payment Terms], 
+
+        [{C}Payment Amount], 
+
+        [Currency],		
+
+		HCAmount [{C}HC Amount], 
+
+		PostedInAccting,
+
+        [Record Date],
+
+        [User Name],
+
+		Comment,
+
+        NumOfItems,                
+
+        PaymentNo,
+
+        PaymentDate,
+
+        VouchNo,
+
+		CompanyDesc as Department
+
+		--[{C}Sales Tax]			
+
+	FROM #REPORT ORDER BY APBatchNo	
+
+  
+

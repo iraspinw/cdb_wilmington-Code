@@ -1,0 +1,619 @@
+CREATE proc [dbo].[cw_GetShippingContainers_GoHawk] 
+
+	
+
+	@BuySellNo char(12)
+
+
+
+as
+
+
+
+	--MEC: Created for Packing List for Containers on Shipping
+
+	--6/18/2019 Alex: Returned SumUnitType
+
+	--6/18/2019 Alex: I REMOVE THE ROUND FROM ALL THE QNT(ARS.ECO DEMANDED/DAVID APRROVED)
+
+	--2/3/2020 Alex: I rove the I REMOVE THE ROUND FROM ALL THE QNT ONLY for ARS.ECO
+
+	--cw_GetShippingContainers '501678'
+
+
+
+
+
+	
+
+
+
+	declare @CountUnit int
+
+
+
+	--set @CountUnit =(select count(distinct isnull(UnitType,'Unit')) FROM Container Where SaleBuySellNo =   @BuySellNo)
+
+
+
+	--select UnitType FROM Container Where SaleBuySellNo = 502000
+
+
+
+set @CountUnit= (Select  count(distinct isnull(WKSDetail.UnitType,'Unit')) From ContainerContents
+
+ Inner Join WKSDetail On ContainerContents.LotNo = WKSDetail.LotNo
+
+ inner join Container on Container.ContainerID=   ContainerContents.ContainerID 
+
+ Where SaleBuySellNo = @BuySellNo)
+
+
+
+
+
+	Declare @ShowUOM varchar(4) = ''
+
+	Declare @ShowInUomRnd int
+
+	
+
+	-- SET REPORT UNIT OF MEASURE CODE Lbs/Kgs.
+
+	SET @ShowUOM = (SELECT TOP 1  SPriceUOM FROM wksDetail WITH(NOLOCK) WHERE BuySellNo = @BuySellNo)
+
+	--SET @ShowUOM = dbo.GetWksInvoiceQtyUOM(@BuySellNo)
+
+	
+
+	SET @ShowInUomRnd = 3
+
+	IF @ShowUOM = 'L' OR @ShowUOM = 'K'
+
+		SET @ShowInUomRnd = 0
+
+
+
+
+
+----8/26/2020  Alex: I modify the the top container.netweight in order to have the same Weight as wks.weight--------------------------------------------------------------------
+
+
+
+
+
+	  SELECT Container.ContainerID, 
+
+	  dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(NetWeight,UOM,@ShowUOM),@ShowInUomRnd),@ShowUOM) as NetWeight,
+
+	  dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(Container.VGM,UOM,@ShowUOM),@ShowInUomRnd),@ShowUOM) as VGMWeight,
+
+	  dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(NetWeight,UOM,'K'),0),'k') as NetWeightKG,
+
+	  dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(Container.VGM,UOM,'K'),0),'K') as VGMWeightKG
+
+	  INTO #ContainerWeightForPackingList
+
+      FROM	Container
+
+	  Where SaleBuySellNo = @BuySellNo
+
+
+
+		--	 Select * from #ContainerWeightForPackingList
+
+
+
+	   --calculate sum WKSDetail SWeight and sum WKSDetail SWeight in KG
+
+       declare @sumWKSDetailSWeight  varchar(50)
+
+	   declare @sumWKSDetailSWeightKG  varchar(50)
+
+       select 
+
+	   @sumWKSDetailSWeight=dbo.cw_RemoveTrailingZeros(sum(round(dbo.[CONVERT_TO_UOM_XP](isnull(WksDetail.SWeight,''),WksDetail.SWeightUOM ,@ShowUOM),@ShowInUomRnd,0)),@ShowInUomRnd),
+
+	   @sumWKSDetailSWeightKG = dbo.cw_RemoveTrailingZeros(sum(round(dbo.[CONVERT_TO_UOM_XP](isnull(WksDetail.SWeight,''),WksDetail.SWeightUOM ,'K'),0,0)),0)
+
+	   from WKSDetail
+
+	   where WKSDetail.BuySellNo = @BuySellNo
+
+
+
+	  -- exception for cdb_PinnacleFibres'
+
+	  if   db_name() ='cdb_PinnacleFibres'
+
+	  begin
+
+	  select
+
+			@sumWKSDetailSWeight= dbo.FormatQty(dbo.convert_to_uom(sum(WKSDetail.SWeight), SWeightUOM, @ShowUOM),@ShowUOM)
+
+			from WKSDetail
+
+			where WKSDetail.BuySellNo = @BuySellNo
+
+			group by SWeightUOM
+
+	  end
+
+
+
+	   --calculate sum Container NetWeight and sum Container NetWeight in KG
+
+	    declare @sumContainerNetWeight  varchar(20)
+
+		declare @sumContainerNetWeightKG  varchar(20)
+
+		declare @sumContainerGrossWeightKGDicmals  varchar(20)
+
+		declare @sumContainerGrossWeightKGNODicmals  varchar(20)
+
+		declare @sumContainerGrossWeightDicmals  varchar(20)
+
+		declare @sumContainerGrossWeighNODicmals  varchar(20)
+
+	    select 
+
+		@sumContainerNetWeight=  dbo.FormatQty2(round(sum(dbo.CONVERT_TO_UOM(NetWeight,UOM,@ShowUOM)),@ShowInUomRnd),@ShowUOM),
+
+		@sumContainerNetWeightKG= sum(CAST(dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.NetWeight,UOM,'K'),0),'K') AS decimal(18,5))),
+
+		@sumContainerGrossWeightKGDicmals=CAST(sum(dbo.CONVERT_TO_UOM(C.VGM,UOM,'K'))as decimal(18,5)),
+
+        @sumContainerGrossWeightKGNODicmals= sum(CAST(dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.VGM,UOM,'K'),0),'K') AS decimal(18,5)))
+
+			
+
+	    from Container C
+
+		Where SaleBuySellNo = @BuySellNo
+
+
+
+		select 
+
+		@sumContainerGrossWeightDicmals= CAST(dbo.CONVERT_TO_UOM(sum(C.VGM),UOM,@ShowUOM)as decimal(18,5)),
+
+		@sumContainerGrossWeighNODicmals =CAST(sum(dbo.CONVERT_TO_UOM(C.VGM,UOM,@ShowUOM))as decimal(18,5))
+
+	    from Container C
+
+		Where SaleBuySellNo = @BuySellNo
+
+		group by UOM
+
+
+
+	  -- select @sumContainerGrossWeightDicmals
+
+	   --select @sumContainerGrossWeighNODicmals
+
+
+
+ 		
+
+		---convert to float
+
+		declare @sumWKSDetailSWeightFloat  decimal(18,5)
+
+		declare @sumContainerNetFloat decimal(18,5)
+
+		declare @sumWKSDetailSWeightFloatKG  decimal(18,5)
+
+		declare @sumContainerNetFloatKG decimal(18,5)
+
+		declare @sumContainerGrossWeightKGDicmalsFloat  decimal(18,5)
+
+		declare @sumContainerGrossWeightKGNODicmalsFloat decimal(18,5)
+
+
+
+		declare @sumContainerGrossWeightDicmalsFloat  decimal(18,5)
+
+		declare @sumContainerGrossWeightNODicmalsFloat decimal(18,5)
+
+
+
+		set @sumWKSDetailSWeightFloat =(SELECT CAST(@sumWKSDetailSWeight AS decimal(18,5)))
+
+		set @sumContainerNetFloat =(SELECT CAST(@sumContainerNetWeight AS decimal(18,5)))
+
+
+
+		set @sumWKSDetailSWeightFloatKG =(SELECT CAST(@sumWKSDetailSWeightKG AS decimal(18,5)))
+
+		set @sumContainerNetFloatKG =(SELECT CAST(@sumContainerNetWeightKG AS decimal(18,5)))
+
+
+
+		set @sumContainerGrossWeightKGDicmalsFloat =(SELECT CAST(@sumContainerGrossWeightKGDicmals AS decimal(18,5)))
+
+		set @sumContainerGrossWeightKGNODicmalsFloat =(SELECT CAST(@sumContainerGrossWeightKGNODicmals AS decimal(18,5)))
+
+
+
+	    set @sumContainerGrossWeightDicmalsFloat =(SELECT CAST(@sumContainerGrossWeightDicmals AS decimal(18,5)))
+
+		set @sumContainerGrossWeightNODicmalsFloat =(SELECT CAST(@sumContainerGrossWeighNODicmals AS decimal(18,5)))
+
+
+
+		--select @sumContainerGrossWeightDicmalsFloat
+
+		--select @sumContainerGrossWeightNODicmalsFloat
+
+
+
+	--	select  @sumWKSDetailSWeightFloat - @sumContainerNetFloat
+
+		if @sumWKSDetailSWeightFloat - @sumContainerNetFloat<>0
+
+		begin
+
+			update #ContainerWeightForPackingList
+
+			set  #ContainerWeightForPackingList.NetWeight =(@sumWKSDetailSWeightFloat - @sumContainerNetFloat) + #ContainerWeightForPackingList.NetWeight
+
+			where #ContainerWeightForPackingList.ContainerID = (select top 1 #ContainerWeightForPackingList.ContainerID from #ContainerWeightForPackingList order by #ContainerWeightForPackingList.NetWeight)
+
+	    end
+
+
+
+		if @sumWKSDetailSWeightFloatKG - @sumContainerNetFloatKG<>0
+
+		begin
+
+			IF (@sumWKSDetailSWeightFloatKG - @sumContainerNetFloatKG)<0
+
+				begin
+
+					update #ContainerWeightForPackingList
+
+					set  #ContainerWeightForPackingList.NetWeightKG =(@sumWKSDetailSWeightFloatKG - @sumContainerNetFloatKG) + #ContainerWeightForPackingList.NetWeightKG
+
+					where #ContainerWeightForPackingList.ContainerID = (select top 1 #ContainerWeightForPackingList.ContainerID from #ContainerWeightForPackingList order by  #ContainerWeightForPackingList.NetWeightKG desc)
+
+				end
+
+			else
+
+				begin 
+
+					 update #ContainerWeightForPackingList
+
+					set  #ContainerWeightForPackingList.NetWeightKG =(@sumWKSDetailSWeightFloatKG - @sumContainerNetFloatKG) + #ContainerWeightForPackingList.NetWeightKG
+
+					where #ContainerWeightForPackingList.ContainerID = (select top 1 #ContainerWeightForPackingList.ContainerID from #ContainerWeightForPackingList order by #ContainerWeightForPackingList.NetWeightKG)
+
+				end			
+
+	     end
+
+
+
+
+
+		 if @sumContainerGrossWeightKGDicmalsFloat - @sumContainerGrossWeightKGNODicmalsFloat<>0
+
+				begin
+
+					IF (@sumContainerGrossWeightKGDicmalsFloat - @sumContainerGrossWeightKGNODicmalsFloat)<0
+
+						begin
+
+							update #ContainerWeightForPackingList
+
+							set  #ContainerWeightForPackingList.VGMWeightKG =(@sumContainerGrossWeightKGDicmalsFloat - @sumContainerGrossWeightKGNODicmalsFloat) + #ContainerWeightForPackingList.VGMWeightKG
+
+							where #ContainerWeightForPackingList.ContainerID = (select top 1 #ContainerWeightForPackingList.ContainerID from #ContainerWeightForPackingList order by  #ContainerWeightForPackingList.VGMWeightKG desc)
+
+						end
+
+					else
+
+						begin 
+
+							 update #ContainerWeightForPackingList
+
+							set  #ContainerWeightForPackingList.VGMWeightKG =(@sumContainerGrossWeightKGDicmalsFloat - @sumContainerGrossWeightKGNODicmalsFloat) + #ContainerWeightForPackingList.VGMWeightKG
+
+							where #ContainerWeightForPackingList.ContainerID = (select top 1 #ContainerWeightForPackingList.ContainerID from #ContainerWeightForPackingList order by #ContainerWeightForPackingList.VGMWeightKG)
+
+						end			
+
+				 end
+
+
+
+
+
+			-- if (@sumContainerGrossWeightDicmalsFloat - @sumContainerGrossWeightNODicmalsFloat<>0) and  db_name() NOT in ('cdb_GoHawkInc')
+
+		    if db_name() NOT in ('cdb_GoHawkInc')
+
+				begin 
+
+				   if (@sumContainerGrossWeightDicmalsFloat - @sumContainerGrossWeightNODicmalsFloat<>0)
+
+					begin 
+
+						update #ContainerWeightForPackingList
+
+						set  #ContainerWeightForPackingList.VGMWeight =(@sumContainerGrossWeightDicmalsFloat -  @sumContainerGrossWeightNODicmalsFloat) + #ContainerWeightForPackingList.VGMWeight
+
+						where #ContainerWeightForPackingList.ContainerID = (select top 1 #ContainerWeightForPackingList.ContainerID from #ContainerWeightForPackingList order by #ContainerWeightForPackingList.NetWeight)							
+
+					 end
+
+				end 
+
+			
+
+			else
+
+				begin
+
+				   if (@sumWKSDetailSWeightFloat - @sumContainerNetFloat<>0)
+
+					begin 
+
+						update #ContainerWeightForPackingList
+
+						set  #ContainerWeightForPackingList.VGMWeight =(@sumContainerGrossWeightDicmalsFloat -  @sumContainerGrossWeightNODicmalsFloat) + #ContainerWeightForPackingList.VGMWeight
+
+						where #ContainerWeightForPackingList.ContainerID = (select top 1 #ContainerWeightForPackingList.ContainerID from #ContainerWeightForPackingList order by #ContainerWeightForPackingList.NetWeight)							
+
+					 end
+
+			   end
+
+
+
+
+
+--	Select * from #ContainerWeightForPackingList
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+	IF (Select Count(*) From Container Where SaleBuySellNo = @BuySellNo) > 0
+
+	Begin
+
+		Select 
+
+			RcvBuySellNo,
+
+			UPPER(C.ContainerNo) ContainerNo,
+
+			UPPER(C.SealNo) SealNo,
+
+			dbo.CnvUOM_Names(@ShowUOM) As WtShowUOM,
+
+			dbo.CnvUOM_Names(C.UOM) As WtInShowUOM,
+
+			--(Select Sum(Units) From ContainerContents Inner Join WKSDetail On ContainerContents.LotNo = WKSDetail.LotNo Where ContainerContents.ContainerID = c.ContainerID) As Units,
+
+			(select sum(wksinventory.units) from  ContainerContents 
+
+		    left join WksInventory on WksInventory.BuySellNo = C.SaleBuySellNo and WksInventory.LotNo = ContainerContents.LotNo
+
+			where  ContainerContents.ContainerID = C.ContainerID) As Units,
+
+			isnull(dbo.CnvUnitName((Select Top 1 UnitType From ContainerContents Inner Join WKSDetail On ContainerContents.LotNo = WKSDetail.LotNo Where ContainerContents.ContainerID = C.ContainerID)),dbo.CnvUnitName((Select Top 1 UnitType From wksInventory INNER 
+JOIN Inventory WITH (NOLOCK) ON wksInventory.LotNo = Inventory.LotNo WHERE wksInventory.BuySellNo = @BuySellNo))) As UnitType,
+
+
+
+			--Case When db_name() in ('cdb_AXO','cdb_GrowMaterials') Then
+
+			Case When db_name() in ('cdb_AXO') Then
+
+				dbo.cw_RemoveTrailingZeros(round(dbo.[CONVERT_TO_UOM_XP](C.NetWeight,C.UOM,@ShowUOM),@ShowInUomRnd,1),@ShowInUomRnd) 
+
+			Else
+
+			    case when db_name() in ('cdb_GrowMaterials','cdb_RMC','cdb_PinnacleFibres','cdb_Wynstream') then #ContainerWeightForPackingList.NetWeight else  dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.NetWeight,UOM,@ShowUOM),@ShowInUomRnd),@ShowUOM)  end
+
+			END As NetWeight,	
+
+			
+
+			--Case When db_name()  in ('cdb_AXO','cdb_GrowMaterials') Then
+
+				Case When db_name() in ('cdb_AXO') Then
+
+				dbo.cw_RemoveTrailingZeros(round(dbo.[CONVERT_TO_UOM_XP](IsNull(Tare,0),C.UOM,@ShowUOM),@ShowInUomRnd, 1), @ShowInUomRnd)
+
+			Else
+
+			dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(Tare,UOM,@ShowUOM),@ShowInUomRnd),@ShowUOM) 
+
+			END As Tare,		
+
+								
+
+			case when isnull(C.VGM,0)=0 then BuySell.VGM else C.VGM end as VGM,
+
+			C.BookingNo,
+
+			ContainerType,
+
+			SaleBuySellNo,
+
+		    Case When db_name()   in ('cdb_PinnacleFibres') Then
+
+		   	      #ContainerWeightForPackingList.VGMWeight
+
+			else
+
+				   Case When db_name() in ('cdb_AXO') Then
+
+						dbo.cw_RemoveTrailingZeros(round([dbo].[CONVERT_TO_UOM_XP](IsNull(case when isnull(C.VGM,0)=0 then BuySell.VGM else C.VGM end,0),C.UOM,@ShowUOM),@ShowInUomRnd,1),@ShowInUomRnd) 	
+
+					Else
+
+						 case when isnull(C.VGM,0)=0 then dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(IsNull(BuySell.VGM,0),UOM,@ShowUOM),@ShowInUomRnd),@ShowUOM) else dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(IsNull(C.VGM,0),UOM,@ShowUOM),@ShowInUomRnd),@ShowUOM) end
+
+					  -- dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(IsNull(C.VGM,0),UOM,@ShowUOM),@ShowInUomRnd),@ShowUOM) 
+
+					END 			    
+
+			END As GrossWeight,					 	 
+
+			dbo.CnvUnitName((Select Top 1 UnitType From ContainerContents Inner Join WKSDetail On ContainerContents.LotNo = WKSDetail.LotNo Where ContainerContents.ContainerID = C.ContainerID)) as SumUnitTypeCont,
+
+			c.BookingNo		as BookingNoGroup,
+
+			--dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.NetWeight,UOM,'K'),0),'K') as NetWeightKG,
+
+			 case when db_name() in ('cdb_OGOFibers') then #ContainerWeightForPackingList.NetWeightKG else  dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.NetWeight,UOM,@ShowUOM),@ShowInUomRnd),@ShowUOM)  end as NetWeightKG,
+
+			  case when db_name() in ('cdb_OGOFibers') then #ContainerWeightForPackingList.VGMWeightKG else  dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.NetWeight,UOM,@ShowUOM),@ShowInUomRnd),@ShowUOM)  end as VGMWeightKG,
+
+			--dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.VGM,UOM,'K'),0),'K') as VGMWeightKG,
+
+			dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.Tare,UOM,'K'),0),'K') as TareWeightKG,
+
+			dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(#ContainerWeightForPackingList.NetWeightKG,'K','M'),3),'M') as NETWeightMT,
+
+			dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.Tare,UOM,'M'),3),'M') as TareWeightMT,
+
+			dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(#ContainerWeightForPackingList.VGMWeight,@ShowUOM,'M'),3),'M') as VGMWeightMT,
+
+			'KG' AS UOMKG,
+
+			dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(C.NetWeight,UOM,'L'),@ShowInUomRnd),'L') as NetWeightLBS,
+
+			(select top 1 case when  isnull(rtrim(InvoiceDesc),'') = '' then Description else InvoiceDesc end from wksdetail inner join grade on grade.GradeID = wksdetail.GradeID  where  wksdetail.DetailID = C.OrderLinkID ) GradeName,
+
+			(select sum(wksinvvalue)  from ContainerContents  left join WksInventory on WksInventory.BuySellNo = C.SaleBuySellNo and WksInventory.LotNo = ContainerContents.LotNo where ContainerContents.ContainerID = C.ContainerID) wksInvValue,
+
+			(select top 1 grade.ProductCode from wksdetail inner join grade on grade.GradeID = wksdetail.GradeID  where  wksdetail.DetailID = C.OrderLinkID ) ProductCode
+
+		From  
+
+			Container C
+
+			left join BuySell on BuySell.BuySellNo = c.RcvBuySellNo
+
+			left join #ContainerWeightForPackingList on #ContainerWeightForPackingList.ContainerID = C.ContainerID
+
+
+
+		Where SaleBuySellNo = @BuySellNo
+
+
+
+	End
+
+	Else
+
+	Begin
+
+		
+
+		Declare @SUOM char(1) = 'S'
+
+		Select Top 1 @SUOM = SWeightUOM From WKSDetail Where BuySellNo = @BuySellNo
+
+
+
+		Select 
+
+			'' RcvBuySellNo,
+
+			UPPER(RefEquipNo) ContainerNo,
+
+			UPPER(RefSealNo) SealNo,
+
+			dbo.CnvUOM_Names(@ShowUOM) As WtShowUOM,
+
+			dbo.CnvUOM_Names(@SUOM) As WtInShowUOM,
+
+			Sum(Units) As Units,
+
+			dbo.CnvUnitName((Select Top 1 UnitType From WKSDetail Where WksDetail.BuySellNo = @BuySellNo)) As UnitType,
+
+
+
+			Case When db_name() = 'cdb_AXO' Then
+
+				dbo.cw_RemoveTrailingZeros(round(dbo.[CONVERT_TO_UOM_XP](Sum(IsNull(SWeight,0)),@SUOM,@ShowUOM),@ShowInUomRnd,1),@ShowInUomRnd) 
+
+			Else
+
+				dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(Sum(IsNull(SWeight,0)),@SUOM,@ShowUOM),@ShowInUomRnd),@ShowUOM)
+
+			END As NetWeight,		
+
+			Case When db_name() = 'cdb_AXO' Then
+
+			   dbo.cw_RemoveTrailingZeros(round(dbo.[CONVERT_TO_UOM_XP](Sum(IsNull(W.TareWt,0)),@SUOM,@ShowUOM),@ShowInUomRnd,1),@ShowInUomRnd) 			
+
+			Else
+
+				dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(Sum(IsNull(W.TareWt,0)),@SUOM,@ShowUOM),@ShowInUomRnd),@ShowUOM) 
+
+			END As Tare, 						
+
+			IsNull(VGM,0) VGM,
+
+			BookingNo,
+
+			'P' ContainerType,
+
+			B.BuySellNo SaleBuySellNo,
+
+		    Case When db_name() = 'cdb_AXO' Then
+
+	              dbo.cw_RemoveTrailingZeros(round(dbo.[CONVERT_TO_UOM_XP](Sum(IsNull(W.GrossWt,0)),@SUOM,@ShowUOM),@ShowInUomRnd,1),@ShowInUomRnd)
+
+			Else
+
+                 dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(Sum(IsNull(W.GrossWt,0)),@SUOM,@ShowUOM),@ShowInUomRnd),@ShowUOM) 
+
+			END As GrossWeight,				
+
+			@ShowUOM ShowUOM,
+
+			'' as BookingNoGroup,
+
+			dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(Sum(IsNull(SWeight,0)),@SUOM,'K'),@ShowInUomRnd),'K') NetWeightKG,
+
+			dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(Sum(IsNull(SWeight,0)),@SUOM,'L'),@ShowInUomRnd),'L') NetWeightLBS
+
+		From 
+
+			BuySell B
+
+			INNER JOIN WksDetail W ON W.BuySellNo = B.BuySellNo
+
+		Where B.BuySellNo = @BuySellNo
+
+		Group By RefEquipNo, RefSealNo, VGM, BookingNo, B.BuySellNo
+
+	End
+
+
+
+
+
+	--cw_GetShippingContainers '191763-4'
+

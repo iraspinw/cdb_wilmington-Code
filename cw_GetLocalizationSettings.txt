@@ -1,0 +1,68 @@
+--02/18/2019 alex: SignaturePriceconfirmationPO added
+
+--02/18/2019 alex: SignatureBillOfExchamge added
+
+--02/28/2019 alex: SignatureProforma added
+
+--03/7/2019 alex: SignatureForm9 added
+
+--03/22/2019 alex: SignatureSalesContact added
+
+CREATE proc [dbo].[cw_GetLocalizationSettings] as
+
+set transaction isolation level read uncommitted
+
+
+
+select 
+
+	shortdateformat, 
+
+	numberformat, 
+
+	openmonth, 
+
+	licCnt, 
+
+	isnull(ExpDt,'1/1/1900') as ExpDt, 
+
+	activesubscription, 
+
+	UseInventory,
+
+	SignatureSO,
+
+	SignaturePO, 
+
+	PlanName, 
+
+	SubscriptionID, 
+
+	UsePermissions,
+
+	SignatureCont,
+
+	SignatureDeliveryNote,
+
+	SignaturePriceconfirmationPO,
+
+	SignaturePriceconfirmationSO,
+
+	SignatureBillOfExchamge,
+
+	SignatureProforma,
+
+	SignatureForm9,
+
+	SignatureSalesContact,
+
+	isnull(ManualSubscription, 0) ManualSubscription,
+
+	SubscriptionPrice,
+
+	ISNULL(UseOnlineBatch, 0) UseOnlineBatch
+
+from systeminfo
+
+
+

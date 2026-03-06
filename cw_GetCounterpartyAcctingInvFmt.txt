@@ -1,0 +1,20 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCounterpartyAcctingInvFmt]  @CpID char(12) AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+--cw_GetCounterpartyAcctingInvFmt '83936'
+
+
+
+--12/09/2016 MEC: Created
+
+
+
+    SELECT InvoiceFmt FROM COUNTERPARTY WHERE CPID = @CpID
+

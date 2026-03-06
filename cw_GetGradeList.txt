@@ -1,0 +1,14 @@
+CREATE   PROCEDURE [dbo].[cw_GetGradeList] AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	SELECT [Description], GradeID,IsWaste, InventoryType, RTRIM(ProductGroupID) AS [ProductGroupID], UOMType, isnull(IsInactive,0) as IsInactive FROM Grade ORDER BY [Description]
+
+
+

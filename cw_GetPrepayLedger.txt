@@ -1,0 +1,36 @@
+CREATE proc [dbo].[cw_GetPrepayLedger] @FromDt datetime, @ToDt Datetime, @VendorID varchar(25), @COID char(2) as
+
+select 
+
+	APBatchNo,
+
+	counterparty.CompanyNm [Vendor],
+
+	postDt AS [Posting Date],
+
+	InvoiceNo [Invoice No],
+
+	SONumber [SO No],
+
+	companyinfo.CompanyDesc [Department],
+
+	Amount [{C}Amount],
+
+	Currencycd [Currency]
+
+
+
+from PrepayLedger
+
+inner join counterparty on counterparty.cpid = PrepayLedger.VendorID
+
+inner join companyinfo on companyinfo.coid = PrepayLedger.COID
+
+where ((@fromdt = '' and @ToDt='') or (@FromDt <= postdt and @ToDt >= postdt))
+
+and (@VendorID='' or @VendorID=VendorID)
+
+and (@COID = '' or @COID = prepayledger.coid)
+
+
+

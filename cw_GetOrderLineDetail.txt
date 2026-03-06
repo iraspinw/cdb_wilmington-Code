@@ -1,0 +1,26 @@
+Create proc [dbo].[cw_GetOrderLineDetail] 
+
+	@PONumber varchar(15) 
+
+
+
+as
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+select top 1 podetail.PO_ID, podetail.Price, podetail.PriceUOM, podetail.UnitType, po.CpID, po.AddrType, podetail.GradeID, podetail.PODesc
+
+from po with (nolock)
+
+left join podetail with (nolock) on podetail.ponumber = po.ponumber
+
+where 
+
+	po.ponumber = @PONumber
+

@@ -1,0 +1,97 @@
+
+
+
+
+CREATE proc [dbo].[cw_GetGroupDeliveryNoteHeader] @TransportationNo int as
+
+
+
+--11/25/2020 Alex: Created for Delivery Note Transportation
+
+
+
+Declare @Bales varchar(200)
+
+Declare @MetricTons DECIMAL(25,5)
+
+Declare @GradeName varchar(200)
+
+
+
+
+
+
+
+
+
+
+
+	SELECT CompanyNm, CompanyAddr1, CompanyAddr2, CompanyCity, CompanyRegion, CompanyPostalCd,
+
+	CompanyPhone, CompanyFax, CompanyEmail, LogoImage,
+
+	 PrintCompanyNm, LogoSize, LogoWidth, LogoHeight,
+
+	CompanyInfo.CompanyCtry as Country,AltLogoImage,
+
+	Country.Name as CountryFullName,
+
+	BuySellNo,
+
+	BuySell.ShippingDt,
+
+	dbo.xDoc_GetAddress(BuySell.CustID,BuySell.ShipToID,0,0) As CustomerLocation,
+
+	dbo.xDoc_GetAddress(BuySell.VendorID,BuySell.ShipFromID,0,0) As SupplierLocation,
+
+	SO.POReference as SOReference,
+
+	PO.POReference,
+
+	(select top 1 WKSDetail.SWeight from WKSDetail where BuySellNo = BuySell.BuySellNo) as Weight,
+
+	(select top 1 WKSDetail.Units from WKSDetail where BuySellNo = BuySell.BuySellNo) as Units,
+
+	(select top 1 grade.Description from WKSDetail inner join grade on grade.GradeID =WKSDetail.GradeID  where BuySellNo = BuySell.BuySellNo) as Grade,
+
+	(select top 1 CounterParty.CompanyNm from WksDelivery inner join CounterParty on CounterParty.CpID = WksDelivery.VendorID where WksDelivery.isFreight=1 and  BuySellNo = BuySell.BuySellNo) as HAULER,
+
+	BuySell.RefPONo as PONumber,
+
+	(select top 1 WKSDetail.InvoiceDesc from WKSDetail inner join grade on grade.GradeID =WKSDetail.GradeID  where BuySellNo = BuySell.BuySellNo) as CommodityDesc,
+
+	SO.ShipTo,
+
+	BuySell.RelNo,
+
+	(select top 1  case when rtrim(isnull(PODetail.PODesc,'')) ='' then Grade.Description else PODetail.PODesc end   from BuySell inner join  PODetail ON PODetail.PONumber = BuySell.RefSONo inner join Grade on Grade.GradeID=PODetail.GradeID   WHERE BuySell.T
+ransportationNo = @TransportationNo) as GradeSO
+
+
+
+
+
+	--INTO #DocHeader
+
+	FROM BuySell   WITH (NOLOCK) 
+
+	INNER JOIN CompanyInfo  WITH (NOLOCK) ON BuySell.COID = CompanyInfo.COID
+
+	LEFT JOIN PO SO ON SO.PONumber = BuySell.RefSONo
+
+	LEFT JOIN PO  ON SO.PONumber = BuySell.RefPONo
+
+	left join Country on Country.CountryID = CompanyInfo.CompanyCtry
+
+	--LEFT JOIN Country WITH (NOLOCK) ON GroupTransportation.CompanyCtry = Country.CountryID
+
+	WHERE BuySell.TransportationNo = @TransportationNo
+
+
+
+
+
+	
+
+
+

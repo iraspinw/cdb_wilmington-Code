@@ -1,0 +1,28 @@
+--05/24/2022 ZT: Created
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCounterpartyDepts]
+
+	@CpID	CHAR(12) = ''
+
+AS
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED 
+
+SET NOCOUNT ON
+
+
+
+SELECT
+
+COID,
+
+CompanyDesc CompanyNm, 
+
+CASE WHEN EXISTS(SELECT * FROM CounterpartyDepts WHERE CpID = @CpID and CounterpartyDepts.COID = CompanyInfo.COID) THEN 1 ELSE 0 END As [Assigned]
+
+FROM CompanyInfo
+

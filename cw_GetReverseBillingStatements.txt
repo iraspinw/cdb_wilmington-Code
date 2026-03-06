@@ -1,0 +1,80 @@
+
+
+CREATE  PROCEDURE [dbo].[cw_GetReverseBillingStatements] 
+
+
+
+	@ReverseBatchNo int
+
+	
+
+AS
+
+
+
+--08/20/2019 MEC: Created for cieTrade.net
+
+
+
+-- cw_GetReverseBillingStatements 82
+
+
+
+SELECT 
+
+	Counterparty.CompanyNm [Account],
+
+	convert(varchar(30),sum(isnull(convert(money, NetAmt),0)), 1) + ' ' + CurrencyCd [Payment Amount],
+
+	--Sum(IsNull(NetAmt,0)) [Net Amount],
+
+	--CurrencyCd Currency,
+
+	--TaxCode [Tax Code],
+
+	--TaxAmt [Tax Amount],
+
+	convert(varchar(30),dbo.CONVERT_TO_UOM(Sum(IsNull(Tonnage,0)), 'S', 'S')) + ' ST' [Quantity],
+
+	Sum(IsNull(NoOfRows,0)) [Details],
+
+	--FxRate [-Hidden-FxRate],
+
+	--CompanyInfo.CompanyNm [Dept],
+
+	PostType [Post Type],
+
+	--ISNULL(SalesTaxCode,'''') AS [-Hidden-CPTaxCode],
+
+	Counterparty.CpID [-Hidden-CpID],
+
+	CheckPrinted,
+
+	IsPosted,
+
+	isnull(Contact.ContactNm,'') as [Contact Name],
+
+	isnull(Contact.Email,'') as [Email],
+
+	sum(isnull(convert(money, NetAmt),0)) [-Hidden-NetAmt],
+
+	dbo.CONVERT_TO_UOM(Sum(IsNull(Tonnage,0)), 'S', 'S') [-Hidden-Tonnage]
+
+FROM 
+
+	ReverseBillingStatement WITH (NOLOCK) 
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON Counterparty.CpID = ReverseBillingStatement.CpID 
+
+	LEFT JOIN Contact  on CounterParty.CpID = Contact.CpID AND IsNull(Contact.IsPrimary,0) = 1
+
+	--LEFT JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.COID = ReverseBillingStatement.COID
+
+	--LEFT JOIN SalesTaxCode WITH(NOLOCK) ON SalesTaxCode.SalesTaxCodeID = ReverseBillingStatement.TaxCode 
+
+WHERE ReverseBatchNo = @ReverseBatchNo 
+
+Group By Counterparty.CompanyNm, CurrencyCd, PostType, CounterParty.CpID, CheckPrinted, IsPosted, Contact.ContactNm, Contact.Email
+
+
+

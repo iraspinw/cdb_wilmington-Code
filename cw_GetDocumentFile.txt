@@ -1,0 +1,32 @@
+CREATE   PROCEDURE [dbo].[cw_GetDocumentFile] 
+
+	@docid int,
+
+	@dbname char(50) = ''
+
+AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+select 
+
+	fileext, desc1,blob_image, blob_size 
+
+from 
+
+	documentimage 
+
+where  
+
+	
+
+	docid=@docid
+
+
+

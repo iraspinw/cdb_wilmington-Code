@@ -1,0 +1,320 @@
+CREATE PROC [dbo].[cw_GetInvPhysicalJobReport] @JobID INT, @IncludeUnCounted BIT = 0 AS
+
+--10/06/2018 DSH Created for Physical Inventory Report
+
+--10/06/2018 DSH Added Warehouse location
+
+--10/29/2018 DSH Additional Fields.
+
+--10/29/2018 DSH Added Uncounted Items
+
+--10/29/2018 DSh Added ID for delete function
+
+--11/14/2018 DSH Added Inventory Value
+
+--11/15/2018 DSH Changed quantity to come from Job Table
+
+--03/28/2019 DSH Added Location on MISSING inventroy
+
+--10/10/2019 DSH Fixed counting of Uncounted items falling off subsequent jobs when should be counted.
+
+--11/13/2019 DSH FIxed Sorting of the report.
+
+--11/15/2022 ZT: Seperated Count-Date into Count-Date and Count-Time
+
+--11/18/2022 Nick: Uncounted Items are now only reported for the exact warehouse location (unless empty), commented out @WarehouseNm, spec info now comes from Inventory, Now uses UserNm from userdef instead of flaguser
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+
+
+	--GET WAREHOUSE
+
+	DECLARE @Warehouse VARCHAR(45)
+
+	--DECLARE @WarehouseNm VARCHAR(100)
+
+	DECLARE @LocationName VARCHAR(25)
+
+	SELECT @Warehouse = WarehouseCPID FROM inventory_physicaljob WHERE JobID = @JobID
+
+	--SELECT @WarehouseNm = CompanyNm FROM COunterparty WHERE CPID = @Warehouse
+
+	SELECT @LocationName = IIF(Inventory_PhysicalJob.WarehouseLocation = '', '', isnull(WarehouseLocation.LocationName,'')) FROM inventory_physicaljob
+
+	LEFT JOIN WarehouseLocation ON Inventory_PhysicalJob.WarehouseLocation = WarehouseLocation.ID
+
+	WHERE JobID = @JobID
+
+
+
+	CREATE TABLE #Report(		
+
+		GroupNm CHAR(20),
+
+		LotNo CHAR(15),
+
+		SerialNo VARCHAR(25),
+
+		Product VARCHAR(100),
+
+		Packaging VARCHAR(100),
+
+		Specifications VARCHAR(200),
+
+		WeightLbs DECIMAL(22,0),
+
+		InvValue MONEY,
+
+		WarehouseName VARCHAR(100),
+
+		WarehouseLocation VARCHAR(20),
+
+		CountDate DATETIME,
+
+		CountUser varchar(30),
+
+		ChangeWarehouse VARCHAR(100),
+
+		ID INT,
+
+		WeightUOM varchar(3)
+
+	)
+
+
+
+	--COUNTED INVENTORY
+
+	INSERT #Report
+
+	SELECT 		
+
+		'COUNTED ITEMS',
+
+		inventory_physicaljobcount.Lotno, 
+
+		inventory_physicaljobcount.Serialno,  
+
+		[Description] Product,
+
+		--dbo.CnvUnitName(Inventory.Type) Packaging,           
+
+		dbo.CnvUnitName(Inventory.UnitType) Packaging,           
+
+        --dbo.WriteSpecification('',BasisWt,BasisWtUOM,Diameter,DiameterUOM,RollWd,RollWdUOM,CoreSize,CoreSizeUOM,Caliper,
+
+        --        SheetSize,SheetSizeUOM,Inventory.MWeight,NoSheets,SheetGrain,'',Condition,'', '','','', '', '') AS Specification,
+
+		Inventory.SpecString AS Specification,
+
+		inventory.[Weight] [WeightLbs],	 --QtyOnHand  
+
+		Inventory.InvValue,	
+
+		Address.Type WarehouseNm, 
+
+		WarehouseLocation.LocationName,
+
+		flagdate CountDate, 
+
+		UserDef.UserNm CountUser, 
+
+		(CASE WHEN MissingInWarehouse = 1 THEN Whse.[Type] ELSE ' ' END) AS ChangeInWarehouse,
+
+		inventory_physicaljobcount.ID,
+
+		dbo.CnvUOM_NamesNET(Inventory.WeightUOM)
+
+	FROM inventory_physicaljobcount 
+
+	INNER JOIN Inventory ON Inventory.LotNo = inventory_physicaljobcount.lotno
+
+	INNER JOIN Grade ON Inventory.GradeID = Grade.GradeID
+
+	LEFT JOIN WarehouseLocation ON Inventory.WarehouseLocation = WarehouseLocation.ID
+
+	LEFT JOIN Address ON inventory_physicaljobcount.InWarehouseNm = Address.[Type] AND Address.cpid = '(INV)'
+
+	LEFT JOIN Address Whse ON inventory_physicaljobcount.MissingWarehouseNm = Whse.[Type] AND Whse.cpid = '(INV)'
+
+	LEFT JOIN UserDef on UserDef.UserID = inventory_physicaljobcount.flaguser
+
+	WHERE JobID = @JobID 
+
+	AND MissingItem = 0 
+
+
+
+	--MISSING ITEMS
+
+	INSERT #Report
+
+	SELECT 	
+
+	'MISSING ITEMS',
+
+	'(NA)' LotNo,
+
+	I.SerialNo,
+
+	[Description] Product,
+
+	dbo.CnvUnitName(MissingItem_UnitType) Packaging, 
+
+	MissingItem_Attributes,
+
+	MissingItem_WeightLbs,
+
+	0,
+
+	Address.Type WarehouseNm, 
+
+	ISNULL(WarehouseLocation.LocationName,''),
+
+	flagdate CountDate, 
+
+	UserDef.UserNm CountUser, 
+
+	' ' ChangeInWarehouse,
+
+	I.ID,
+
+	''
+
+	from inventory_physicaljobcount I
+
+		INNER JOIN Grade ON I.MissingItem_GradeID = Grade.GradeID
+
+		LEFT JOIN Address ON I.MissingWarehouseNm = Address.[Type] AND Address.cpid = '(INV)'
+
+		INNER JOIN Inventory ON Inventory.LotNo = I.lotno
+
+		LEFT JOIN WarehouseLocation ON Inventory.WarehouseLocation = WarehouseLocation.ID
+
+		LEFT JOIN UserDef on UserDef.UserID = I.flaguser
+
+	WHERE JobID = @JobID 
+
+	AND MissingItem = 1 
+
+
+
+	--UNCOUNTED INVENTORY
+
+	IF @IncludeUnCounted = 1 BEGIN
+
+		INSERT #Report
+
+		SELECT 			
+
+			'UNCOUNTED ITEMS',
+
+			Inventory.Lotno, 
+
+			--ISNULL(Inventory.RollNo,'') Serialno, 
+
+			'' Serialno, 
+
+			[Description] Product,
+
+			--dbo.CnvUnitName(Inventory.Type) Packaging,           
+
+			dbo.CnvUnitName(Inventory.UnitType) Packaging,           
+
+			--dbo.WriteSpecification('',BasisWt,BasisWtUOM,Diameter,DiameterUOM,RollWd,RollWdUOM,CoreSize,CoreSizeUOM,Caliper,
+
+			--		SheetSize,SheetSizeUOM,Inventory.MWeight,NoSheets,SheetGrain,'',Condition,'', '','','', '', '') AS Specification,
+
+			Inventory.SpecString AS Specification,
+
+			Inventory.QtyOnHand  [WeightLbs],
+
+			Inventory.InvValue,			
+
+			@Warehouse, 
+
+			WarehouseLocation.LocationName,
+
+			NULL CountDate, 
+
+			NULL CountUser, 
+
+			' ' ChangeInWarehouse, 0,
+
+			dbo.CnvUOM_NamesNET(Inventory.WeightUOM)	 
+
+		FROM Inventory 
+
+			INNER JOIN Grade ON Inventory.GradeID = Grade.GradeID
+
+			LEFT JOIN WarehouseLocation ON Inventory.WarehouseLocation = WarehouseLocation.ID
+
+		WHERE 
+
+			Inventory.WarehouseNm = @Warehouse
+
+			AND (@LocationName = '' OR WarehouseLocation.LocationName = @LocationName)
+
+			AND QtyOnHand > 0  
+
+			AND NOT EXISTS(SELECT ID from inventory_physicaljobcount WHERE inventory_physicaljobcount.Lotno = Inventory.LotNo AND inventory_physicaljobcount.JobID = @JobID)
+
+		ORDER BY Lotno
+
+	END
+
+
+
+
+
+
+
+
+
+	------------------------------------------------
+
+	SELECT 
+
+		GroupNm,
+
+		LotNo AS [Item No],
+
+		SerialNo AS [Serial No],
+
+		Product AS [Product-Grade],
+
+		Packaging,
+
+		Specifications,
+
+		WeightLbs AS [Quantity],
+
+		InvValue AS [Value],
+
+		WarehouseName AS [Warehouse],
+
+		WarehouseLocation AS [Stock-Location],
+
+		CAST(CountDate As DATE) As [Count-Date],
+
+		CAST(CountDate As TIME) As [Count-Time],
+
+		CountUser AS [Count-User],
+
+		ChangeWarehouse AS [Missing in Warehouse],
+
+		WeightUOM as UOM
+
+	FROM #Report 
+
+	--where lotno = '129870' or lotno = '129479' or lotno = '129627'
+
+	ORDER BY GroupNm, Lotno 
+
+
+

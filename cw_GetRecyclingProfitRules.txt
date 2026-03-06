@@ -1,0 +1,46 @@
+CREATE Procedure [dbo].[cw_GetRecyclingProfitRules] AS 
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+-- 11/8/2022 ZT: Created from [q_GetRecyclingProfitRules]
+
+-- 11/10/2022 ZT: Warehouse column filled with warehouse ID 
+
+SELECT [ID]
+
+      ,[AccountID]
+
+      ,[CompanyNm]	As [Account]
+
+      ,CASE WHEN IsNull(Location, '') = '' THEN '(Any)' Else [Location] END	As [Location]
+
+      ,CASE WHEN IsNull([UnitType], '') = '' THEN '(Any)' Else [UnitType] END	As [Unit Type]
+
+      ,[Charge]		AS [Charge]
+
+      ,[ChargeUOM]	As [UOM]
+
+      ,ISNULL(RecyProfitRules.[GradeID],'')  As [GradeID]
+
+	  ,CASE WHEN IsNull(RecyProfitRules.WarehouseID, '') = '' THEN '(Any)' Else RecyProfitRules.WarehouseID END  As [Warehouse]
+
+	  ,ISNULL((SELECT TOP 1 EqType FROM EquipmentType WHERE ShortName =  [RecyProfitRules].EquipmentType ), '(Any)') As [Equipment Type]
+
+	  ,ISNULL(Grade.[Description], '(Any)') As [Commodity]
+
+  FROM [RecyProfitRules] With(NOLOCK)
+
+  --LEFT JOIN ADDRESS ON ADDRESS.WarehouseID = RecyProfitRules.WarehouseID AND ADDRESS.CPID = '(INV)'
+
+  LEFT JOIN Counterparty With(NOLOCK) ON [RecyProfitRules].AccountID = COUNTERPARTY.CPID
+
+  LEFT JOIN Grade WITH(NOLOCK) ON Grade.GradeID = [RecyProfitRules].GradeID
+
+  
+
+  
+
+
+

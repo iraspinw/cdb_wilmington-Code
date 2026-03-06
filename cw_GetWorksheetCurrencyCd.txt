@@ -1,0 +1,12 @@
+CREATE   PROCEDURE [dbo].[cw_GetWorksheetCurrencyCd] @BuySellNo char(12) AS 
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+select BuySell.CurrencyCd,BuySell.CustID from BuySell where BuySellNo = @BuySellNo
+

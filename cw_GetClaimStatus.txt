@@ -1,0 +1,18 @@
+
+
+CREATE PROC [dbo].[cw_GetClaimStatus]  
+
+ AS  
+
+ --11/08/2017 MN: Created 
+
+ SET NOCOUNT ON;  
+
+ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;  
+
+   
+
+ SELECT RTRIM(ClaimStatus) AS ClaimStatus FROM ClaimStatus  
+
+ 
+

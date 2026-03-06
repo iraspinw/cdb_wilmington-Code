@@ -1,0 +1,284 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCreditSummaryByCpID]  @CpID char(12), @DoSummary bit=0, @DetailMode varchar(30) = ''
+
+
+
+AS 
+
+
+
+-- 11/12/2021 Alex: created
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+
+
+DECLARE @PendingOrderSummary              AS MONEY
+
+DECLARE @PendingShipmentsSummary		  AS MONEY
+
+DECLARE @PendingShipmentsSecuredSummary   AS MONEY
+
+DECLARE @OpenCreditCoveredSummary         AS MONEY
+
+DECLARE @CreditLimit                      AS MONEY
+
+
+
+
+
+
+
+-- 1.) PENDING ORDER VALUE
+
+       SELECT isnull(PODetail.Amount,0) as Amount , PODetail.PONumber , PO.PODate,CompanyInfo.CompanyNm
+
+	   INTO #PendingOrders
+
+       FROM PODetail WITH(NOLOCK) 
+
+       INNER JOIN PO WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber
+
+       LEFT JOIN BILLINGTERM WITH(NOLOCK) ON PO.TERMS = BILLINGTERM.TERM
+
+	   LEFT JOIN CompanyInfo WITH(NOLOCK) ON  CompanyInfo.COID =PO.COID
+
+       WHERE PO.Source = 'SO' 
+
+       AND PO.Status = 'REVIEW'
+
+       AND PO.CpID = @CpID
+
+       --AND ISNULL(PO.IsAgency,0) = 0 
+
+	      
+
+	   SELECT @PendingOrderSummary = sum(Amount) FROM  #PendingOrders where amount > 0
+
+
+
+-- 2. OPEN ORDERS TO BE SHIPPED. 
+
+
+
+	  -- Value of open orders 
+
+      SELECT podetail.ponumber, sum(amount) as Amount 
+
+      INTO #OPENORDERS
+
+      FROM PODetail WITH(NOLOCK) 
+
+      INNER JOIN PO WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber        
+
+      WHERE PO.Source = 'SO' 
+
+      AND PO.CpID = @CPID AND PO.Status = 'OPEN'              
+
+      --AND ISNULL(PO.IsAgency,0) = 0 
+
+      GROUP BY podetail.ponumber
+
+
+
+	  --Value of what was shipped
+
+      SELECT wksdetail.spo, sum(wksdetail.samount * -1) as amount
+
+      INTO #SHIPMENTS
+
+      FROM wksDetail WITH(NOLOCK)  
+
+      INNER JOIN BuySell WITH(NOLOCK) ON wksDetail.BuySellNo = BuySell.BuySellNo
+
+	  INNER JOIN #OPENORDERS ON #OPENORDERS.PONumber = BuySell.RefSONo
+
+      WHERE ISNULL(BuySell.[Status],'') Not In ('X', 'I')
+
+      --AND EXISTS(SELECT PO.PONumber FROM PO WITH(NOLOCK) WHERE PO.Source = 'SO' AND PO.CpID = @cpid AND PO.Status = 'OPEN' AND ISNULL(PO.IsAgency,0) = 0 AND PO.PONumber = wksDetail.SPo)-- AND PO.IsAdvanceOrder=0 Alex:7/7/2020
+
+      --AND ISNULL(BuySell.IsAgency,0) <> 1       
+
+      GROUP BY wksdetail.spo
+
+
+
+	  UPDATE #OPENORDERS 
+
+	  SET #OPENORDERS.amount =CASE WHEN ( #OPENORDERS.Amount + #SHIPMENTS.amount )<0 THEN 0 ELSE  #OPENORDERS.Amount + #SHIPMENTS.amount END
+
+	  FROM #OPENORDERS WITH(NOLOCK) 
+
+	  INNER JOIN #SHIPMENTS WITH(NOLOCK) ON #OPENORDERS.ponumber = #SHIPMENTS.spo
+
+
+
+	  SELECT @PendingShipmentsSummary = sum(Amount) FROM  #OPENORDERS where amount > 0
+
+
+
+
+
+-- 3.) GET PENDING SHIPMENTS (worksheets) 
+
+       SELECT isnull(SBalanceDue,0) AS SBalanceDue , BuySell.BuySellNo, BuySell.VendorID,BuySell.ShippingDt , CompanyInfo.CompanyNm, BuySell.ShipToID
+
+	   INTO #ShipmentsSecured
+
+       FROM BuySell WITH (NOLOCK)  
+
+	   LEFT JOIN CompanyInfo WITH(NOLOCK) ON  CompanyInfo.COID =BuySell.COID         
+
+       WHERE BuySell.CustID = @CpID
+
+       AND ISNULL(BuySell.[Status],'') Not In ('X', 'I')
+
+       -- AND ISNULL(BuySell.IsAgency,0) <> 1
+
+
+
+	    SELECT @PendingShipmentsSecuredSummary = sum(SBalanceDue) FROM  #ShipmentsSecured where SBalanceDue > 0
+
+
+
+-- 4.) GET A/R 
+
+       SELECT isnull(SBalanceDue,0) AS SBalanceDue, BuySell.BuySellNo, BuySell.VendorID, BuySell.ShippingDt,BuySell.DueDt, BuySell.InvoiceDt, CompanyInfo.CompanyNm, BuySell.ShipToID
+
+	   INTO #OpenCreditCovered
+
+       FROM BuySell WITH(NOLOCK)  
+
+	   LEFT JOIN CompanyInfo WITH(NOLOCK) ON  CompanyInfo.COID =BuySell.COID           
+
+       WHERE BuySell.CustID = @CpID
+
+       AND ISNULL(BuySell.[Status],'') = 'I'
+
+       --AND ISNULL(BuySell.IsAgency,0) <> 1
+
+
+
+	   SELECT @OpenCreditCoveredSummary = sum(SBalanceDue) FROM  #OpenCreditCovered where SBalanceDue > 0
+
+
+
+-- 5.) GET CREADIT LIMIT
+
+	   SELECT 
+
+	   @CreditLimit=counterparty.CreditLimit 
+
+	   FROM counterparty WITH(NOLOCK)	
+
+	   WHERE Counterparty.CpID = @CpID
+
+
+
+--6.) GET UNAPPLIED CASH 
+
+      DECLARE @UACashAmt AS MONEY   
+
+	  Select @UACashAmt = sum(isnull(balance, 0)) 
+
+	  FROM uacashledger WITH (NOLOCK) 
+
+	  WHERE custid = @CPID AND ISNULL(Reversed,0) <> 1 --AND balance>0
+
+	  HAVING sum(isnull(balance, 0))>0	
+
+
+
+
+
+      IF @DoSummary = 1 BEGIN
+
+
+
+		   SELECT @PendingOrderSummary			     AS PendingOrderSummary,
+
+				  @PendingShipmentsSummary			 AS PendingShipments,
+
+				  @PendingShipmentsSecuredSummary	 AS PendingShipmentsSecuredSummary,
+
+				  @OpenCreditCoveredSummary          AS OpenCreditCoveredSummary,
+
+				  @CreditLimit                       AS CreditLimit,
+
+				  @UACashAmt                         AS UACashAmt
+
+			  
+
+	 END
+
+	 ELSE IF @DetailMode = 'Pending Orders (Not Approved)' BEGIN
+
+
+
+		 SELECT PONumber AS [Order No], PODate AS [Order Date], CompanyNm AS Dept, Amount AS [{C}Order Amount] , PONumber AS [-hidden-Tran No] FROM #PendingOrders
+
+
+
+	 END
+
+	 ELSE IF @DetailMode = 'Open Orders to be Shipped' BEGIN
+
+	 -- --, PO.PODate,CompanyInfo.CompanyNm
+
+		  SELECT #OPENORDERS.ponumber as [Order No], #OPENORDERS.Amount  AS [{C}Order Amount] , CompanyNm AS Dept, PODate AS [Order Date] , #OPENORDERS.PONumber AS [-hidden-Tran No] FROM  #OPENORDERS
+
+		  LEFT JOIN PO ON PO.PONumber = #OPENORDERS.[PONumber]
+
+		  LEFT JOIN CompanyInfo ON  CompanyInfo.COID = PO.COID
+
+		  WHERE amount > 0
+
+
+
+	 END
+
+	 ELSE IF @DetailMode = 'Pending Shipments (worksheets)' BEGIN
+
+
+
+		  SELECT BuySellNo as [Worksheet #], #ShipmentsSecured.ShippingDt as [Ship Date] ,#ShipmentsSecured.CompanyNm  as Dept,#ShipmentsSecured.ShipToID as [Ship-To] , SBalanceDue as [{C}Balance Due], #ShipmentsSecured.VendorID AS [hidden-VendorID], BuySellNo
+ AS [-hidden-Tran No]
+
+		  FROM  #ShipmentsSecured where SBalanceDue > 0
+
+
+
+	 END
+
+	 ELSE IF @DetailMode = 'Accounts Receivable' BEGIN
+
+
+
+		  SELECT BuySellNo as [Worksheet #], #OpenCreditCovered.ShippingDt as [Ship Date],#OpenCreditCovered.InvoiceDt [Posting Date],#OpenCreditCovered.DueDt [Due Date], #OpenCreditCovered.CompanyNm  as Dept,#OpenCreditCovered.ShipToID as [Ship-To] , SBalanceD
+ue as  [{C}Balance Due] , #OpenCreditCovered.VendorID AS [hidden-VendorID], BuySellNo AS [-hidden-Tran No] FROM  #OpenCreditCovered where SBalanceDue > 0
+
+
+
+	 END
+
+
+
+
+
+
+
+
+
+
+
+
+

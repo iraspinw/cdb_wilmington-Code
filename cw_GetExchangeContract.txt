@@ -1,0 +1,46 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetExchangeContract] @CurrencyCD varchar(20), @ContractNo as varchar(20), @Type as varchar(20) AS
+
+--5/13/2019 Alex Created 
+
+	SET NOCOUNT ON
+
+
+
+
+
+    select * 
+
+	from FXContracts
+
+	where 
+
+		((IsActive =1 and expirationDt is NULL and CurrencyCd = @CurrencyCD)  
+
+	  OR (IsActive =1 and expirationDt>getdate() and CurrencyCd = @CurrencyCD) 
+
+	  OR ContractNo = @ContractNo )
+
+	  AND (ContractType = @Type )
+
+	  --AND (@Type = '' OR ContractType = @Type OR ContractType = '')
+
+
+
+
+
+
+
+
+
+
+
+
+
+	  -- [dbo].[cw_GetExchangeContract]'CAD','','B'
+
+
+
+	  -- [dbo].[cw_GetExchangeContract]'CAD','','S'
+

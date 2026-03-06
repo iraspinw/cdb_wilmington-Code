@@ -1,0 +1,14 @@
+CREATE proc [dbo].[cw_GetUserTaskList] as
+
+select distinct crmtask.userid, sendalerts, tasksummary, isnull(GMTOffsetVal,-5) + 5 as TimeOffset , AcctToken
+
+from crmtask
+
+inner join userdef on userdef.userid = crmtask.userid
+
+left join timezone on userdef.TimeZoneNm = timezone.TimeZoneNm
+
+where ((isnull(sendalerts,0) = 1) or (isnull(tasksummary,0) = 1))
+
+or AcctToken='ctEmailTest'
+

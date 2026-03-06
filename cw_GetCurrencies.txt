@@ -1,0 +1,14 @@
+
+
+Create  PROCEDURE [dbo].[cw_GetCurrencies] AS
+
+--01/08/2010 MCM: Modified to return correct column names to cieTrade.NET
+
+
+
+SELECT CurCode, fxRate, Symbol, Name AS [Desc], XCurrencyID AS XCode FROM Currency ORDER BY CurCode
+
+
+
+
+

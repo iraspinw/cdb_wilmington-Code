@@ -1,0 +1,16 @@
+
+
+--3/14/2019 BF: Removed balance > 0 restriction for contra offsets
+
+CREATE proc [dbo].[cw_GetARCustomers] as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+select companynm, cpid from counterparty where cpid <> '(INV)'  and cpid in(select custid from buysell where [status]='I') -- and SBalanceDue >0)
+
+
+
+order by companynm
+

@@ -1,0 +1,144 @@
+
+
+
+
+-- I.R.02/23/24
+
+-- [dbo].[cw_GetOpenPayables] - runs
+
+-- 03/09/24 Adding history Tcket # 3135193
+
+
+
+CREATE PROCEDURE [dbo].[cw_GetOpenPayables] 
+
+
+
+AS
+
+ BEGIN
+
+
+
+    SET NOCOUNT ON;
+
+
+
+	TRUNCATE TABLE tblCietradeOpenPayables
+
+	
+
+	INSERT tblCietradeOpenPayables
+
+
+
+    SELECT [Billing Company]
+
+      ,LTRIM(RTRIM([WksNo])) [WorksheetNo]
+
+      ,[Vendor Name]
+
+
+
+      ,[Outstanding Payables Amount]
+
+
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) > 120, 'Y', 'N') 'Invoice Aging Over 120'
+
+
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) >= 91 AND DATEDIFF(dd,[Open Date], GETDATE()) <= 120, 'Y', 'N') 'Invoice Aging 91 - 120'
+
+		  
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) >= 61 AND DATEDIFF(dd,[Open Date], GETDATE()) <= 90, 'Y', 'N') 'Invoice Aging 61 - 90'
+
+
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) >= 31 AND DATEDIFF(dd,[Open Date], GETDATE()) <= 60, 'Y', 'N') 'Invoice Aging 31 - 60'
+
+
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) >= 0 AND DATEDIFF(dd,[Open Date], GETDATE()) <= 30, 'Y', 'N') 'Invoice Aging 0 - 30'
+
+
+
+	  ,IIF([Post Date] = '', 'N', 'Y') [Posted]
+
+
+
+	  ,DATEDIFF(dd,[Open Date], GETDATE()) Num_Days
+
+
+
+	  ,[Account Desc] [Account Description]
+
+	  ,[Open Date] [Invoice Date]
+
+      ,[Open Date Period] [Invoice Date Period]
+
+	   ,[Post Date]
+
+	  ,case when [Transaction Type] = 'Exp' then 'Expense'
+
+	        when [Transaction Type] = 'Pur' then 'Purchase'
+
+			else [Transaction Type] END [Transaction Type]
+
+
+
+	--INTO tblCietradeOpenPayables
+
+
+
+  FROM [cdb_Wilmington].[dbo].[CietradeOpenAPInvoices]
+
+   
+
+ -- 03/09/24 Add history
+
+ DELETE FROM tblCietradeOpenPayablesHist where as_Of_Date = CAST(GETDATE() AS DATE)
+
+ INSERT tblCietradeOpenPayablesHist(
+
+  	[Billing Company],
+
+	[WorksheetNo],
+
+	[Vendor Name],
+
+	[Outstanding Payables Amount],
+
+	[Invoice Aging Over 120],
+
+	[Invoice Aging 91 - 120],
+
+	[Invoice Aging 61 - 90],
+
+	[Invoice Aging 31 - 60],
+
+	[Invoice Aging 0 - 30] ,
+
+	[Posted] ,
+
+	[Num_Days],
+
+	[Account Description],
+
+	[Invoice Date],
+
+	[Invoice Date Period],
+
+	[Post Date],
+
+	[Transaction Type])
+
+
+
+SELECT * FROM [tblCietradeOpenPayables]
+
+
+
+END
+

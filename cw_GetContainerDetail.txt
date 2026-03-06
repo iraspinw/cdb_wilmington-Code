@@ -1,0 +1,44 @@
+CREATE proc [dbo].[cw_GetContainerDetail] @ContainerID int as
+
+select *, convert( int,lastedit) AS EditStamp from 
+
+container 
+
+left join wksdetail on wksdetail.buysellno = container.rcvbuysellno 
+
+inner join buysell on buysell.buysellno = container.rcvbuysellno
+
+where container.containerid = @ContainerID
+
+
+
+select ItemID,BuySellNo,VendorID,TrailerNo,DeliveryDt,Cost,ChgToCustAmt,InvoiceDesc,Mileage,PrintOnInvoice,CurrencyCd,CurrencyCdCust,FxAmount,FxAmountCust,wksdelivery.GLAcct,
+
+	Manifest,PrepaidFreight,PFreightCurCode,Price,PricePer,PriceCust,PricePerCust,DeliveryTime,FxRate,FxContractNo,ExpSalesFxRate,ReferenceID,DetailID, glaccount.Name
+
+from wksdelivery 
+
+inner join GLAccount on GLAccount.GLAcct = wksdelivery.GLAcct
+
+where buysellno in(select rcvbuysellno from container where containerid=@ContainerID)
+
+
+
+declare @LotNo varchar(65) 
+
+select @LotNo = lotno from ContainerContents where containerid=@ContainerID
+
+
+
+if @lotno in(select lotno from WksInventory) begin
+
+	select 1 IsSold
+
+end
+
+else begin
+
+	select 0 IsSold
+
+end
+

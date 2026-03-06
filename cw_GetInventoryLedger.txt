@@ -1,0 +1,337 @@
+--03/31/2022 ZT: Created
+
+--04/20/2022 ZT: Added Packaging Type
+
+--06/07/2023 ZT: Added Warehouse Type
+
+CREATE   PROCEDURE [dbo].[cw_GetInventoryLedger]
+
+	@BuySellNo	CHAR(12) = '',
+
+	@JobNo		INT = NULL
+
+AS
+
+
+
+--cw_GetInventoryLedger '', 3765
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED 
+
+SET NOCOUNT ON
+
+
+
+--IF UNPOSTED CONVERTING JOB
+
+IF @JobNo IS NOT NULL AND NOT EXISTS(SELECT * FROM Inventory INNER JOIN ConvertingAllocation As Con	ON Inventory.LotNo = Con.LotDesc WHERE Con.JobNo = @JobNo) BEGIN
+
+	SELECT
+
+		--UNIVERSAL COLS
+
+		0												As [Selected],
+
+		ConvertingAllocation.LotDesc					As [Item No],
+
+		CASE WHEN ConvertingAllocation.WeightUOM IN ('K', 'L') THEN RTRIM(FORMAT(ConvertingAllocation.Weight, 'N2')) + ' ' + 	dbo.CnvUOM_Names(ConvertingAllocation.WeightUOM) ELSE RTRIM(FORMAT(ConvertingAllocation.Weight, 'N0')) + ' ' + 	dbo.CnvUOM_Names(Conver
+tingAllocation.WeightUOM) END As [Quantity],
+
+		0												AS [Posted],
+
+		Grade.GradeID									As [GradeID],
+
+		Grade.Description								As [Product],
+
+		--''												As [Supplier],
+
+		--''												As [Warehouse],
+
+		--ConvertingAllocation.Weight						As [Weight],
+
+		ConvertingAllocation.UnitType					As [Packaging],
+
+		--dbo.CnvUOM_Names(ConvertingAllocation.WeightUOM) AS [UOM],
+
+		ConvertingAllocation.WarehouseLocation			As [Warehouse-Location],
+
+		WarehouseLocation.WarehouseType					As [Warehouse-Type],
+
+		--dbo.CalcAmount(Inventory.Weight, Inventory.WeightUOM, Inventory.Price, Inventory.PriceUOM, 1, 0, Inventory.BuySellNo) AS [Amount],
+
+
+
+		--PAPER-STOCK COLS
+
+		ConvertingAllocation.BasisWt					As [Basis Weight],
+
+		ISNULL(ConvertingAllocation.BasisWtUOM, '')		As [Basis UOM],
+
+		ConvertingAllocation.RollWd						AS [Roll Width],
+
+		ISNULL(ConvertingAllocation.RollWdUOM, '')		AS [Roll Width UOM],
+
+		ConvertingAllocation.Diameter					As [Diameter],
+
+		ISNULL(ConvertingAllocation.DiameterUOM, '')	As [Diameter UOM],
+
+		ConvertingAllocation.Caliper					As [Caliper],
+
+
+
+		--PLASTIC COLS
+
+		ISNULL(ConvertingAllocation.TypeGrade, '')		As [Plastics Grade],
+
+		ISNULL(ConvertingAllocation.Form, '')			As [Form],
+
+		ISNULL(ConvertingAllocation.MeltIndex, '')		As [Melt Flow],
+
+		ISNULL(ConvertingAllocation.Color, '')			As [Color],
+
+
+
+		--PRODUCT DETAIL 1
+
+		ISNULL(ConvertingAllocation.UserDefined1, '')	As [UDF1_1],
+
+		ISNULL(ConvertingAllocation.UserDefined2, '')	As [UDF1_2],
+
+		ISNULL(ConvertingAllocation.UserDefined3, '')	As [UDF1_3],
+
+		ISNULL(ConvertingAllocation.UserDefined4, '')	As [UDF1_4],
+
+		ISNULL(ConvertingAllocation.UserDefined5, '')	As [UDF1_5],
+
+
+
+		--PRODUCT DETAIL 2
+
+		ISNULL(ConvertingAllocation.UserDefinedSecond1, '')	As [UDF2_1],
+
+		ISNULL(ConvertingAllocation.UserDefinedSecond2, '')	As [UDF2_2],
+
+		ISNULL(ConvertingAllocation.UserDefinedSecond3, '')	As [UDF2_3],
+
+		ISNULL(ConvertingAllocation.UserDefinedSecond4, '')	As [UDF2_4],
+
+		ISNULL(ConvertingAllocation.UserDefinedSecond5, '')	As [UDF2_5],
+
+
+
+		--PRODUCT DETAIL 3
+
+		ISNULL(ConvertingAllocation.UserDefinedThird1, '')	As [UDF3_1],
+
+		ISNULL(ConvertingAllocation.UserDefinedThird2, '')	As [UDF3_2],
+
+		ISNULL(ConvertingAllocation.UserDefinedThird3, '')	As [UDF3_3],
+
+		ISNULL(ConvertingAllocation.UserDefinedThird4, '')	As [UDF3_4],
+
+		ISNULL(ConvertingAllocation.UserDefinedThird5, '')	As [UDF3_5],
+
+
+
+		--PRODUCT DETAIL 4
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth1, '')	As [UDF4_1],
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth2, '')	As [UDF4_2],
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth3, '')	As [UDF4_3],
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth4, '')	As [UDF4_4],
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth5, '')	As [UDF4_5],
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth6, '')	As [UDF4_6],
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth7, '')	As [UDF4_7],
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth8, '')	As [UDF4_8],
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth9, '')	As [UDF4_9],
+
+		ISNULL(ConvertingAllocation.UserDefinedFourth10, '')	As [UDF4_10]
+
+
+
+	FROM ConvertingAllocation
+
+	LEFT JOIN Grade							ON ConvertingAllocation.GradeID = Grade.GradeID
+
+	LEFT JOIN WarehouseLocation				ON ConvertingAllocation.WarehouseLocation = WarehouseLocation.ID
+
+	WHERE 
+
+	(@JobNo IS NULL OR ConvertingAllocation.JobNo = @JobNo)
+
+	AND LotDesc <> '(WASTE)' AND ConvertingAllocation.GradeID IS NOT NULL
+
+	ORDER BY [Item No]
+
+
+
+END ELSE BEGIN
+
+
+
+SELECT
+
+	--UNIVERSAL COLS
+
+	0									As [Selected],
+
+	Inventory.LotNo						As [Item No],
+
+	CASE WHEN Inventory.WeightUOM IN ('K', 'L') THEN RTRIM(FORMAT(Inventory.Weight, 'N2')) + ' ' + 	dbo.CnvUOM_Names(Inventory.WeightUOM) ELSE RTRIM(FORMAT(Inventory.Weight, 'N0')) + ' ' + 	dbo.CnvUOM_Names(Inventory.WeightUOM) END								As [Quantity],
+
+	1									AS [Posted],
+
+	Grade.GradeID						As [GradeID],
+
+	Grade.Description					As [Product],
+
+	--Counterparty.CompanyNm				As [Supplier],
+
+	--Inventory.WarehouseNm				As [Warehouse],
+
+	--Inventory.Weight					As [Weight],
+
+	Inventory.UnitType					As [Packaging],
+
+	--dbo.CnvUOM_Names(Inventory.WeightUOM) AS [UOM],
+
+	Inventory.WarehouseLocation			As [Warehouse-Location],
+
+	WarehouseLocation.WarehouseType					As [Warehouse-Type],
+
+	--dbo.CalcAmount(Inventory.Weight, Inventory.WeightUOM, Inventory.Price, Inventory.PriceUOM, 1, 0, Inventory.BuySellNo) AS [Amount],
+
+
+
+	--PAPER-STOCK COLS
+
+	Inventory.BasisWt					As [Basis Weight],
+
+	ISNULL(Inventory.BasisWtUOM, '')	As [Basis UOM],
+
+	Inventory.RollWd					AS [Roll Width],
+
+	ISNULL(Inventory.RollWdUOM, '')		AS [Roll Width UOM],
+
+	Inventory.Diameter					As [Diameter],
+
+	ISNULL(Inventory.DiameterUOM, '')	As [Diameter UOM],
+
+	Inventory.Caliper					As [Caliper],
+
+
+
+	--PLASTIC COLS
+
+	ISNULL(Inventory.PlasticType, '')	As [Plastics Grade],
+
+	ISNULL(Inventory.PlasticForm, '')	As [Form],
+
+	ISNULL(Inventory.PlasticMelt, '')	As [Melt Flow],
+
+	ISNULL(Inventory.Color, '')			As [Color],
+
+
+
+	--PRODUCT DETAIL 1
+
+	ISNULL(Inventory.UserDefined1, '')	As [UDF1_1],
+
+	ISNULL(Inventory.UserDefined2, '')	As [UDF1_2],
+
+	ISNULL(Inventory.UserDefined3, '')	As [UDF1_3],
+
+	ISNULL(Inventory.UserDefined4, '')	As [UDF1_4],
+
+	ISNULL(Inventory.UserDefined5, '')	As [UDF1_5],
+
+
+
+	--PRODUCT DETAIL 2
+
+	ISNULL(Inventory.UserDefinedSecond1, '')	As [UDF2_1],
+
+	ISNULL(Inventory.UserDefinedSecond2, '')	As [UDF2_2],
+
+	ISNULL(Inventory.UserDefinedSecond3, '')	As [UDF2_3],
+
+	ISNULL(Inventory.UserDefinedSecond4, '')	As [UDF2_4],
+
+	ISNULL(Inventory.UserDefinedSecond5, '')	As [UDF2_5],
+
+
+
+	--PRODUCT DETAIL 3
+
+	ISNULL(Inventory.UserDefinedThird1, '')	As [UDF3_1],
+
+	ISNULL(Inventory.UserDefinedThird2, '')	As [UDF3_2],
+
+	ISNULL(Inventory.UserDefinedThird3, '')	As [UDF3_3],
+
+	ISNULL(Inventory.UserDefinedThird4, '')	As [UDF3_4],
+
+	ISNULL(Inventory.UserDefinedThird5, '')	As [UDF3_5],
+
+
+
+	--PRODUCT DETAIL 4
+
+	ISNULL(Inventory.UserDefinedFourth1, '')	As [UDF4_1],
+
+	ISNULL(Inventory.UserDefinedFourth2, '')	As [UDF4_2],
+
+	ISNULL(Inventory.UserDefinedFourth3, '')	As [UDF4_3],
+
+	ISNULL(Inventory.UserDefinedFourth4, '')	As [UDF4_4],
+
+	ISNULL(Inventory.UserDefinedFourth5, '')	As [UDF4_5],
+
+	ISNULL(Inventory.UserDefinedFourth6, '')	As [UDF4_6],
+
+	ISNULL(Inventory.UserDefinedFourth7, '')	As [UDF4_7],
+
+	ISNULL(Inventory.UserDefinedFourth8, '')	As [UDF4_8],
+
+	ISNULL(Inventory.UserDefinedFourth9, '')	As [UDF4_9],
+
+	ISNULL(Inventory.UserDefinedFourth10, '')	As [UDF4_10]
+
+
+
+FROM Inventory
+
+LEFT JOIN BuySell						ON Inventory.BuySellNo = BuySell.BuySellNo
+
+LEFT JOIN ConvertingAllocation	As Con	ON Inventory.LotNo = Con.LotDesc
+
+LEFT JOIN Counterparty					ON Inventory.VendorID = Counterparty.CpID
+
+LEFT JOIN Grade							ON Inventory.GradeID = Grade.GradeID
+
+LEFT JOIN WarehouseLocation				ON Inventory.WarehouseLocation = WarehouseLocation.ID
+
+WHERE 
+
+(@BuySellNo = '' OR (Inventory.BuySellNo = @BuySellNo AND BuYSell.CustID='(INV)'))
+
+AND
+
+(@JobNo IS NULL OR Con.JobNo = @JobNo)
+
+ORDER BY [Item No]
+
+
+
+END
+

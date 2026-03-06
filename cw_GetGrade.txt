@@ -1,0 +1,30 @@
+CREATE PROC [dbo].[cw_GetGrade] 
+
+	@GradeID char(15)  
+
+ AS  
+
+--12/10/2014 MCM: Created  
+
+--04/21/2017 BF: added second result to show if grade has been used on worksheet/converting
+
+
+
+	select * from Grade WITH (NOLOCK) where GradeID = @GradeID
+
+
+
+	if exists(select gradeid from wksdetail where gradeid=@gradeid) or exists(select gradeid from ConvertingAllocation where GradeID=@GradeID)
+
+		select 1
+
+	else
+
+		select 0
+
+
+
+	SELECT GradeID, AltCode FROM Grade_AltCodes WHERE GradeID = @GradeID
+
+
+

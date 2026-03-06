@@ -1,0 +1,28 @@
+CREATE PROC [dbo].[cw_GetRoles] 
+
+As
+
+--11/30/16 MN: Create
+
+ 
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+		SELECT
+
+			RoleID As [-Hidden-RoleID],
+
+			RoleNm As [ROLE NAME], 
+
+			RoleDescription As [ROLE DESCRIPTION]
+
+
+
+		FROM UserRole
+
+
+

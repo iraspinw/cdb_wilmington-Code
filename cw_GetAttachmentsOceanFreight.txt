@@ -1,0 +1,42 @@
+CREATE proc [dbo].[cw_GetAttachmentsOceanFreight] @RateID char(12) as
+
+--07/29/2019 Alex:Created
+
+
+
+--cw_GetAttachmentsOceanFreight
+
+        select
+
+				DocID as '-Hidden-DocumentID', 	
+
+			    Desc1 as 'Description',
+
+			    createddt as 'Created',
+
+			    userdef.UserNm as 'User',
+
+				'IMG' as '-Hidden-Type',
+
+				FileExt as '-Hidden-FileExt',
+
+				'' as '-Hidden-DocFormID',
+
+				Desc1 as '-Hidden-DocTitle',
+
+				convert(varchar(200),'') As '-Hidden-DefaultEmail',
+
+			    EmailAddr + '   ' + convert(nvarchar(500), EmailDt, 0) as 'Email Sent'
+
+			 from DocumentImage
+
+ 			 left JOIN userdef ON DocumentImage.Createdby = userdef.UserID
+
+			 where RefID = @RateID and RefType='O'
+
+
+
+
+
+   
+

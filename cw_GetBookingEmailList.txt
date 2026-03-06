@@ -1,0 +1,97 @@
+CREATE proc [dbo].[cw_GetBookingEmailList] 
+
+
+
+	@CPID varchar(25), 
+
+	@CPID2 varchar(25) = '', 
+
+	@CPID3 varchar(25) = '', 
+
+	@CPID4 varchar(25) = '',
+
+	@BookID varchar(45)='' as
+
+
+
+--4/9/2021 Alex: removed the Primary, Initial, Forwarder Carrier
+
+
+
+--cw_GetBookingEmailList '1128', '1137', '1127', '1286', '12'
+
+
+
+	select ContactNm as [Name], 'PRIMARY CARRIER' as [Type], Email as Email, dbo.GetContactRoleList(Contact.[CT_ID]) As [Contact Role]
+
+	from Contact 
+
+	WHERE @CPID4 = '' AND (CpID = @CPID and @CpID<>'')  --Primary Carrier
+
+		and isnull(Email,'') <> ''
+
+	UNION
+
+	select ContactNm as [Name], 'INITIAL CARRIER' as [Type], Email as Email, dbo.GetContactRoleList(Contact.[CT_ID]) As [Contact Role]
+
+	from Contact 
+
+	WHERE  @CPID4 = '' AND (CpID = @CPID2 and @CpID2<>'') --Initial Carrier
+
+		and isnull(Email,'') <> ''
+
+	UNION
+
+	select ContactNm as [Name], 'FORWARDER CARRIER' as [Type], Email as Email, dbo.GetContactRoleList(Contact.[CT_ID]) As [Contact Role]
+
+	from Contact 
+
+	WHERE  @CPID4 = '' AND  (CpID = @CPID3 and @CpID3<>'') --Forwarder Carrier
+
+		and isnull(Email,'') <> ''
+
+	UNION
+
+	select ContactNm as [Name], 'SUPPLIER' as [Type], Email as Email, dbo.GetContactRoleList(Contact.[CT_ID]) As [Contact Role]
+
+	from Contact 
+
+	WHERE  @CPID4 = '' AND (CpID in (select PO.CpID 	FROM BOOKSHEET WITH(NOLOCK)
+
+					inner join POBooking WITH(NOLOCK) ON BookSheet.BookSheetID = POBooking.BookSheetID
+
+					INNER JOIN PO WITH(NOLOCK) on PO.POID = POBooking.POID
+
+					INNER JOIN counterparty WITH(NOLOCK) ON po.cpid = counterparty.cpid
+
+					WHERE Booksheet.BookSheetID = @BookID AND PO.Source = 'PO'))
+
+	and isnull(Email,'') <> ''
+
+	UNION
+
+	select ContactNm as [Name], 'CUSTOMER' as [Type], Email as Email, dbo.GetContactRoleList(Contact.[CT_ID]) As [Contact Role]
+
+	from Contact 
+
+	WHERE  @CPID4 = '' AND (CpID in (select PO.CpID FROM BOOKSHEET WITH(NOLOCK)
+
+					INNER JOIN PO ON PO.PONumber = BookSheet.PONumber
+
+					WHERE Booksheet.BookSheetID = @BookID))
+
+		and isnull(Email,'') <> ''
+
+	UNION
+
+	select ContactNm as [Name], 'SUPPLIER' as [Type], Email as Email, dbo.GetContactRoleList(Contact.[CT_ID]) As [Contact Role]
+
+	from Contact 
+
+	WHERE  
+
+		(@CPID4 <> '' AND CpID = @CPID4)
+
+		and isnull(Email,'') <> ''
+
+		

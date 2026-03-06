@@ -1,0 +1,305 @@
+
+
+
+
+CREATE PROC [dbo].[cw_GetCashLedger] 
+
+	@CustID varchar(20), 
+
+	@COID varchar(2), 
+
+	@Status varchar(9), 
+
+	@WarehouseID char(45),
+
+	@Barcode int = null
+
+
+
+AS
+
+
+
+--05/28/2013 MCM: Created for Public Trade Cashier Ledger
+
+--06/07/2013 MCM: Added Plant transactions for ScaleCheck Vendors
+
+--06/11/2013 MCM: Added status filters, PayableID, LastEdit and SourceID
+
+--07/02/2013 MCM: UNION changed to UNION ALL
+
+--10/31/2014 DSH Revised to handle char value cp ids
+
+--03/13/2015 RS: Added TradeType
+
+--08/14/2020 Alex: copied for cieTrade.net
+
+--10/27/2020 MEC: Created for Cash Ledger in .net
+
+
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	CREATE TABLE #Report(
+
+		BuySellNo char(12),
+
+		ReceiveDt DATE,
+
+		GradeID CHAR(15),
+
+		GradeDescription VARCHAR(100),
+
+		Price MONEY,
+
+		PriceUOM CHAR(1),
+
+		NetWt DECIMAL(22,5),
+
+		WtUOM CHAR(1),
+
+		PayableDt DATE,
+
+		SalesAmount MONEY,
+
+		UserID CHAR(10),
+
+		Paid INT,
+
+		CustID CHAR(12),
+
+		COID CHAR(2),
+
+		WarehouseID CHAR(45),
+
+		DetailID INT,
+
+		TransType varchar(30),
+
+		SourceID char(12),
+
+		PayableID INT,
+
+		LastEdit INT,
+
+		[User] varchar(30),
+
+		CompanyNm nvarchar(65),
+
+		CurrencyCd CHAR(3),
+
+		TradeType varchar(25),
+
+		PaymentNo varchar(50),
+
+		TradeID int,
+
+		PTCustID int,
+
+		Department varchar(60),
+
+		TableID			INT IDENTITY
+
+	)
+
+
+
+	
+
+	INSERT #Report (BuySellNo,ReceiveDt,GradeID,GradeDescription,Price,PriceUOM,NetWt,WtUOM,PayableDt,SalesAmount,UserID,Paid,
+
+			CustID,COID,WarehouseID,DetailID,TransType,SourceID,PayableID,LastEdit,[User],CompanyNm,CurrencyCd,TradeType,PaymentNo,TradeID,PTCustID,Department)
+
+	SELECT 
+
+		Case When PublicTrade.TradeID is null Then BuySell.BuySellNo Else Convert(varchar(12), PublicTradeID) End,
+
+		BuySell.ShippingDt,
+
+		WKSDetail.GradeID,
+
+		Case When IsNull(InvoiceDesc,'')<>'' Then InvoiceDesc Else [Description] End,
+
+		PPrice,
+
+		PUOM AS PUOM,
+
+		PWeight,
+
+		PWeightUOM,
+
+		CDD.PostingDt,
+
+		Payables.Amount,
+
+		BuySell.UserID,
+
+		ISNULL(Payables.Posted,0),
+
+		BuySell.VendorID,
+
+		BuySell.COID,
+
+		ShipToID,
+
+		WKSDetail.DetailID, 
+
+		Case When PublicTrade.TradeID is null Then 'Receiving' Else 'Public Trade' End, 
+
+		BuySell.BuySellNo, 
+
+		Payables.PayableID, 
+
+		convert(int,Payables.lastedit) AS LastEdit,
+
+		userdef.UserNm,
+
+		Case When PublicTrade.TradeID is null Then Counterparty.CompanyNm Else PublicTradeCustomer.FileAs End,
+
+        BuySell.CurrencyCd,
+
+		BuySell.TradeType,
+
+		Case When IsNull(CD.CheckNo,0) <> 0 Then CAST(CD.CheckNo AS varchar) Else CASE WHEN IsNull(CDD.IsCash,0) <> 0 Then 'CASH' Else '' End End,
+
+		IsNull(PublicTradeID,0),
+
+		IsNull(PublicTradeCustomer.PTCustID,0),
+
+		CompanyInfo.CompanyNm
+
+	FROM BuySell 
+
+		INNER JOIN WksDetail ON WKSDetail.BuySellNo = BuySell.BuySellNo
+
+		INNER JOIN Payables ON Payables.ItemID = WKSDetail.DetailID AND Payables.BuySellNo = BuySell.BuySellNo
+
+		INNER JOIN Counterparty ON Counterparty.CpID = BuySell.VendorID
+
+		INNER JOIN CompanyInfo ON BuySell.COID = CompanyInfo.COID
+
+		LEFT JOIN PublicTrade ON PublicTrade.TradeID = BuySell.PublicTradeID
+
+		LEFT JOIN PublicTradeCustomer ON PublicTrade.PTCustID = PublicTradeCustomer.PTCustID
+
+		inner join userdef on BuySell.UserID = userdef.UserID
+
+		LEFT JOIN Grade ON Grade.GradeID = WKSDetail.GradeID
+
+		LEFT JOIN CashDisbursementDetails CDD ON CDD.PayableID = Payables.PayableID
+
+		LEFT JOIN CashDisbursements CD ON CD.CDBatchNo = Payables.APBatchNo
+
+	WHERE 
+
+		((Not @Barcode is null And PublicTrade.TradeID = @Barcode)
+
+		OR
+
+		(@Barcode is null AND
+
+		((@CustID = '') OR (@CustID Like 'PT-%' AND REPLACE(@CustID, 'PT-', '') = PublicTrade.PTCustID) OR (BuySell.VendorID = @CustID))
+
+		AND (@COID = '' OR BuySell.COID = @COID)
+
+		AND (@WarehouseID = '' OR BuySell.ShipToID = @WarehouseID)
+
+		AND (Counterparty.ScaleCheck = 1 OR not TradeID is Null)))
+
+
+
+		AND ((@Status = '' AND ISNULL(Payables.Posted,0) = 0) OR (@Status = 'OPEN' AND ISNULL(Payables.Posted,0) = 0) OR (@Status = 'PAYABLE' AND ISNULL(Payables.Posted,0) = 0 AND BuySell.ShippingDt <= GETDATE()) OR (@Status = 'PAID' AND ISNULL(Payables.Posted,
+0) = 1))
+
+		AND CustID = '(INV)'
+
+		AND BuySell.[Status] = 'I' 
+
+	
+
+
+
+	SELECT 
+
+	
+
+		PayableID as [-Hidden-PayableID],
+
+		BuySellNo as [Ticket No],
+
+		ReceiveDt as [Receive Date],
+
+		Department as [Department],
+
+		GradeDescription as [Product],
+
+		CAST(Price AS varchar) + '/'+ dbo.CnvUOM_Names(PriceUOM) as Price,
+
+		dbo.RemoveTrailingZeros(CAST(CAST(NetWt As decimal(25,3)) as varchar)) + '/'+ dbo.CnvUOM_Names(WtUOM) as [Net Weight],
+
+		dbo.CnvUOM_Names(WtUOM) as [UOM],
+
+		PayableDt as [Payable Date],
+
+		SalesAmount as [Amount],
+
+		TransType as [Source],
+
+		[User]  as [Scale-Clerk],
+
+		WarehouseID,
+
+		CustID as [-hidden-VendorID],
+
+		CompanyNm as Customer,
+
+		PaymentNo as [Payment No],
+
+		CurrencyCd as [-Hidden-Currency],
+
+		GradeID as [-Hidden-GradeID],
+
+		DetailID as [-Hidden-DetailID],
+
+		PayableDt as [Paid-on],
+
+		LastEdit as [-Hidden-LastEdit],
+
+		TableID as [-Hidden-TableID],
+
+		NetWt as [-Hidden-NetWt],
+
+		WtUOM as [-Hidden-WtUOM],
+
+		Price as [-Hidden-Price],
+
+		PriceUOM as [-Hidden-PriceUOM],
+
+		TradeID as [-Hidden-TradeID],
+
+		PTCustID as [-Hidden-PTCustID],
+
+		COID as [-Hidden-COID]
+
+
+
+	 FROM #Report
+
+	 ORDER BY [Ticket No]
+
+
+
+	 Drop Table #Report
+
+
+
+-- cw_GetCashLedger 'PT-18','','OPEN',''
+

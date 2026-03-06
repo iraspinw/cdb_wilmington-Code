@@ -1,0 +1,64 @@
+CREATE PROC [dbo].[cw_GetPODetailsForContainers] 
+
+--9/27/2019 Alex: Added PO_ID
+
+@ValidatePoNo nvarchar(50)
+
+
+
+ AS
+
+
+
+SET NOCOUNT OFF 
+
+
+
+
+
+	
+
+select 
+
+	PODetail.[GradeID], isnull(Grade.[Description],'') as [Description],[Price],[PriceUOM],UnitType,PO_ID
+
+	from [dbo].[PODetail]
+
+	inner JOIN Grade WITH(NOLOCK) ON Grade.GradeID = PODetail.GradeID
+
+	Inner Join PO WITH(NOLOCK) ON PO.PONumber = PODetail.PONumber
+
+where PODetail.[PONumber]  = @ValidatePoNo AND PO.[Source] = 'PO'
+
+
+
+select top 1 [PO].[CpID],[AddrType], CASE WHEN IsNull(IsContract,0) = 1 THEN isnull(PO.FxRate,1) ELSE isnull(CurrencyRate.FxRate,1) END  FxRate, CurrCode, ContractNo, IsContract, COID
+
+from [dbo].[PO]
+
+	inner join CounterParty on CounterParty.CpID = PO.CpID
+
+	left join CurrencyRate on CurrencyRate.CurCode = counterparty.CurrCode and exchdate <= GETDATE()
+
+where [PONumber]  = @ValidatePoNo AND PO.[Source] = 'PO'
+
+order by ExchDate desc
+
+
+
+--SELECT 
+
+--	PO.ContractNo, ExchRate, RefNo, FXContracts.ExpirationDt, IsActive, FXContracts.UserID ,Adjustment,
+
+--	ContractValue-(SELECT isnull(sum(PFxAmount),0) From WKSDetail with(nolock) inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.PFxContractNo=PO.ContractNo) as ContractValue,
+
+--	CurrencyCd,ContractType,ContractDate,ContractValue as ContractValueInitial
+
+--FROM FXContracts WITH(NOLOCK)
+
+--INNER JOIN PO WITH(NOLOCK) ON PO.ContractNo = FXContracts.ContractNo
+
+--WHERE  PO.PONumber = @ValidatePoNo AND PO.[Source] = 'PO'
+
+
+

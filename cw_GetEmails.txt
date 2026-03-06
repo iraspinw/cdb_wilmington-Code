@@ -1,0 +1,12 @@
+CREATE proc [dbo].[cw_GetEmails] as
+
+			select distinct billingemail as email from [address] where isnull(billingemail, '') <> '' 
+
+			union 
+
+			select distinct email from [address] where isnull(email, '') <> ''
+
+
+
+
+

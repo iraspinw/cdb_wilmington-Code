@@ -1,0 +1,304 @@
+CREATE   PROCEDURE [dbo].[cw_GetProductDetails] @BuySellNo char(12), @ShowExp int = 0, @GetAmtInWords int = 0
+
+ AS
+
+--06/08/2016 RS: Creted from xDoc_GetProductDetails
+
+--09/10/2019 RS: Returned CommodityDesc
+
+--09/10/2019 ALex: Returned wksDetail.GrossWt
+
+
+
+SET NOCOUNT ON
+
+
+
+	DECLARE @WksInvoiceAmt money
+
+	DECLARE @WksCurrency char(3)
+
+	SELECT @WksInvoiceAmt = FxInvoiceAmt, @WksCurrency = CurrencyCd FROM Buysell WHERE Buysell.BuySellNo = @BuySellNo
+
+	
+
+IF @ShowExp = 0 
+
+	BEGIN 
+
+		-- GET PRODUCT LIST.
+
+		SELECT Grade.Description, wksDetail.InvoiceDesc, 
+
+		Units, ISNULL(dbo.CnvUnitName(UnitType),'') as UnitType, 
+
+		dbo.FormatQty(dbo.convert_to_uom(SWeight, SWeightUOM, SPriceUOM),SPriceUOM) as sweight, 
+
+		dbo.CnvUOM_Names(SPriceUOM) as sWeightUOM, SPrice, dbo.CnvUOM_Names(SPriceUOM) as SPRiceUOM, 
+
+		SCurrencyCd, IsMSF, SFxAmount,
+
+		RollWd, RollWdUOM, wksDetail.LinearLen, LengthUOM, SMSFPrice, 
+
+		SPACE(3) as areaPriceUOM, SPACE(3) as areaUOM, Specifications,
+
+		case when isnull(Grade.ShowCommDescOnDocs,'0') = '0' then '' else Grade.CommodityDesc end as CommodityDesc,
+
+		wksDetail.GrossWt
+
+		INTO #P
+
+		FROM wksDetail  WITH(NOLOCK) 
+
+		INNER JOIN Grade WITH(NOLOCK) ON wksDetail.GradeID = Grade.GradeID
+
+		WHERE wksDetail.BuySellNo = @BuySellNo
+
+		
+
+
+
+		--AREA PRICING WORKSHEET... CALCULATE AREA AND USE MSF PRICE
+
+		IF EXISTS(SELECT TOP 1 IsMSF FROM #P WHERE IsMSF = 'T' OR SPriceUOM IN ('Z','C')) BEGIN
+
+			--FORMAT UOM
+
+			UPDATE #P SET areaPriceUOM = 'CSM', areaUOM = 'SQM' WHERE SPriceUOM = 'C'
+
+			UPDATE #P SET areaPriceUOM = 'MSM', areaUOM = 'SQM' WHERE SPriceUOM = 'Z'
+
+			UPDATE #P SET areaPriceUOM = 'MSF', areaUOM = 'SQF' WHERE IsMSF = 'T'
+
+		END		
+
+		
+
+		UPDATE #P SET InvoiceDesc = DESCRIPTION WHERE InvoiceDesc = ''
+
+	
+
+		
+
+		--RETURN PRODUCT LIST
+
+		SELECT *,@WksInvoiceAmt as WksInvoiceAmt, @WksCurrency as WksCurrency 
+
+		FROM #P
+
+
+
+
+
+	END	
+
+ELSE
+
+
+
+	DECLARE @AmountInWords VARCHAR(500) = ''
+
+	IF @GetAmtInWords = 1
+
+	BEGIN
+
+			SELECT SFxAmount, SCurrencyCd
+
+				INTO #P3
+
+				FROM wksDetail  WITH(NOLOCK) 
+
+				INNER JOIN Grade WITH(NOLOCK) ON wksDetail.GradeID = Grade.GradeID
+
+				WHERE wksDetail.BuySellNo = @BuySellNo
+
+			UNION ALL  
+
+			--CHARGEBACKS
+
+				SELECT ISNULL(FxAmountCust,0),''
+
+				FROM WKSDelivery WITH (NOLOCK) 
+
+				INNER JOIN Counterparty WITH (NOLOCK) ON WKSDelivery.VendorID = CounterParty.CpID
+
+				WHERE WksDelivery.BuySellNo = @BuySellNo AND ISNULL(FxAmountCust,0)<>0
+
+			UNION ALL   
+
+			--TAXS 
+
+				SELECT ISNULL(FXSalesTaxAmt,0),''
+
+				FROM BuySell WITH (NOLOCK) 
+
+				INNER JOIN SalesTaxCode WITH (NOLOCK) ON BuySell.SalesTaxCodeID = SalesTaxCode.SalesTaxCodeID
+
+				WHERE BuySellNo = @BuySellNo AND ISNULL(FXSalesTaxAmt,0)<>0
+
+
+
+				--RETURN PRODUCT LIST
+
+
+
+			DECLARE @FinalNum money
+
+			SET @FinalNum = (SELECT SUM(SFxAmount) FROM #P3)
+
+			Declare @CurCode char(3)
+
+			SET @CurCode = (SELECT TOP 1 SCurrencyCd FROM #P3 WHERE SCurrencyCd <> '')
+
+
+
+			IF @CurCode = ''
+
+				SET @CurCode = 'USD'
+
+
+
+			SET @AmountInWords = dbo.Currency_ToWords(@FinalNum,@CurCode)
+
+	END
+
+	IF @ShowExp = 1 
+
+	BEGIN
+
+		-- GET PRODUCT LIST.
+
+		SELECT 
+
+			Grade.Description,
+
+			wksDetail.InvoiceDesc, 
+
+			Units,
+
+			ISNULL(dbo.CnvUnitName(UnitType),'') as UnitType, 
+
+			dbo.FormatQty(dbo.convert_to_uom(SWeight, SWeightUOM, SPriceUOM),SPriceUOM) as sweight,
+
+			pweight, pWeightUOM,
+
+			dbo.CnvUOM_Names(SPriceUOM) as sWeightUOM, 
+
+			SPrice, dbo.CnvUOM_Names(SPriceUOM) as SPRiceUOM, SCurrencyCd, IsMSF, SFxAmount,
+
+			RollWd, RollWdUOM, wksDetail.LinearLen, LengthUOM, SMSFPrice, SPACE(3) as areaPriceUOM, 
+
+			SPACE(3) as areaUOM,RTRIM(Specifications) as Specifications,
+
+		   case when isnull(Grade.ShowCommDescOnDocs,'0') = '0' then '' else Grade.CommodityDesc end as CommodityDesc,
+
+		   wksDetail.GrossWt
+
+		INTO #P2
+
+		FROM wksDetail  WITH(NOLOCK) 
+
+		INNER JOIN Grade WITH(NOLOCK) ON wksDetail.GradeID = Grade.GradeID
+
+		WHERE wksDetail.BuySellNo = @BuySellNo
+
+	UNION ALL  
+
+	--CHARGEBACKS
+
+		SELECT isnull(RTRIM(CounterParty.CompanyNm),''),
+
+		RTRIM(InvoiceDesc),
+
+		0,
+
+		'',
+
+		'',
+
+		0,'',
+
+		'',
+
+		0,
+
+		'',
+
+		ISNULL(CurrencyCdCust,''),'',ISNULL(FxAmountCust,0),0,'',0,'',0,'','','','',0
+
+		FROM WKSDelivery WITH (NOLOCK) 
+
+		INNER JOIN Counterparty WITH (NOLOCK) ON WKSDelivery.VendorID = CounterParty.CpID
+
+		WHERE WksDelivery.BuySellNo = @BuySellNo AND ISNULL(FxAmountCust,0)<>0
+
+	UNION ALL   
+
+	--TAXS 
+
+		SELECT 
+
+		isnull(RTRIM(SalesTaxCodeDescription), ''),
+
+		'',
+
+		0,
+
+		'',
+
+		'',
+
+		0, '',
+
+		'',
+
+		0,
+
+		'',
+
+		CurrencyCd,'',ISNULL(FXSalesTaxAmt,0),0,'',0,'',0,'','','','',0
+
+		FROM BuySell WITH (NOLOCK) 
+
+		INNER JOIN SalesTaxCode WITH (NOLOCK) ON BuySell.SalesTaxCodeID = SalesTaxCode.SalesTaxCodeID
+
+		WHERE BuySellNo = @BuySellNo AND ISNULL(FXSalesTaxAmt,0)<>0
+
+		
+
+		
+
+		--AREA PRICING WORKSHEET... CALCULATE AREA AND USE MSF PRICE
+
+		IF EXISTS(SELECT TOP 1 IsMSF FROM #P2 WHERE IsMSF = 'T' OR SPriceUOM IN ('Z','C')) BEGIN
+
+			--FORMAT UOM
+
+			UPDATE #P2 SET areaPriceUOM = 'CSM', areaUOM = 'SQM' WHERE SPriceUOM = 'C'
+
+			UPDATE #P2 SET areaPriceUOM = 'MSM', areaUOM = 'SQM' WHERE SPriceUOM = 'Z'
+
+			UPDATE #P2 SET areaPriceUOM = 'MSF', areaUOM = 'SQF' WHERE IsMSF = 'T'
+
+		END	
+
+		
+
+		
+
+		UPDATE #P2 SET InvoiceDesc = Description WHERE InvoiceDesc = ''
+
+		
+
+		--RETURN PRODUCT LIST
+
+		SELECT *, @WksInvoiceAmt as WksInvoiceAmt, @WksCurrency as WksCurrency, @AmountInWords AS [AmountInWords]
+
+		FROM #P2
+
+
+
+	END
+
+
+

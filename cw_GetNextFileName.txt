@@ -1,0 +1,68 @@
+
+
+CREATE  Procedure [dbo].[cw_GetNextFileName] 
+
+	@Object varchar(100), 
+
+	@RefType char(1), 
+
+	@FileName varchar(100),
+
+	@IsContainer bit = 0
+
+
+
+AS 
+
+
+
+-- 04/12/2016 MEC: Find Next File Name increment
+
+
+
+-- cw_GetNextFileName '230336', 'W', 'Test'
+
+
+
+SET NOCOUNT ON
+
+    
+
+    Declare @increment int
+
+    set @increment = 1
+
+    
+
+    IF @IsContainer = 1 Begin
+
+		WHILE EXISTS (SELECT RefID FROM DocumentImage WITH (NOLOCK) WHERE RefID = @Object AND RefType = @RefType AND Desc1 Like @FileName + '-' + convert(varchar, @increment) + '.%')
+
+		Begin
+
+			Set @increment = @increment + 1
+
+		End
+
+		
+
+		Select @FileName + '-' + convert(varchar, @increment)
+
+    End
+
+    Else Begin
+
+		WHILE EXISTS (SELECT RefID FROM DocumentImage WITH (NOLOCK) WHERE RefID = @Object AND RefType = @RefType AND Desc1 Like @FileName + Case When @increment > 1 Then '-' + convert(varchar, @increment) Else '' End + '.%')
+
+		Begin
+
+			Set @increment = @increment + 1
+
+		End
+
+		
+
+		Select @FileName + Case When @increment > 1 Then '-' + convert(varchar, @increment) Else '' End
+
+    End
+

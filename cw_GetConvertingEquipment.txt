@@ -1,0 +1,16 @@
+CREATE PROC [dbo].[cw_GetConvertingEquipment]  
+
+ AS  
+
+ --09/09/2016 MN: Created 
+
+ SET NOCOUNT ON;  
+
+ SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;  
+
+   
+
+ SELECT RTRIM(EquipmentNm) AS EquipmentNm FROM ConvertingEquipment  
+
+ 
+

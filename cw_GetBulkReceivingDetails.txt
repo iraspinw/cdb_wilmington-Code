@@ -1,0 +1,64 @@
+CREATE proc [dbo].[cw_GetBulkReceivingDetails] @Buysellno varchar(12), @DetailID int as
+
+set transaction isolation level read uncommitted
+
+
+
+declare @TotalWtLBS decimal(22,12)
+
+declare @TotalExpense decimal(18,6)
+
+declare @ExpFactor decimal(18,6)
+
+declare @ItemWt decimal(22,12)
+
+declare @ItemAmt money
+
+declare @TotalExp decimal(18,6)
+
+declare @systemUOM char(1)
+
+select @systemUOM = scalewtuom from SystemInfo
+
+
+
+select @ItemAmt = Pamount from wksdetail where detailid = @DetailID
+
+
+
+select @TotalWtLBS = sum(dbo.convert_to_uom(PWeight, PWeightUOM, @systemUOM))
+
+from wksdetail where buysellno = @Buysellno
+
+
+
+select @TotalExpense = sum(cost) from wksdelivery where buysellno = @Buysellno
+
+
+
+select @ItemWt = pweight from wksdetail where detailid = @DetailID
+
+
+
+select @ExpFactor = @ItemWt / @TotalWtLBS
+
+select @TotalExp = sum(cost * @ExpFactor) from WksDelivery where BuySellno = @Buysellno
+
+select convert(float,cost * @expfactor) as Amount, InvoiceDesc, GLAcct from WksDelivery where buysellno = @Buysellno
+
+
+
+
+
+select convert(float,isnull(@TotalExp,0) + isnull(@ItemAmt,0))
+
+select convert(float, PAmount) as Amount, GLAccount.Name, GLAccount.GLAcct 
+
+	from WKSDetail 
+
+	inner join grade on grade.gradeid = wksdetail.GradeID
+
+	inner join GLAccount on grade.PurchGLAcct = glaccount.GLAcct
+
+	where detailid=@DetailID
+

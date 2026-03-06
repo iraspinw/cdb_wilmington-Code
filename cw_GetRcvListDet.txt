@@ -1,0 +1,146 @@
+CREATE   PROCEDURE [dbo].[cw_GetRcvListDet] @BuySellNo char(12) 
+
+AS
+
+SET NOCOUNT ON
+
+--05/09/2016 RS: Created 
+
+--09/021/2019 Alex: Returned   WksDetail.InvoiceDesc
+
+
+
+-- cw_GetRcvListDet 'PR-002004'
+
+-- cw_WksExpenses 'PR-002004'
+
+
+
+-- xDoc_SaveWksPrintout 0,'230646'
+
+-- select * from WksDelivery where buysellno = '230646'
+
+-- select * from Inventory where buysellno = 'PR-002004'
+
+-- select * from WksDetail where buysellno = 'PR-002004'
+
+-- select * from BuySell where buysellno = '230646'
+
+
+
+	Declare @ShowInUomRnd int
+
+	Declare @ShowUOM char(4)
+
+
+
+	
+
+	-- SET REPORT UNIT OF MEASURE CODE Lbs/Kgs.
+
+	SELECT TOP 1 @ShowUOM = SWeightUOM FROM WksDetail WITH(NOLOCK) WHERE BuySellNo = @BuySellNo
+
+
+
+	
+
+	SET @ShowInUomRnd = 3
+
+	IF @ShowUOM = 'L' OR @ShowUOM = 'K'
+
+		SET @ShowInUomRnd = 0
+
+
+
+
+
+	SELECT 
+
+		WksDetail.LotNo,
+
+		WksDetail.Units, 
+
+		RTRIM(ISNULL(dbo.CnvUnitName(WksDetail.UnitType),'')) as UnitType, 
+
+		dbo.FormatQty(dbo.CONVERT_TO_UOM(WksDetail.PWeight, WksDetail.PWeightUOM, @ShowUOM), @ShowUOM) AS WtInShowUOM,
+
+		dbo.FormatQty(dbo.CONVERT_TO_UOM(WksDetail.TareWt, WksDetail.PWeightUOM, @ShowUOM), @ShowUOM) AS TareWtInShowUOM,
+
+		dbo.FormatQty(dbo.CONVERT_TO_UOM(WksDetail.GrossWt, WksDetail.PWeightUOM, @ShowUOM), @ShowUOM) AS GrossWtInShowUOM,
+
+		RTRIM(dbo.CnvUOM_Names(@ShowUOM)) AS WtShowUOM,
+
+		Grade.Description as Product,
+
+		WksDetail.InvoiceDesc as InvoiceDesc, 
+
+		WksDetail.Specifications,
+
+		RTRIM(WksDetail.SerialNo) AS [SerialNo],
+
+		dbo.RemoveTrailingZeros(WksDetail.PPrice) as Price,
+
+		RTRIM(dbo.CnvUOM_Names(WksDetail.PUOM)) as PriceUOM,
+
+		WksDetail.PFxAmount as FxAmount,WksDetail.PCurrencyCd as CurrencyCd,WksDetail.PAmount as Amount,
+
+		WarehouseLocation.LocationName
+
+	FROM WksDetail WITH (NOLOCK) 
+
+	INNER JOIN Grade WITH (NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+	INNER JOIN BuySell WITH (NOLOCK) ON WksDetail.BuySellNo = BuySell.BuySellNo 
+
+	left join WarehouseLocation on WarehouseLocation.ID = WksDetail.WarehouseLocation
+
+	WHERE WksDetail.BuySellNo = @BuySellNo
+
+	--AND BuySell.Status <> 'I'
+
+	ORDER BY LotNo		
+
+
+
+
+
+
+
+--UNION ALL
+
+	--SELECT 
+
+--		Inventory.LotNo,
+
+--		Inventory.Units, 
+
+--		ISNULL(dbo.CnvUnitName(Inventory.UnitType),'') as UnitType, 
+
+--		dbo.FormatQty(dbo.CONVERT_TO_UOM(Inventory.Weight, Inventory.WeightUOM, @ShowUOM), @ShowUOM) AS WtInShowUOM,
+
+--		dbo.CnvUOM_Names(@ShowUOM) AS WtShowUOM,
+
+--		Grade.Description as Product,
+
+--		Inventory.SpecString,
+
+--		Inventory.SerialNo,
+
+--		dbo.RemoveTrailingZeros(Inventory.Price) as Price,dbo.CnvUOM_Names(Inventory.PriceUOM) as PriceUOM,
+
+--		Inventory.OrigInvValue as FxAmount,Inventory.CurrencyCd,
+
+--		CASE WHEN Inventory.FxRate = 0 THEN Inventory.OrigInvValue ELSE Round(Inventory.OrigInvValue / Inventory.FxRate,2) END as Amount
+
+--	FROM Inventory WITH (NOLOCK) 
+
+--	INNER JOIN Grade WITH (NOLOCK) ON Inventory.GradeID = Grade.GradeID
+
+--	INNER JOIN BuySell WITH (NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo 
+
+--	WHERE Inventory.BuySellNo = @BuySellNo 
+
+--	AND BuySell.Status = 'I'
+
+
+

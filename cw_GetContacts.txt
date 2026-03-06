@@ -1,0 +1,74 @@
+CREATE   PROCEDURE [dbo].[cw_GetContacts]
+
+@CpID char(12) = ''
+
+AS
+
+--03/20/2020 MN: Created
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+SELECT
+
+	MAX(Contact.CT_ID) As [CT_ID],
+
+	FirstNm + ' ' + LastNm As [ContactNm],
+
+	MAX(Contact.CpID) As [CpID],
+
+	Email
+
+	--,RoleNm
+
+FROM Contact With (NoLock)
+
+LEFT JOIN CounterParty CP WITH(NOLOCK) ON CP.CpID = Contact.CpID
+
+left join Address on Address.CpID =.Contact.CpID and Address.Type=Contact.Location
+
+left join EmaiListAssignment on  EmaiListAssignment.CT_ID=Contact.CT_ID
+
+LEFT JOIN ContactRoleAssignment ON ContactRoleAssignment.CT_ID =  Contact.CT_ID
+
+WHERE (Contact.CpID <> '(INV)')
+
+AND (Contact.CpID = @CPID)
+
+AND ContactNm <> ''
+
+AND IsActive = 1
+
+GROUP BY FirstNm, LastNm, Email--, CP.CpID, CP.CompanyNm--, RoleNm
+
+
+
+--AND (@CompanyNm = '' OR (Contact.CompanyNm LIKE '%' + @CompanyNm + '%' OR ContactNm LIKE '%' + @CompanyNm + '%'))
+
+--AND (@IsActive = '' OR IsActive = @IsActive)
+
+--AND (@ProspectOnly = 0 OR CP.ActiveStatus = 'P')
+
+
+
+--AND (@Location = '' OR Location = @Location)
+
+--AND (@UsesPortal = 0 OR (@UsesPortal = 1 AND UsesPortal = 1))
+
+--AND (EXISTS(SELECT RoleNm FROM ContactRoleAssignment ca WHERE ca.CT_ID = Contact.CT_ID AND ca.RoleNm = @ContactRole) OR @ContactRole = '')
+
+
+
+--AND (@EmailList = 0 OR EmaiListAssignment.EmaiList = @EmailList) 
+
+ORDER BY ContactNm
+
+
+
+
+

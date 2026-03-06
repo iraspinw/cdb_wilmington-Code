@@ -1,0 +1,336 @@
+CREATE   PROCEDURE [dbo].[cw_GetSOBudget] 
+
+
+
+	@OrderNo char(15),
+
+	@BookingNo varchar(25) = '',
+
+	@OrderNo2 char(15) = ''
+
+
+
+AS
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	--cw_GetSOBudget '', 'EMO TEST'
+
+	
+
+	SELECT 
+
+		B.ID,
+
+		B.PONumber,
+
+		B.ItemType,
+
+		B.GLAcct,
+
+		B.DiscountRate,
+
+		B.Amount,
+
+		B.FxAmount,
+
+		B.PerUom,
+
+		B.CpID,
+
+		B.[Description],
+
+		B.Charge,
+
+		B.CurrencyCd,
+
+		B.PriceUom,
+
+		B.BudgetGroup,
+
+		B.FxRate,
+
+		B.IntInterestDelay,
+
+		B.ContractNo,
+
+		IsNull(Counterparty.IsFreight,0) As IsFreight, 
+
+		CompanyNm, 
+
+		GLAccount.Name as GLAcctName,
+
+		(case when po.Source ='PO' then 'Purchase Order'  else 'Sales Order' end) ExpType,
+
+		isnull(B.Containers,0) Containers,
+
+		B.Description as Description,
+
+		isnull(B.IsFreight,0) as [ExpenceIsFreight],
+
+		B.ChargebackPrice,
+
+		B.ChargebackPriceUOM,
+
+		B.GLAcctSales,
+
+		B.CostAmountSales,
+
+		B.FxCostAmountSales
+
+	FROM 
+
+		BUDGET B WITH (NOLOCK) 
+
+		inner join po on po.PONumber = B.PONumber
+
+		LEFT JOIN Counterparty With (NOLOCK) ON B.CpID = Counterparty.CpID
+
+		LEFT JOIN GLAccount With (NOLOCK) ON B.GLAcct = GLAccount.GLAcct
+
+		
+
+	WHERE B.PONUMBER = @OrderNo
+
+	UNION
+
+	SELECT 
+
+		B.ID,
+
+		B.PONumber,
+
+		B.ItemType,
+
+		B.GLAcct,
+
+		B.DiscountRate,
+
+		B.Amount,
+
+		B.FxAmount,
+
+		B.PerUom,
+
+		B.CpID,
+
+		B.[Description],
+
+		B.Charge,
+
+		B.CurrencyCd,
+
+		B.PriceUom,
+
+		B.BudgetGroup,
+
+		B.FxRate,
+
+		B.IntInterestDelay,
+
+		B.ContractNo,
+
+		IsNull(Counterparty.IsFreight,0) As IsFreight, 
+
+		CompanyNm, 
+
+		GLAccount.Name as GLAcctName,
+
+		(case when po.Source ='PO' then 'Purchase Order'  else 'Sales Order' end) ExpType,
+
+		isnull(B.Containers,0) Containers,
+
+		B.Description as Description,
+
+		isnull(B.IsFreight,0) as [ExpenceIsFreight],
+
+		B.ChargebackPrice,
+
+		B.ChargebackPriceUOM,
+
+		B.GLAcctSales,
+
+		B.CostAmountSales,
+
+		B.FxCostAmountSales
+
+	FROM 
+
+		BUDGET B WITH (NOLOCK) 
+
+		inner join po on po.PONumber = B.PONumber
+
+		LEFT JOIN Counterparty With (NOLOCK) ON B.CpID = Counterparty.CpID
+
+		LEFT JOIN GLAccount With (NOLOCK) ON B.GLAcct = GLAccount.GLAcct
+
+		
+
+	WHERE (@OrderNo2 <> '' And B.PONUMBER = @OrderNo2)
+
+	UNION
+
+	SELECT 
+
+		F.RateID,
+
+		'' PONumber,
+
+		'[EXPENSE]' ItemType,
+
+		Counterparty.GLAcctExpense,
+
+		-1 DiscountRate,
+
+		f.Charge Amount,
+
+		f.Charge FxAmount,
+
+		-1 PerUom,
+
+		f.CarrierID CpID,
+
+		'', --f.POL + ' - ' + f.POD,
+
+		f.Charge,
+
+		'USD',
+
+		f.PerUOM PriceUom,
+
+		'' BudgetGroup,
+
+		1,
+
+		-1 IntInterestDelay,
+
+		'' ContractNo,
+
+		IsNull(Counterparty.IsFreight,0) As IsFreight, 
+
+		CompanyNm, 
+
+		GLAccount.Name as GLAcctName,
+
+		'Ocean Frieght' ExpType,
+
+		ContainerQTY Containers,
+
+		'' as Description,
+
+		0,
+
+		0 as ChargebackPrice,
+
+		'' as ChargebackPriceUOM,
+
+		'' as GLAcctSales,
+
+		0,
+
+		0
+
+	FROM
+
+		BookSheet B WITH (NOLOCK) 
+
+		INNER JOIN FreightRate_Ocean F ON F.RateID = B.FreightRateID --F.CarrierID = B.Carrier AND B.LoadPort = f.POL AND B.PortOfDischg = F.POD
+
+		
+
+		INNER JOIN Counterparty With (NOLOCK) ON F.CarrierID = Counterparty.CpID
+
+		LEFT JOIN GLAccount With (NOLOCK) ON counterparty.GLAcctExpense= GLAccount.GLAcct
+
+		
+
+	WHERE (@BookingNo <> '' AND B.BookingNo = @BookingNo)
+
+	UNION
+
+	SELECT 
+
+		FR.RateExpenseID,
+
+		'' PONumber,
+
+		'[EXPENSE]' ItemType,
+
+		FR.GLAcct,
+
+		-1 DiscountRate,
+
+		FR.Charge Amount,
+
+		(FR.Charge * isnull(CR.FxRate,1)) FxAmount,
+
+		-1 PerUom,
+
+		FR.VendorID CpID,
+
+		FR.[Description],
+
+		FR.Charge,
+
+		FR.CurrencyCd,
+
+		FR.UOM PriceUom,
+
+		'' BudgetGroup,
+
+		 isnull(CR.FxRate,1),
+
+		-1 IntInterestDelay,
+
+		'' ContractNo,
+
+		IsNull(Counterparty.IsFreight,0) As IsFreight, 
+
+		CompanyNm, 
+
+		GLAccount.Name as GLAcctName,
+
+		'Ocean Frieght' ExpType,
+
+		ContainerQTY Containers,
+
+		'' as Description,
+
+		0,
+
+		0 as ChargebackPrice,
+
+		'' as ChargebackPriceUOM,
+
+		'' as GLAcctSales,
+
+		0,
+
+		0
+
+	FROM
+
+		BookSheet B WITH (NOLOCK) 
+
+		--INNER JOIN FreightRate_Ocean F ON F.RateID = B.FreightRateID --F.CarrierID = B.Carrier AND B.LoadPort = f.POL AND B.PortOfDischg = F.POD
+
+		INNER JOIN OceanFreightRate_Expense FR ON FR.RateID = B.FreightRateID
+
+		INNER JOIN Counterparty With (NOLOCK) ON FR.VendorID = Counterparty.CpID
+
+		LEFT JOIN GLAccount With (NOLOCK) ON FR.GLAcct = GLAccount.GLAcct
+
+		LEFT JOIN CurrencyRate CR WITH (NOLOCK) ON CR.CurCode = FR.CurrencyCd
+
+	WHERE (@BookingNo <> '' AND B.BookingNo = @BookingNo)
+
+
+
+
+

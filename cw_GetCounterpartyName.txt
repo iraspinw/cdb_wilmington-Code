@@ -1,0 +1,11 @@
+Create proc [dbo].[cw_GetCounterpartyName] @CPID varchar(25), @CompanyName varchar(65) OUTPUT as
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+--11/27/2009 DSH (SALES-TAX-PRJ) Added No-lock and changed to return value.
+
+	
+
+	SELECT @CompanyName = companynm from counterparty WITH (NOLOCK) WHERE cpid=@CPID

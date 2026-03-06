@@ -1,0 +1,48 @@
+CREATE   PROCEDURE [dbo].[cw_GetConvertingEquipmentCosts] 
+
+	@EquipmentNm varchar(45) = '',
+
+	@ConvertingPage bit = 0
+
+AS
+
+
+
+--7/10/17 MN: Created
+
+IF @ConvertingPage = 0 
+
+	SELECT * FROM ConvertingEquipment_Cost WHERE EquipmentNm = @EquipmentNm ORDER BY OrderIndex
+
+ELSE
+
+	SELECT 
+
+		ID As [ID],
+
+		GlAcct As [GLAcct],
+
+		VendorID As [VendorID],
+
+		'' as [CostAmount],
+
+		'' as [FXCostAmount],
+
+		PricePer As [CostUOM],
+
+		CAST(Price As varchar(20)) As [Cost],
+
+		CurrCode as [CurCode],
+
+		'1' AS [Rate],
+
+		0 As [Posted]
+
+	FROM ConvertingEquipment_Cost C With(Nolock)
+
+    WHERE EquipmentNm = @EquipmentNm 
+
+	AND VendorID <> ''
+
+	ORDER BY OrderIndex
+

@@ -1,0 +1,10 @@
+CREATE proc [dbo].[cw_GetDefaultDeptTime]
+
+as
+
+		select companyinfo.TimeZoneNm,isnull(timezone.GMTOffsetVAL,0.00) as GMTOffsetVAL from CompanyInfo
+
+		left join TimeZone on CompanyInfo.TimeZoneNm = timezone.TimeZoneNm
+
+		where COID = '00'
+

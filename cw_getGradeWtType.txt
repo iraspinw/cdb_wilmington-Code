@@ -1,0 +1,10 @@
+CREATE proc [dbo].[cw_getGradeWtType] @GradeID int as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+select UOMType from grade where gradeid = @GradeID
+

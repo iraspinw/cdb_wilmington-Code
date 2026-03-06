@@ -1,0 +1,98 @@
+
+
+
+
+-- I.R.03/03/24
+
+-- [dbo].[cw_GetOpenPayables2] 
+
+
+
+CREATE PROCEDURE [dbo].[cw_GetOpenPayables2] 
+
+
+
+AS
+
+ BEGIN
+
+
+
+ 
+
+	TRUNCATE TABLE tblCietradeOpenPayables2
+
+	
+
+	INSERT tblCietradeOpenPayables2
+
+
+
+    SELECT [Billing Company]
+
+      ,LTRIM(RTRIM([WksNo])) [WorksheetNo]
+
+      ,[Vendor Name]
+
+
+
+      ,[Outstanding Payables Amount]
+
+
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) > 120, 'Y', 'N') 'Invoice Aging Over 120'
+
+
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) >= 91 AND DATEDIFF(dd,[Open Date], GETDATE()) <= 120, 'Y', 'N') 'Invoice Aging 91 - 120'
+
+		  
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) >= 61 AND DATEDIFF(dd,[Open Date], GETDATE()) <= 90, 'Y', 'N') 'Invoice Aging 61 - 90'
+
+
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) >= 31 AND DATEDIFF(dd,[Open Date], GETDATE()) <= 60, 'Y', 'N') 'Invoice Aging 31 - 60'
+
+
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) >= 0 AND DATEDIFF(dd,[Open Date], GETDATE()) <= 30, 'Y', 'N') 'Invoice Aging 0 - 30'
+
+
+
+	  ,IIF([Post Date] = '', 'N', 'Y') [Posted]
+
+
+
+	  ,DATEDIFF(dd,[Open Date], GETDATE()) Num_Days
+
+
+
+	  ,[Account Desc] [Account Description]
+
+	  ,[Open Date] [Invoice Date]
+
+      ,[Open Date Period] [Invoice Date Period]
+
+	  ,[Post Date]
+
+	  ,[Ship Date]
+
+	  ,case when [Transaction Type] = 'Exp' then 'Expense'
+
+	        when [Transaction Type] = 'Pur' then 'Purchase'
+
+			else [Transaction Type] END [Transaction Type]
+
+
+
+	--INTO tblCietradeOpenPayables
+
+
+
+  FROM [cdb_Wilmington].[dbo].[CietradeOpenAPInvoices2]
+
+
+
+END
+

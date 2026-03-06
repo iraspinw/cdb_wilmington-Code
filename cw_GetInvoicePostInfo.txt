@@ -1,0 +1,28 @@
+CREATE   PROCEDURE [dbo].[cw_GetInvoicePostInfo] @BuySellNo varchar(12), @COID char(2)
+
+AS
+
+--07/11/2015 MCM: Created for posting invoices
+
+--04/11/2019 BF: modified to pull id from new accounting tables
+
+--06/22/2023 Nick: Added CPID for BC365
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT AccountingID AcctingIDCust, SBalanceDue, RTRIM(b.Terms) Terms, c.CpID
+
+		FROM BuySell b
+
+		INNER JOIN Counterparty c ON c.CpID = b.CustID
+
+		INNER JOIN AccountingCustomer on c.cpid = accountingcustomer.cpid 
+
+		WHERE b.BuySellNo = @BuySellNo
+
+		and (@COID = '' or accountingcustomer.coid = @coid)
+

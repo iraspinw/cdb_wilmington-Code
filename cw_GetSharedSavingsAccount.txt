@@ -1,0 +1,14 @@
+CREATE   PROCEDURE [dbo].[cw_GetSharedSavingsAccount] AS
+
+--12/15/2020 MEC: Added for Shared Savings Billsheets
+
+
+
+SET NOCOUNT ON
+
+    Select TOP 1  GLAcct from glaccount with (NOLOCK) where cat = 'sales' and [name]='shared saving' order by salesglacct desc
+
+
+
+	
+

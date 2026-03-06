@@ -1,0 +1,402 @@
+CREATE PROC [dbo].[cw_GetOrderInquiry] 
+
+	@OrderType char(2), 
+
+	@CpID char(12),
+
+	@ToDt datetime = '', 
+
+	@FromDt datetime = '',
+
+	@Status varchar(10) = '',
+
+	@UsesWorkflow bit = 0,
+
+	@PONumber varchar(15) = '',
+
+	@ReportUOM char(2) = 'S',
+
+	@COID char(2) = '',
+
+	@TradeType varchar(25) = '',
+
+	@CertOnly bit = 0,
+
+	@MonthlyContract char(1) = ''
+
+AS
+
+
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+--09/09/2014 MEC: Created
+
+--08/18/20105 MEC: Alter for new columns per David's design
+
+--01/07/2019 DSH Convert report weigt to scale uom in ST/MT
+
+--01/22/2019 MN: Added UOM
+
+--11/7/2019 Alex: Added @TradeType 
+
+--5/4/2020 Alex: Added po.ShipTo 
+
+--6/2/2020 Alex: Added   [Reserved Containers],[Container Count]
+
+
+
+-- GET DEFAULT SCALE WEIGHT. REMOVED BY MIKE 1/22/2019
+
+--DECLARE @ScaleUOM CHAR(2), @ReportUOM CHAR(1)
+
+--SELECT @ScaleUOM = ScaleWtUOM from systeminfo
+
+--IF @ScaleUOM = 'L' SET @ReportUOM = 'S' ELSE SET @ReportUOM = 'M'
+
+
+
+
+
+IF @FromDt = '1/1/1900' BEGIN
+
+	Set @FromDt = ''
+
+	Set @ToDt = ''
+
+END
+
+
+
+IF @OrderType = 'SO' BEGIN
+
+
+
+	SELECT 
+
+		PO.PONumber As [ORDER NO],
+
+		CompanyDesc As DEPT,
+
+		CASE WHEN PO.MonthlyContract = 1 THEN 'Contract' Else Case When IsNull(PO.IsProvisional,0) = 1 Then 'Provisional' Else 'Spot' End End As [TYPE],
+
+		PO.[Source] As [-Hidden- ORDER TYPE],
+
+		PO.PODate As [DATE],
+
+		dbo.CounterParty.CompanyNm AS [ACCOUNT],
+
+		PO.AddrType AS [BILL TO],
+
+		PO.PriceBasis AS [TERMS],
+
+		PO.Terms   as [Payment Terms],
+
+		PO.ShipVia AS [SHIP VIA],
+
+		(SELECT TOP 1 Grade.[Description] FROM PODetail WITH (NOLOCK) 
+
+			INNER JOIN Grade WITH (NOLOCK) ON grade.GradeID = PODetail.GradeID 
+
+			WHERE dbo.PODetail.PONumber = PO.PONumber) AS [PRODUCT],
+
+		(SELECT TOP 1 referrer.name FROM referrer
+
+			INNER JOIN dbo.POSalesReps WITH (NOLOCK) ON POSalesReps.referrerno = referrer.ReferrerNo
+
+			INNER JOIN PO P2 ON POSalesReps.POID = PO.POID
+
+			WHERE P2.PONumber = PO.PONumber) AS [SALES REP],
+
+		--PO.ScheduleDt AS [DELIVERY DATE],
+
+		PO.DestCountry AS [DEST PORT],
+
+		CONVERT(DECIMAL(25,2),SUM(ISNULL(PODetail.Amount, 0))) as [HC ORDER VALUE],
+
+		CONVERT(varchar(30),SUM(ISNULL(PODetail.FxAmount, 0))) + ' ' + Rtrim(PODetail.CurrencyCd) as [ORDER VALUE],
+
+		LTRIM(STR(SUM(dbo.[CONVERT_TO_UOM](ISNULL([Weight],0), WeightUOM,@ReportUOM)),25,3)) AS [ORDER QTY],
+
+		PO.[Status] AS [STATUS],
+
+		PO.POID As [-Hidden-POID],
+
+		dbo.CnvUOM_Names(@ReportUOM) As [UOM],
+
+		PO.POReference AS [Reference #],
+
+		PO.ShipTo AS [Destination To Deliver],
+
+		PO.ScheduleDt As [Delivery Date],
+
+		PO.ShippingLineRemarks AS [Shipping Line Remarks],
+
+		PO.Notes AS [Notes],
+
+		PO.UserDefined1,
+
+		PO.ExpirationDt [Expiration Date]
+
+	FROM 
+
+		PO WITH(NOLOCK)
+
+		LEFT JOIN dbo.CounterParty WITH (NOLOCK) ON PO.CpID = dbo.CounterParty.CpID
+
+		LEFT JOIN PODetail WITH(NOLOCK) on PO.PONumber = PODetail.PONumber
+
+		LEFT JOIN CompanyInfo ON PO.COID = CompanyInfo.COID
+
+	WHERE 
+
+		(@OrderType = '' OR PO.[Source] = @OrderType)
+
+		AND (@CpID= '' OR PO.CpID = @CpID)
+
+		AND (@ToDt= '' OR PO.PODate <= @ToDt)
+
+		AND (@FromDt= '' OR PO.PODate >= @FromDt)
+
+		AND (@Status= '' OR PO.[Status] = @Status)
+
+		AND (@COID = '' OR PO.COID = @COID)
+
+	    AND (@TradeType = '' OR PO.TradeType = @TradeType)
+
+		AND (@MonthlyContract = '' OR (MonthlyContract = @MonthlyContract))
+
+		--AND (@UsesWorkflow = 1 OR PO.[Status] in ('OPEN','CLOSED'))
+
+	GROUP BY
+
+		PO.PONumber,
+
+		CompanyDesc,
+
+		PO.MonthlyContract,
+
+		PO.[Source],
+
+		PO.PODate,
+
+		PO.AddrType,
+
+		PO.PriceBasis,
+
+		PO.ShipVia,
+
+		PO.ScheduleDt,
+
+		PO.DestCountry,
+
+		PO.[Status],
+
+		dbo.CounterParty.CompanyNm,
+
+		PO.POID,
+
+		PO.POReference,
+
+		PO.ShipTo,
+
+		PO.ShippingLineRemarks,
+
+		PO.Notes,
+
+		PO.UserDefined1,
+
+		PO.ExpirationDt,
+
+	    PODetail.CurrencyCd,
+
+		PO.Terms ,
+
+		IsNull(PO.IsProvisional,0)
+
+	ORDER BY PO.PODate DESC
+
+END
+
+ELSE
+
+BEGIN 
+
+	SELECT 
+
+		PO.PONumber As [ORDER NO],
+
+		CompanyDesc As DEPT,
+
+		CASE WHEN PO.MonthlyContract = 1 THEN 'Contract' Else 'Spot' End  As [TYPE],
+
+		PO.[Source] As [-Hidden- ORDER TYPE],
+
+		PO.PODate As [DATE],
+
+		dbo.CounterParty.CompanyNm AS [ACCOUNT],
+
+		PO.AddrType AS [REMIT TO],
+
+		PO.PriceBasis AS [TERMS],
+
+		PO.Terms  as [Payment Terms],
+
+		PO.ShipVia AS [SHIP VIA],
+
+		(SELECT TOP 1 Grade.[Description] FROM PODetail WITH (NOLOCK) 
+
+			INNER JOIN Grade WITH (NOLOCK) ON grade.GradeID = PODetail.GradeID 
+
+			WHERE dbo.PODetail.PONumber = PO.PONumber) AS [PRODUCT],
+
+		(SELECT TOP 1 referrer.name FROM referrer
+
+			INNER JOIN dbo.POSalesReps WITH (NOLOCK) ON POSalesReps.referrerno = referrer.ReferrerNo
+
+			INNER JOIN PO P2 ON POSalesReps.POID = PO.POID
+
+			WHERE P2.PONumber = PO.PONumber) AS [SALES REP],
+
+		PO.ScheduleDt AS [DELIVERY DATE],
+
+		PO.DestCountry AS [DEST PORT],
+
+		CONVERT(DECIMAL(25,2),SUM(ISNULL(PODetail.Amount, 0))) as [HC ORDER VALUE],
+
+		CONVERT(varchar(30),SUM(ISNULL(PODetail.FxAmount, 0))) + ' ' + Rtrim(PODetail.CurrencyCd) as [ORDER VALUE],
+
+		LTRIM(STR(SUM(dbo.[CONVERT_TO_UOM](ISNULL(PODetail.[Weight],0), PODetail.WeightUOM, @ReportUOM)),25,3)) AS [ORDER QTY],		
+
+		PO.[Status] AS [STATUS],
+
+		PO.POID As [-Hidden-POID],
+
+		dbo.CnvUOM_Names(@ReportUOM) As [UOM],
+
+		PO.POReference AS [Reference #],
+
+		PO.DestCountry,
+
+		po.ShipTo as 'Shipping/Pickup',
+
+		PO.ExpirationDt as [Expiration Date],
+
+		PO.UserDefined1,
+
+		(case when PO.Containers=0 then null else PO.Containers end ) as [Container Count],
+
+		   (select (case when sum(POBooking.ContainerQty) = 0 then null  else sum(POBooking.ContainerQty)end)
+
+			from PO POCheck
+
+			inner join POBooking on POBooking.POID = POCheck.POID
+
+			--inner join po on po.poid = POBooking.POID
+
+			where POCheck.PONumber = PO.PONumber) as [Reserved Containers],
+
+		--CertificationType.CertificationType Certification,
+
+		(Certification.Organization+' - '+ Certification.CertificationType) as  [Certification],
+
+		(select top 1  Cutoffdate  from  BookSheet inner join POBooking on POBooking.BookSheetID = BookSheet.BookSheetID  where POBooking.POID = PO.POID order by BookSheet.CutOffDate Desc) as [Cutoff Date]
+
+	
+
+	FROM 
+
+		PO WITH(NOLOCK)
+
+		LEFT JOIN PODetail WITH(NOLOCK) on PO.PONumber = PODetail.PONumber
+
+		LEFT JOIN dbo.CounterParty WITH (NOLOCK) ON PO.CpID = dbo.CounterParty.CpID
+
+		LEFT JOIN CompanyInfo ON PO.COID = CompanyInfo.COID
+
+		left join Certification on Certification.CertificationID =PO.CertifiedTypeID
+
+		--LEFT JOIN CertificationType WITH (NOLOCK) ON CertificationType.CertificationTypeID = PO.CertifiedTypeID
+
+	WHERE 
+
+		(@OrderType = '' OR PO.[Source] = @OrderType)
+
+		AND (@CpID= '' OR PO.CpID = @CpID)
+
+		AND (@ToDt= '' OR PO.PODate <= @ToDt)
+
+		AND (@FromDt= '' OR PO.PODate >= @FromDt)
+
+		AND (@Status= '' OR PO.[Status] = @Status)
+
+		--AND (@UsesWorkflow = 1 OR PO.[Status] in ('OPEN','CLOSED'))		AND(@PONumber = '' OR @PONumber = PO.PONumber)
+
+		AND (@COID = '' OR PO.COID = @COID)
+
+		AND (@TradeType = '' OR PO.TradeType = @TradeType)
+
+		AND (@CertOnly = 0 Or IsNull(CertifiedTypeID,0) > 0)
+
+		AND (@MonthlyContract = '' OR (MonthlyContract = @MonthlyContract))
+
+	GROUP BY
+
+		PO.PONumber,
+
+		CompanyDesc,
+
+		PO.MonthlyContract,
+
+		PO.[Source],
+
+		PO.PODate,
+
+		PO.AddrType,
+
+		PO.PriceBasis,
+
+		PO.ShipVia,
+
+		PO.ScheduleDt,
+
+		PO.DestCountry,
+
+		PO.[Status],
+
+		dbo.CounterParty.CompanyNm,
+
+		PO.POID,
+
+		PO.POReference,
+
+		po.ShipTo,
+
+		PO.ExpirationDt,
+
+		PO.UserDefined1,
+
+		PO.Containers,
+
+		Certification.CertificationType,
+
+		Certification.Organization,
+
+		PODetail.CurrencyCd,
+
+		PO.Terms 
+
+	ORDER BY PO.PODate DESC
+
+END
+
+
+
+
+

@@ -1,0 +1,40 @@
+CREATE   PROCEDURE [dbo].[cw_GetCompanyList] AS
+
+--07/28/2015 MCM: Copied from [cw_GetCompanyInfo]
+
+--12/6/2019 BF: added join to accountingcompany
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		companyinfo.[COID] AS [-Hidden- ID],
+
+		[CompanyDesc] AS [DEPARTMENT],
+
+		companyinfo.[CompanyNm] AS [NAME],
+
+		dbo.FormatAddress(CompanyAddr1,CompanyAddr2,'',CompanyCity,CompanyRegion,CompanyPostalCd,CompanyCtry,1) AS [LOCATION],
+
+		isnull(accttoken, '') as [-Hidden-Token],
+
+		accountingcompany.CompanyNm [QUICKBOOKS COMPANY]
+
+	FROM CompanyInfo 
+
+	left join AccountingCompany on AccountingCompany.coid = companyinfo.COID
+
+	ORDER BY CompanyDesc
+
+
+
+
+
+
+

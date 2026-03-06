@@ -1,0 +1,62 @@
+CREATE  PROCEDURE [dbo].[cw_GetCounterpartyList_temp] AS
+
+--12/19/2005 DSH Added Status
+
+--3/7/2006 BM: Added INACTIVE counterparties to List
+
+--10/19/2007 JW: Added AutoFeedAPVoucher for checking when posting payable for a cp
+
+--08/27/2009 MCM: Added FreightType
+
+--12/16/2009 MCM: Added CurrCode to SELECT
+
+--12/12/2014 MCM: TRIM CPID for eDock
+
+SET NOCOUNT ON 
+
+
+
+CREATE TABLE #tempCpTypes ([Role] CHAR (1), RoleName varchar(30))
+
+
+
+INSERT INTO #tempCpTypes ( [Role], RoleName ) VALUES  ('C', 'Buy')
+
+INSERT INTO #tempCpTypes ( [Role], RoleName ) VALUES  ('S', 'Sell')
+
+INSERT INTO #tempCpTypes ( [Role], RoleName ) VALUES  ('D', 'Exp')
+
+INSERT INTO #tempCpTypes ( [Role], RoleName ) VALUES  ('A', 'Buy,Sell,Exp')
+
+INSERT INTO #tempCpTypes ( [Role], RoleName ) VALUES  ('P', 'Buy,Sell')
+
+INSERT INTO #tempCpTypes ( [Role], RoleName ) VALUES  ('V', 'Sell,Exp')
+
+INSERT INTO #tempCpTypes ( [Role], RoleName ) VALUES  ('X', 'Buy,Exp')
+
+INSERT INTO #tempCpTypes ( [Role], RoleName ) VALUES  ('-', '')
+
+
+
+SELECT CompanyNm, RTRIM(dbo.CounterParty.CpID) AS CpID, RoleName, 
+
+[Address].Contact AS [Contact Name], [Address].Telephone AS Phone, [Address].Email,
+
+CounterParty.APContact + ' ' + [Address].BillingEmail AS [Billing Contact], CurrCode,
+
+CreditLimit AS [Credit Limit], ReferenceID AS [Reference ID], 
+
+CounterParty.GLAcctSupplier AS [Buy Acct], CounterParty.GLAcctExpense AS [Exp Acct]
+
+FROM CounterParty WITH (NOLOCK) 
+
+LEFT JOIN [dbo].[Address] ON Address.CpID = CounterParty.CpID
+
+LEFT JOIN #tempCpTypes ON #tempCpTypes.[Role] = CounterParty.[Role]
+
+WHERE (ActiveStatus = 'A' or ActiveStatus = 'I')
+
+AND RTRIM(dbo.CounterParty.CpID) NOT IN ('(INV)','(OTHER)','(PLANT)','{C}')
+
+ORDER BY CompanyNm
+

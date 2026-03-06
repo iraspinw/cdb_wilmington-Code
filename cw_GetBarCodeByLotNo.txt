@@ -1,0 +1,376 @@
+CREATE   PROCEDURE [dbo].[cw_GetBarCodeByLotNo] 
+
+
+
+	@LotNo varchar(25),
+
+	@UserID char(10) = '',
+
+	@UseQtyOnHand bit = 0
+
+AS
+
+
+
+--cw_GetBarCodeByLotNo '10783'
+
+
+
+--11/09/2016 MEC: Created
+
+--03/10/2020 Alex: I changed the inventory relationship
+
+--04/14/2022 Nick: Added InvoiceDesc
+
+--04/20/2022 MEC: Added PONUmber
+
+--06/08/2022 Nick: Added UDF4 fields 1 through 10
+
+--9/29/2022 Dakota: added warehouse location
+
+--10/28/2022 ZT: Added warehouse location name
+
+--10/31/2022 Nick: Added InvoiceDt
+
+--01/17/2023 Nick: Added NetWeightLBS
+
+--02/08/2023 Nick: Added @IsManual inventory select for manual inventory barcodes
+
+--02/23/2023 DN: added ConvertingJobNo, RcvDate,CompanyNm, buysellno
+
+--06/20/2023 Nick: Added CounterpartyLogo
+
+	SET NOCOUNT ON
+
+	declare @HideSupplier bit
+
+	select @HideSupplier=optionValue from Options where optionName = 'HideSupplierOnLabel'
+
+
+
+	declare @IsManual char(1)
+
+
+
+	select @IsManual = isnull((select top 1 ManualEntry from inventory where lotno = @LotNo), 'N')
+
+
+
+	IF @IsManual = 'Y' Begin
+
+		select
+
+			CAST(Inventory.LotNo as int) As LotNo,
+
+			Inventory.GrossWt as GrossWt,
+
+			IIF(@UseQtyOnHand = 0, Inventory.[Weight], Inventory.QtyOnHand) As NetWt, 
+
+			Inventory.WeightUOM as WtUOM,
+
+			InvGrade.[Description] As Grade,
+
+			Inventory.TareWt as TareWt,
+
+			dbo.RemoveTrailingZeros(cast(Inventory.RollWd as varchar)) + ' ' + Inventory.RollWdUOM As RollWidth,
+
+		dbo.RemoveTrailingZeros(cast(Inventory.BasisWt as varchar)) + ' ' + Inventory.BasisWtUOM As BasisWeight,
+
+		dbo.RemoveTrailingZeros(Inventory.Caliper) As Caliper,
+
+		dbo.RemoveTrailingZeros(Inventory.LinearLen) As LinearFeet,
+
+		Case When RTrim(UnitType.UnitType) <> '' And Inventory.Units > 0 Then
+
+			RTrim(UnitType.UnitType) + ' - ' + cast(Inventory.Units as varchar)
+
+		Else
+
+			RTrim(UnitType.UnitType)
+
+		End	As UnitType,
+
+		Inventory.Comments As Notes,
+
+		D.LogoImage,
+
+		@HideSupplier as HideSupplier,
+
+		Inventory.Color as Color,
+
+		Inventory.PlasticForm as PlasticForm,
+
+		Inventory.SpecString as Specifications,
+
+		Inventory.PlasticMelt,
+
+		Inventory.SerialNo,
+
+		Inventory.InvClass,
+
+		Inventory.PONumber,
+
+		Inventory.UserDefinedFourth1,
+
+		Inventory.UserDefinedFourth2,
+
+		Inventory.UserDefinedFourth3,
+
+		Inventory.UserDefinedFourth4,
+
+		Inventory.UserDefinedFourth5,
+
+		Inventory.UserDefinedFourth6,
+
+		Inventory.UserDefinedFourth7,
+
+		Inventory.UserDefinedFourth8,
+
+		Inventory.UserDefinedFourth9,
+
+		Inventory.UserDefinedFourth10,
+
+		Inventory.Price as PPrice,
+
+		InvGrade.CommodityDesc,
+
+		Inventory.WarehouseNm as WarehouseLocation,
+
+		dbo.CONVERT_TO_UOM(Inventory.[Weight], Inventory.WeightUOM, 'L') as NetWeightLBS,
+
+		D.CompanyNm as Dept,
+
+		Inventory.RcvDt as RcvDt,
+
+		Inventory.ConvertingJobNo,
+
+		Inventory.BuySellNo,
+
+		dbo.xDoc_GetCompanyAddressOnly(D.COID) As DeptAddress
+
+		from Inventory
+
+		inner join Grade InvGrade on InvGrade.gradeid = inventory.GradeID
+
+		LEFT JOIN CompanyInfo D WITH(NOLOCK) ON D.COID = Inventory.COID
+
+		LEFT JOIN UnitType WITH (NOLOCK) ON UnitType.TypeID = Inventory.UnitType
+
+		where Inventory.LotNo = @LotNo
+
+	END
+
+	ELSE BEGIN
+
+
+
+
+
+	SELECT 
+
+		D.CompanyNm As Dept,
+
+		dbo.xDoc_GetCompanyAddressOnly(D.COID) As DeptAddress,
+
+		case when DB_NAME() = 'cdb_Circulus' then  (select Top 1 F.Item from PO T CROSS APPLY dbo.fnSplit(T.ShipTo, CHAR(13)) F where T.PONumber = PO.PONumber) else C.CompanyNm end as CompanyNm, 
+
+		--C.CompanyNm, 
+
+		ShippingDt As RcvDt, 
+
+		IIF(@UseQtyOnHand = 0, [PWeight], QtyOnHand) As NetWt, 
+
+		dbo.CnvUOM_Names(PWeightUOM) As WtUOM, 
+
+		IsNull(Inventory.GrossWt, WksDetail.GrossWt) GrossWt, 
+
+		IsNull(Inventory.TareWt, WksDetail.TareWt) TareWt,
+
+		--IsNull(Inventory.LotNo, IsNull(WksDetail.LotNo,0)) As LotNo,
+
+		CAST(IsNull(Inventory.LotNo, IsNull(WksDetail.LotNo,0)) as int) As LotNo, 
+
+		IsNull(InvGrade.[Description], Grade.[Description]) As Grade,
+
+		ShippingNotes,
+
+		dbo.RemoveTrailingZeros(cast(IsNull(Inventory.RollWd, WksDetail.RollWd) as varchar)) + ' ' + IsNull(Inventory.RollWdUOM, WksDetail.RollWdUOM) As RollWidth,
+
+		dbo.RemoveTrailingZeros(cast(IsNull(Inventory.BasisWt, WksDetail.BasisWt) as varchar)) + ' ' + IsNull(Inventory.BasisWtUOM, WksDetail.BasisWtUOM) As BasisWeight,
+
+		dbo.RemoveTrailingZeros(IsNull(Inventory.Caliper, WksDetail.Caliper)) As Caliper,
+
+		dbo.RemoveTrailingZeros(IsNull(Inventory.LinearLen, WksDetail.LinearLen)) As LinearFeet,
+
+		Case When RTrim(UnitType.UnitType) <> '' And IsNull(Inventory.Units, WksDetail.Units) > 0 Then
+
+			RTrim(UnitType.UnitType) + ' - ' + cast(IsNull(Inventory.Units, WksDetail.Units) as varchar)
+
+		Else
+
+			RTrim(UnitType.UnitType)
+
+		End	As UnitType,
+
+		IsNull(Inventory.Comments, WksDetail.Comment) As Notes,
+
+		RTrim(BuySell.BuySellNo) BuySellNo,
+
+		D.LogoImage,
+
+		@HideSupplier as HideSupplier,
+
+		IsNull(Inventory.Color, WksDetail.Color) Color,
+
+		IsNull(Inventory.PlasticForm, WksDetail.PlasticForm) PlasticForm,
+
+		WksDetail.Specifications,
+
+		WksDetail.PlasticMelt,
+
+		WksDetail.SerialNo,
+
+		WksDetail.InvClass,
+
+		WksDetail.InvoiceDesc,
+
+		RefPONo,
+
+		WksDetail.UserDefinedFourth1,
+
+		WksDetail.UserDefinedFourth2,
+
+		WksDetail.UserDefinedFourth3,
+
+		WksDetail.UserDefinedFourth4,
+
+		WksDetail.UserDefinedFourth5,
+
+		WksDetail.UserDefinedFourth6,
+
+		WksDetail.UserDefinedFourth7,
+
+		WksDetail.UserDefinedFourth8,
+
+		WksDetail.UserDefinedFourth9,
+
+		WksDetail.UserDefinedFourth10,
+
+		WksDetail.PPrice,
+
+		InvGrade.CommodityDesc,
+
+		BuySell.ShipFromID,
+
+		ISNULL(WarehouseLocation.Locationname, WKSDetail.WarehouseLocation) As WarehouseLocation,
+
+		BuYSell.PickupNo,
+
+		buysell.InvoiceDt,
+
+		buysell.ShippingTm,
+
+		dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, 'L') as NetWeightLBS,
+
+		Inventory.ConvertingJobNo,
+
+		C.CounterpartyLogo
+
+	FROM 
+
+		BuySell WITH(NOLOCK)
+
+		INNER JOIN WksDetail WITH(NOLOCK) ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+		INNER JOIN Counterparty C WITH(NOLOCK) ON C.CpID = BuySell.VendorID
+
+		INNER JOIN CompanyInfo D WITH(NOLOCK) ON D.COID = BuySell.COID
+
+		INNER JOIN Grade WITH (NOLOCK) ON Grade.GradeID = WksDetail.GradeID
+
+		LEFT JOIN UnitType WITH (NOLOCK) ON UnitType.TypeID = WKSDetail.UnitType
+
+		LEFT JOIN Inventory WITH(NOLOCK) ON Inventory.LotNo=WksDetail.LotNo
+
+		LEFT JOIN Grade InvGrade WITH(NOLOCK) ON InvGrade.GradeID = Inventory.GradeID
+
+		left join PO on PO.PONumber = BuySell.RefPONo
+
+		LEFT JOIN WarehouseLocation ON WKSDetail.WarehouseLocation = WarehouseLocation.ID
+
+	WHERE WksDetail.LotNo = @LotNo And IsNull(WksDetail.LotNo,'') <> ''
+
+
+
+--Log 
+
+	declare @BuySellNo varchar(25)=''
+
+	declare @Status varchar(25)=''
+
+	declare @StatusText varchar(25)=''
+
+	declare @Comment varchar(150) =''
+
+	declare @AppUserName varchar(50) =''
+
+
+
+	select @AppUserName = UserDef.UserNm from UserDef where USERID= @UserID
+
+
+
+	SELECT 
+
+		@BuySellNo =BuySell.BuySellNo,
+
+		@Status=[Status]		
+
+	From BuySell WITH (NOLOCK)
+
+	INNER JOIN WksDetail WITH(NOLOCK) ON BuySell.BuySellNo = WKSDetail.BuySellNo
+
+	WHERE WksDetail.LotNo = @LotNo
+
+
+
+	if @Status = 'W' 
+
+	   set @StatusText ='WORK'
+
+	else if  @Status = 'I' 
+
+	  set @StatusText ='POSTED'
+
+	else if  @Status = 'C' 
+
+	  set @StatusText ='COMPLETED'
+
+	else if  @Status = 'X' 
+
+	  set @StatusText ='CANCELLED'
+
+
+
+
+
+	set @Comment = 'User '  + @AppUserName + ' Printed Label No ' + @LotNo + ' on ' +  convert(varchar, getdate(), 22)
+
+
+
+	exec cw_LOGEVENT @UserID,'RECEIVING',@BuySellNo,'PRINT',@Comment,@StatusText
+
+	
+
+-- end log
+
+
+
+END
+
+
+
+	SELECT 'SecondHeader'
+
+
+

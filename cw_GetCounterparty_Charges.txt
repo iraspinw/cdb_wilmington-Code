@@ -1,0 +1,56 @@
+CREATE PROC [dbo].[cw_GetCounterparty_Charges] @CpID char(12), @ChargeID int = 0 AS
+
+--08/05/2011 MCM: Created for Counterparty Service Project
+
+SET NOCOUNT ON;
+
+
+
+	SELECT ChargeID As [-Hidden-ChargeID]
+
+	  
+
+      --,dbo.GetChargeType(ChargeType) AS [Charge]
+
+      ,dbo.GetChargeType(ChargeType) AS [Charge]
+
+      ,[Location]
+
+	  ,RelatedGradeID AS [-Hidden-GradeID]
+
+	  ,Grade.[Description] AS [Product]
+
+	  ,UnitType.UnitType AS [Packaging]
+
+	  ,Counterparty_Charge.UnitType AS [-Hidden-UnitType]
+
+      ,[RelatedEquipment] AS [-Hidden-RelatedEquipment]
+
+	  ,EquipmentType.EqType AS [Equipment]
+
+	  ,[Counterparty_Charge].GLAcct As [-Hidden-GLAcct]
+
+	  ,[ChargeDesc] AS [Description]    
+
+      ,[Amount]      
+
+	  ,[ChargeType] AS [-Hidden-ChargeType]
+
+	FROM [Counterparty_Charge] WITH(NOLOCK) 
+
+	LEFT JOIN Grade ON Grade.GradeID = RelatedGradeID
+
+	LEFT JOIN UnitType ON UnitType.TypeID = Counterparty_Charge.UnitType
+
+	LEFT JOIN EquipmentType ON EquipmentType.EqType = Counterparty_Charge.[RelatedEquipment]
+
+
+
+	WHERE
+
+	(@ChargeID = 0 AND CpID = @CpID)
+
+	OR (@ChargeID = ChargeID )
+
+	 
+

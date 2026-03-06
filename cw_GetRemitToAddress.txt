@@ -1,0 +1,44 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetRemitToAddress] 
+
+
+
+	@CpID varchar(12) 
+
+
+
+AS
+
+
+
+--08/28/2018 MEC: Copied from q_GetRemitToAddress for cieTrade.net
+
+
+
+	SELECT Addr1,Addr2,Addr3,City,Region,PostalCd,Country
+
+	FROM [Address] WHERE RemitToAddress = 1 
+
+	AND CPID = @CpID
+
+
+
+
+
+set nocount on
+
+Return 
+
+
+
+
+
+
+
+
+
+
+
+
+

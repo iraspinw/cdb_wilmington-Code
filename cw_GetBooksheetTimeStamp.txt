@@ -1,0 +1,8 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetBooksheetTimeStamp] @BooksheetID int, @EditStamp int OUTPUT AS
+
+select @EditStamp = convert(int,lastedit) FROM BookSheet WITH (NOLOCK) Where BooksheetID = @BooksheetID
+

@@ -1,0 +1,10 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetTerminals] 
+
+As
+
+SELECT TerminalID, TerminalNm FROM Terminal WITH (NOLOCK) ORDER BY TerminalNm
+

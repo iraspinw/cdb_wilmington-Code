@@ -1,0 +1,30 @@
+CREATE proc [dbo].[cw_GetWksDocuments] as
+
+--05/23/2016 RS: Added FormSource
+
+--3/1/2019 Alex: Added IsDefault
+
+
+
+SELECT DocFormID , xdocform.[description], isnull(inactive,0) as Inactive, 
+
+--(case when dbo.xDoc_GetFormSourceName(FormSource)='' then 'WKS' else dbo.xDoc_GetFormSourceName(FormSource) end) as FormSource,
+
+dbo.doc_GetFormSourceName(FormSource) as FormSource,
+
+xDocForm.FormID,xDocForm.xmlModifiedDt,xDocForm.xmlModifiedUser,xDocForm.DescriptionDetail,xDocMaster.DocType,xdocform.IsDefault,
+
+dbo.doc_GetFormSourceSeq(FormSource) as Seq, 
+
+(Select Count(*) From xDocHeader where xDocHeader.DocFormID = xDocForm.DocFormID) As DocUseCount
+
+FROM xDocForm 
+
+INNER JOIN xDocMaster WITH(NOLOCK) ON xDocForm.FormID = xDocMaster.FormID
+
+WHERE IsWebDoc=1 and xdocmaster.FormID Not In ('CERTDOC', 'COVERLET')
+
+ORDER BY Seq, FormSource DESC, xdocform.[Description]
+
+  
+

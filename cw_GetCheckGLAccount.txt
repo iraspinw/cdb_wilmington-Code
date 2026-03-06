@@ -1,0 +1,52 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCheckGLAccount] 
+
+
+
+	@COID char(2) 
+
+
+
+AS
+
+
+
+--11/12/2020 MEC: Copied for cieTrade.net Cash Distributions
+
+
+
+
+
+--cw_GetCheckGLAccount ''
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	IF @COID = '' BEGIN
+
+		SET @COID = '00'
+
+	END
+
+
+
+	DECLARE @GLAcct char(12)
+
+	SELECT @GLAcct = GLAcct FROM CheckSetup WHERE ISNULL(COID,'') = @COID
+
+	
+
+	IF ISNULL(@GLAcct,'') = ''
+
+		SELECT @GLAcct = GLAcct FROM CheckSetup WHERE ISNULL(COID,'') = ''
+
+	
+
+	SELECT @GLAcct AS GLAcct
+

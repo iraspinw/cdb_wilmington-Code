@@ -1,0 +1,400 @@
+CREATE   PROCEDURE [dbo].[cw_GetPurchasingHistory] 
+
+	@LastMonth datetime,
+
+	@SupplierID varchar(12),
+
+	@CoID varchar(2), 
+
+	@SalesRep char(10), 
+
+	@CustID char(12), 
+
+	@UOM CHAR(1) = 'S', 
+
+	@TradeType varchar(48) = '',
+
+	@ReportType CHAR(10) = 'SUPPLIER'
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--05/05/2016 DSH Recreated for .Net
+
+--05/12/2016 DSH Added Filters
+
+--11/06/2017 DSH Foxed error with Monthx data type being too small
+
+-- cw_GetPurchasingHistory '4/1/2020' ,'','','','','M',''
+
+CREATE TABLE #REPORTCOLUMNS(
+
+	ROWNUM INT IDENTITY(1,1),
+
+	LABELNM CHAR(12),
+
+	ReportDt DATETIME
+
+)
+
+CREATE TABLE #DETAIL(
+
+	SupplierNm VARCHAR(100),
+
+	Location VARCHAR(100),
+
+	Grade VARCHAR(100),
+
+	ShippingDt DATETIME,
+
+	Quantity DECIMAL(18,3),
+
+	BuySellNo CHAR(12),
+
+	ReportMonth DATETIME
+
+)
+
+CREATE TABLE #UPDATETABLE(
+
+	SupplierNm VARCHAR(100),
+
+	Location VARCHAR(100),
+
+	Grade VARCHAR(100),
+
+	ReportMonth DATETIME,	
+
+	Quantity DECIMAl(18,3)
+
+)
+
+CREATE TABLE #REPORT(
+
+	SupplierNm CHAR(100),
+
+	Location CHAR(100),	
+
+	Grade CHAR(100),
+
+	Month1 DECIMAL(22,3) DEFAULT 0,
+
+	Month2 DECIMAL(22,3) DEFAULT 0,
+
+	Month3 DECIMAL(22,3) DEFAULT 0,
+
+	Month4 DECIMAL(22,3) DEFAULT 0,
+
+	Month5 DECIMAL(22,3) DEFAULT 0,
+
+	Month6 DECIMAL(22,3) DEFAULT 0,
+
+	Month7 DECIMAL(22,3) DEFAULT 0,
+
+	Month8 DECIMAL(22,3) DEFAULT 0,
+
+	Month9 DECIMAL(22,3) DEFAULT 0,
+
+	Month10 DECIMAL(22,3) DEFAULT 0,
+
+	Month11 DECIMAL(22,3) DEFAULT 0,
+
+	Month12 DECIMAL(22,3) DEFAULT 0,
+
+	Totals DECIMAL(22,3) DEFAULT 0
+
+)
+
+
+
+
+
+	DECLARE @ToDate DATE
+
+	DECLARE @FromDate DATE
+
+	DECLARE @NextDate DATE
+
+
+
+	--GET REPORT DATE RANGE.
+
+	SET @ToDate = DATEADD(m,1,@LastMonth) -1
+
+	SET @FromDate = DATEADD(m,-11,@LastMonth) 
+
+	SEt @NextDate = @FromDate
+
+
+
+	-- GET SUPPLIER REPORT DETAIL 
+
+	IF @ReportType = 'SUPPLIER' BEGIN
+
+		INSERT #DETAIL
+
+		SELECT 
+
+			counterparty.companynm, 
+
+			BuySell.ShipFromID, 
+
+			grade.description, 
+
+			ShippingDt, 
+
+			dbo.convert_to_UOM(pweight, pweightuom, @UOM ), 		
+
+			BuySell.BuySellno,
+
+			DATEADD(mm, DATEDIFF(mm, 0, ShippingDt), 0)
+
+  		FROM BuySell 
+
+		INNER JOIN wksdetail on buysell.buysellno=wksdetail.buysellno 
+
+		INNER JOIN  counterparty on buysell.vendorid = counterparty.cpid 
+
+		INNER JOIN  grade on wksdetail.gradeid = grade.gradeid 
+
+		WHERE 
+
+			ShippingDt >=@FromDate AND ShippingDt <= @ToDate
+
+			And BuySell.Status = 'I'
+
+			AND buysell.vendorid <> '(INV)' 
+
+			AND (@SupplierID = '' OR @SupplierID = Counterparty.CpID)
+
+			AND WksDetail.PWeightUOM NOT IN('E','Q','B','X')
+
+			AND (@SalesRep = '' OR @SalesRep= BuySell.ReferrerNo1 OR @SalesRep= BuySell.ReferrerNo2) 
+
+			AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+			AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+		ORDER BY CompanyNm, ShipFromID, Description, ShippingDt		
+
+	END
+
+
+
+
+
+	-- GET CUSTOMER REPORT DETAIL 
+
+	IF @ReportType = 'CUSTOMER' BEGIN
+
+		INSERT #DETAIL
+
+		SELECT 
+
+			counterparty.companynm, 
+
+			BuySell.ShipFromID, 
+
+			grade.description, 
+
+			ShippingDt, 
+
+			dbo.convert_to_UOM(pweight, pweightuom, @UOM ), 		
+
+			BuySell.BuySellno,
+
+			DATEADD(mm, DATEDIFF(mm, 0, ShippingDt), 0)
+
+  		FROM BuySell 
+
+		INNER JOIN wksdetail on buysell.buysellno=wksdetail.buysellno 
+
+		INNER JOIN  counterparty on buysell.CustID = counterparty.cpid 
+
+		INNER JOIN  grade on wksdetail.gradeid = grade.gradeid 
+
+		WHERE 
+
+			ShippingDt >=@FromDate AND ShippingDt <= @ToDate
+
+			And BuySell.Status = 'I'
+
+			AND buysell.CustID <> '(INV)' AND buysell.CustID <> '{C}' 
+
+			AND (@SupplierID = '' OR @SupplierID = Counterparty.CpID)
+
+			AND WksDetail.PWeightUOM NOT IN('E','Q','B','X')
+
+			AND (@SalesRep = '' OR @SalesRep= BuySell.ReferrerNo1 OR @SalesRep= BuySell.ReferrerNo2) 
+
+			AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+			AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+		ORDER BY CompanyNm, ShipFromID, Description, ShippingDt		
+
+	END
+
+
+
+
+
+	-- SUMMARIZE REPORT DATA
+
+	INSERT #UPDATETABLE(SupplierNm, Location, Grade, ReportMonth, Quantity)
+
+	SELECT SupplierNm, Location, Grade, ReportMonth, SUM(Quantity) FROM #DETAIL
+
+	GROUP BY SupplierNm, Location, Grade, ReportMonth
+
+
+
+
+
+	---- SETUP CROSS TAB TABLE.
+
+	INSERT #REPORT(SupplierNm,Location,Grade)
+
+		SELECT DISTINCT SupplierNm, Location, Grade FROM #UPDATETABLE
+
+		ORDER BY SupplierNm, Location, Grade 
+
+
+
+
+
+	----CROSS TAB DATA
+
+	DECLARE @CurMnth SMALLINT
+
+	SET @CurMnth = 1
+
+	SEt @NextDate = @FromDate
+
+	WHILE @CurMnth <= 12 BEGIN
+
+
+
+
+
+
+
+		IF @CurMnth=1 
+
+			UPDATE #REPORT SET Month1 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=2 
+
+			UPDATE #REPORT SET Month2 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=3 
+
+			UPDATE #REPORT SET Month3 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=4 
+
+			UPDATE #REPORT SET Month4 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=5 
+
+			UPDATE #REPORT SET Month5 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=6 
+
+			UPDATE #REPORT SET Month6 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=7 			
+
+			UPDATE #REPORT SET Month7 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=8 
+
+			UPDATE #REPORT SET Month8 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=9 
+
+			UPDATE #REPORT SET Month9 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=10 
+
+			UPDATE #REPORT SET Month10 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=11 
+
+			UPDATE #REPORT SET Month11 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+		IF @CurMnth=12 
+
+			UPDATE #REPORT SET Month12 = Quantity FROM #REPORT INNER JOIN #UPDATETABLE 
+
+			ON #REPORT.SupplierNm = #UPDATETABLE.SupplierNm AND #REPORT.Location = #UPDATETABLE.Location AND #REPORT.Grade = #UPDATETABLE.Grade 	WHERE #UPDATETABLE.ReportMonth = @NextDate 
+
+
+
+
+
+
+
+
+
+
+
+		-- SET REPORT LABELS AND COLUMNS
+
+		INSERT	#REPORTCOLUMNS(LABELNM,ReportDt) 
+
+			SELECT UPPER(SUBSTRING(DATENAME(month,@NextDate),1,3))+' '+CONVERT(CHAR(4),DATEPART(yy,@NextDate)), DATEADD(mm, DATEDIFF(mm, 0, @NextDate), 0) 
+
+
+
+
+
+	
+
+		-- UPDATE TOTALS
+
+		UPDATE #REPORT SET Totals=Month1+Month2+Month3+Month4+Month5+Month6+Month7+Month8+Month9+Month10+Month11+Month12
+
+		SET @NextDate = DATEADD(m,1,@NextDate)	
+
+		SET @CurMnth = @CurMnth + 1
+
+	END
+
+	
+
+	SELECT * FROM #REPORTCOLUMNS
+
+	SELECT * FROM #REPORT
+
+
+
+
+
+
+

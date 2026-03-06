@@ -1,0 +1,14 @@
+CREATE PROC [dbo].[cw_GetColors] as
+
+--02/03/2015 MEC: Created for cieTrade.net
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT rtrim(color) As color FROM colors
+
+
+

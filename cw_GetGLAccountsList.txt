@@ -1,0 +1,56 @@
+CREATE   PROCEDURE [dbo].[cw_GetGLAccountsList]
+
+	
+
+	@AccountName as varchar(100) = '',
+
+	@AccountNo char(12) = '',
+
+	@AccountClass as varchar(50) = ''
+
+AS
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+-- 07/29/2015 MEC: Created for GL Account Mappings List
+
+-- 05/25/2022 Nick: Added @AccountClass
+
+
+
+SELECT 
+
+	GLAccount.Name, 
+
+	GLAccount.BankCurrencyCd As [Currency],
+
+	RTRIM(GLAccount.Cat) As [Class], 
+
+	GLAccount.GLAcct As [Account], 
+
+	Sales.Name As [-Hidden-Chargeback Account]
+
+FROM 
+
+	GLAccount 
+
+	LEFT JOIN GLAccount Sales ON Sales.GLAcct = GLAccount.SalesGLAcct
+
+WHERE
+
+	GLAccount.Name Like @AccountName + '%'
+
+	AND (@AccountNo = '' OR GLAccount.GLAcct = @AccountNo)
+
+	AND (@AccountClass = '' OR RTRIM(GLAccount.Cat) = @AccountClass)
+
+ORDER BY GLAccount.Name
+
+
+

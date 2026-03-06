@@ -1,0 +1,2475 @@
+CREATE   PROCEDURE [dbo].[cw_GetGrossProfitBySupplierGrade_test] 
+
+@ReportType CHAR(20), 
+
+@GroupBy INT,  
+
+@FromDate datetime, 
+
+@ToDate datetime, 
+
+@CoID char(2), 
+
+@TradeType varchar(25), 
+
+@SupplierID CHAR(12) = '',
+
+@Location char(45) = '',
+
+@ReferrerNo char(10) = '', 
+
+@ReportUOM CHAR(1) = 'L', 
+
+@CustomerID CHAR(12) = '', 
+
+@WksNo CHAR(12) = NULL, 
+
+@CountryCode char(10) = '',
+
+@ProductCategory CHAR(30) = '', 
+
+@ProductGrade CHAR(15) = '',
+
+@RunBySummary BIT = 0
+
+AS
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--CREATED FROM "q_GetGrossProfitBySupplierAndGrade "
+
+--02/05/2016 MN:	Created
+
+--02/19/2016 DSH: Revised for GP By Product Drill-down report.
+
+--09/30/2020 DSH  Corrections for unapplied cash bank fee.
+
+--01/22/2022 DSH: Updated to support Inventory Sales With Average Cost.
+
+--10/03/2022 DSH: Include Inventory Writeoffs
+
+
+
+	IF @FromDate = '' OR @ToDate = '' BEGIN
+
+		SET @FromDate = '1/1/1980' 
+
+		SET @ToDate = DATEADD(DAY,1,GETDATE())
+
+	END
+
+    
+
+    Create Table #WKSDETAIL(
+
+		WksDetailID INT,
+
+		BuySellNo char(12),    
+
+		SAmount Money,
+
+		TotalQty decimal(27,18)
+
+	)
+
+	Create index #PK_WKSDETAIL ON #WKSDETAIL(WksDetailID)	
+
+
+
+	Create Table #TotalInvVal(
+
+		BuySellno CHAR(12), 
+
+		LedgerID INT, 
+
+		Total_InvVal MONEY DEFAULT 0, 		
+
+		Total_Qty DECIMAL(25,8) DEFAULT 0
+
+	)
+
+    Create index #PK_TotalInvVal ON #TotalInvVal(BuySellNo,LedgerID)
+
+
+
+    --Table to account for Per Each Items added to Inventory Sales.
+
+    Create Table #ChargeBackItems(
+
+		BuySellNo char(12),    		
+
+		ChargeBackAmt decimal(25,8)
+
+    )
+
+	Create Index #IE_ChargeBackItems ON #ChargeBackItems(BuySellNo)    
+
+
+
+    
+
+    Create Table #SupplierAlloc(
+
+    AllocID int IDENTITY (1000, 1) NOT NULL ,
+
+    AllocType char(3),        
+
+    BuySellNo char(12),
+
+    TradeDesc varchar(25),
+
+    VendorID char(12),
+
+	VendorNm VARCHAR(65), 
+
+	GradeID CHAR(15),
+
+    WksDetailID int,    
+
+    LedgerID int,
+
+    [Source] char(1),    
+
+    TotalQty decimal(25,8),
+
+    Qty decimal(25,8),
+
+    TotalInvVal Money DEFAULT 0,
+
+    InvVal money DEFAULT 0,
+
+    InvSale money DEFAULT 0,    
+
+    InvSaleChgBk money DEFAULT 0,     
+
+    ExpVal money DEFAULT 0,    
+
+    Sales Money DEFAULT 0,
+
+    Cost Money DEFAULT 0,
+
+    GrossProfit Money DEFAULT 0,
+
+    TotalProfit decimal(25,2),    
+
+    Allocation decimal(25,6),
+
+    AdjQty decimal(25,8),
+
+    BrkExp Money,
+
+	SalesPerUom Money  DEFAULT 0,
+
+	CostsPerUom Money  DEFAULT 0,
+
+	MarginPerUom Money  DEFAULT 0,
+
+	AltProductName VARCHAR(100)
+
+ )
+
+    Create Index #IE_SalesRepAlloc ON #SupplierAlloc(BuySellNo)
+
+
+
+	Create Table #BuySellList (
+
+		LedgerID INT,
+
+		BuySellNo CHAR(12),
+
+		GrossProfit Money,
+
+		[Source] CHAR(1),
+
+		TradeDt Datetime,
+
+		CustID CHAR(12),
+
+		VendorID CHAR(12),
+
+		TotalWeightLbs Decimal(22,12),
+
+		Sale Money,
+
+		Cost Money,
+
+		AdjType CHAR(1),
+
+		AdjReason VARCHAR(30),
+
+		GLAcct VARCHAR(12),	
+
+		PONumber varchar(15),
+
+		AdjustQty decimal(25,8),
+
+		DoGradeAlloc BIT DEFAULT 0,
+
+		SeqNo INT DEFAULT 0, 
+
+		GradeID CHAr(15),
+
+		Expense MONEY,
+
+		ChargeBack MONEY,
+
+		WksType char(1),
+
+		InvModel CHAR(3)
+
+	)
+
+	Create Index #PK_BuysellList ON #BuySelllist(BuysellNo)	
+
+
+
+
+
+	Create TABLE #_SubInventory(
+
+		BuysellNo CHAR(12),
+
+		LedgerID INT,
+
+		DetailID INT,
+
+		WksInvID int,
+
+		Source CHAR(1),
+
+		LotNo CHAR(15),	
+
+		LotSeq INT DEFAULT 0,	
+
+		VendorID CHAR(12),
+
+		GradeID CHAR(15),			
+
+		InvValuePrct decimal(18,5),
+
+		WeightPrct decimal(18,5),
+
+		TotalInvValue Money,
+
+		TotalWeightLbs Decimal(18,5),			
+
+		InvValue Money,
+
+		InvWeight Decimal(18,5),
+
+		AdjWeight Decimal(18,5)
+
+	)
+
+	
+
+
+
+	CREATE TABLE #RecyProfitData(
+
+		BuySellNo CHAR(12),
+
+		AllocType CHAR(10),
+
+		--BuySellSeq INT,
+
+		InvoiceDt DATETIME,
+
+		VendorID CHAR(12),
+
+		VendorNm CHAR(65),
+
+		ShipFromID CHAR(65),
+
+		GradeID CHAR(15),
+
+		GradeNm VARCHAR(65),
+
+		Qty DECIMAL(22,5),
+
+		Purchase MONEY,
+
+		Freight MONEY,
+
+		Adjustment MONEY,
+
+		Sales MONEY,
+
+		GrossProfit MONEY,
+
+		Referrer CHAR(10),		
+
+		WksExpenses MONEY,
+
+		TotalQty DECIMAL(22,5),
+
+		SalesPerUOM MONEY,
+
+		PurchasePerUOM MONEY,
+
+		FreightPerUOM MONEY,
+
+		ProfitPerUOM MONEY,
+
+		AdjustmentPerUom MONEY,
+
+		GrossProfitUOM MONEY
+
+	)
+
+
+
+	DECLARE
+
+		@ScaleWeightNm varchar(10),
+
+		@ScaleWeight char(1),	
+
+		@AltScaleWt CHAR(1),	
+
+		@ScaleWeighFactor decimal(22,4)
+
+
+
+
+
+    -- GET GROSS PROFIT TRANSACTIONS 
+
+    --==============================
+
+	
+
+	--FILL WORKSHEETS.	
+
+	INSERT #BuySelllist
+
+	SELECT	gpLedger.LedgerID,gpledger.BUYSELLNO,GrossProfit,[Source],TradeDT,CustID,VendorID, 
+
+			TotalWeightLbs,Sale,Cost,AdjType,AdjReason,GPLedger.GLAcct,RefPONo,0,
+
+			(CASE WHEN BuySell.VendorID <> '(INV)'  THEN 1 ELSE 0 END)  --DoAllocation
+
+			,0,NULL,
+
+			BuySell.PfreightChg,
+
+			BuySell.SfreightChg,
+
+			CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END,
+
+			CASE WHEN Buysell.VendorID = '(INV)' THEN 'LOT' ELSE '' END
+
+		FROM GPLedger WITH(NOLOCK) 
+
+		INNER JOIN BuySell WITH(NOLOCK)  ON gpledger.buysellno = buysell.buysellno	
+
+		WHERE
+
+		GPLedger.[Source] = 'B' AND BUYSELL.[Status] = 'I'
+
+		AND (@CoID = '' OR (BuySell.CoID = @CoID)) 
+
+		AND (TradeDt >=@FromDate OR @FromDate = '')
+
+		AND (TradeDt <=@ToDate OR @ToDate = '')
+
+		AND	(@TradeType = '' OR (BUYSELL.TradeType = @TradeType)) 		
+
+		AND (buysell.custid <> '(INV)' AND buysell.custid <> '(PLANT)' AND buysell.custid  <> '{C}' )
+
+		AND (@ReferrerNo = '' OR @ReferrerNo= BuySell.ReferrerNo1 OR @ReferrerNo= BuySell.ReferrerNo2) 
+
+		AND (@WksNo IS NULL OR buysell.buysellno = @WksNo)
+
+
+
+		
+
+	--FILL ADJUSTMENTS.	
+
+	INSERT #BuySelllist
+
+	SELECT	gpLedger.LedgerID,gpledger.BUYSELLNO,GrossProfit,[Source],TradeDT,
+
+			CASE WHEN AdjType='P' THEN GPLedger.AdjCPID ELSE BuySell.CustID END AS CustID,		
+
+			BuySell.VendorID,   
+
+			TotalWeightLbs,Sale,Cost,AdjType,AdjReason,GPLedger.GLAcct,RefPONo, 
+
+			CASE WHEN AdjType='P' THEN dbo.CnvToBaseQtyUOM(AdjWeight,AdjWeightUOM) ELSE 0 END AS AdjustQty, 
+
+			1 --DoAllocation
+
+			,0,NULL,0,0,
+
+			CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END,
+
+			CASE WHEN Buysell.VendorID = '(INV)' THEN 'LOT' ELSE '' END
+
+		FROM GPLedger WITH(NOLOCK) 
+
+		LEFT JOIN BuySell WITH(NOLOCK)  ON gpledger.buysellno = buysell.buysellno	
+
+		WHERE
+
+		GPLedger.[Source] <> 'B' AND GPLedger.[Source] <> 'C' AND GPLedger.[Source] <> 'J'  --(C,J for internal interest)
+
+		AND (GPLedger.TradeDt >=@FromDate AND GPLedger.TradeDt <=@ToDate) 
+
+		AND (GPLEdger.AdjPosted = 'Y' OR GPLedger.[Source] = 'I')
+
+		AND (@CoID = '' OR (BuySell.CoID = @CoID OR GPLedger.MiscCOID = @COID))
+
+		AND (@TradeType = '' OR (GPLEDGER.MiscTradeType = @TradeType OR BUYSELL.TradeType = @TradeType)) 
+
+		AND (@ReferrerNo = '' OR @ReferrerNo= BuySell.ReferrerNo1 OR @ReferrerNo= BuySell.ReferrerNo2) 	
+
+		
+
+
+
+
+
+
+
+	--SET INVENTORY MODEL
+
+	UPDATE #BuySelllist SET InvModel = 'AVG' , VendorID = '(OTHER)', DoGradeAlloc=1 
+
+		WHERE InvModel = 'LOT' AND NOT EXISTS (SELECT * FROM WksInventory WHERE WksInventory.Buysellno = #BuySelllist.BuysellNo)
+
+
+
+
+
+
+
+
+
+		
+
+		IF @ReportType = 'SUPPLIER+GRADE' OR @ReportType = 'GRADE' OR @ReportType =  'SUPPLIER+GRADE+WKS' BEGIN
+
+
+
+
+
+			--ALLOCATE PROFIT BY GRADE FOR NON INVENTORY TRANACTIONS (WHEN REPORTING BY GRADE}.
+
+			-------------------------------------------------------------------------------------------------- 
+
+			CREATE TABLE #BuysellGradeAllocList(	
+
+				TranSource CHAR(1),		
+
+				LedgerID INT,
+
+				BuySellNo CHAR(12),			
+
+				SeqNo INT,
+
+				GradeID CHAR(15),
+
+				ItemSales MONEY,
+
+				ItemCost MONEY,
+
+				ItemExpense MONEY,
+
+				ItemChargeBack MONEY,
+
+				--ItemGrossProfit MONEY,
+
+				TotalGrossProfit MONEY,
+
+				Sale MONEY,
+
+				ChargeBack MONEY,
+
+				Cost MONEY,
+
+				Expense MONEY,				
+
+				GrossProfit MONEY,
+
+				WeightLbs DECIMAL(22,5),			
+
+				Alloc DECIMAL(22,12),
+
+				TotalWTLBS decimal(22,5)
+
+			)
+
+
+
+
+
+
+
+			INSERT #BuysellGradeAllocList
+
+			SELECT 
+
+				#buyselllist.Source,
+
+				#buyselllist.LedgerID, 
+
+				#buyselllist.buysellno,			
+				row_number() OVER (Partition by #buyselllist.LedgerID order by #buyselllist.LedgerID), 
+
+				Wksdetail.GradeID, 
+
+				SAmount,				
+
+				PAmount, 
+
+				0,
+
+				0,				
+
+				0,  			
+
+				#buyselllist.Sale,
+
+				#buyselllist.ChargeBack,
+
+				#buyselllist.Cost,
+
+				#buyselllist.Expense,				
+
+				#buyselllist.GrossProfit,
+
+				dbo.convert_to_UOM(SWeight,SweightUOM,'L') WeightLbs, 
+
+				0 as Alloc,
+
+				0 as TotalWTLBS 			
+
+				from wksdetail 
+
+				inner join #buyselllist on wksdetail.buysellno = #buyselllist.buysellno
+
+				WHERE DoGradeAlloc = 1 
+
+
+
+
+
+
+
+
+
+
+
+			CREATE TABLE #BuysellGradeAllocList_Totals(
+
+				LedgerID INT,
+
+				TotalWTLBS decimal(22,5)
+
+			)
+
+
+
+			INSERT #BuysellGradeAllocList_Totals
+
+				SELECT LedgerID, SUM(WeightLbs)
+
+				FROM #BuysellGradeAllocList
+
+				GROUP BY LedgerID
+
+
+
+
+
+			UPDATE #BuysellGradeAllocList 
+
+				SET TotalWTLBS = B.TotalWTLBS
+
+				FROM #BuysellGradeAllocList A 
+
+				INNER JOIN #BuysellGradeAllocList_Totals B ON A.LedgerID = B.LedgerID
+
+
+
+			
+
+			-- 06/08/2015 RS: Changed
+
+			-- 06/08/2015 DSH: NOTE Only used for allocating expenses by weight.
+
+			UPDATE #BuysellGradeAllocList 
+
+				SET Alloc = WeightLbs / TotalWTLBS WHERE TotalWTLBS <> 0 
+
+
+
+
+
+				
+
+			--DO EXPENSE ALLOCATION BY WEIGHT.  06/08/2015-DSH
+
+			UPDATE #BuysellGradeAllocList SET 
+
+				ItemExpense = Round(Expense * Alloc,2), 
+
+				ItemChargeback = Round(ChargeBack * Alloc,2)				
+
+				WHERE TotalWTLBS <> 0 
+
+
+
+			UPDATE #BuysellGradeAllocList SET 
+
+				Sale = ItemSales+ItemChargeBack,
+
+				Cost = ItemCost+ItemExpense,
+
+				Expense = ItemExpense,				
+
+				GrossProfit = (ItemSales+ItemChargeBack)-ItemCost-ItemExpense
+
+				WHERE TranSource = 'B'
+
+
+
+			UPDATE #BuysellGradeAllocList SET 
+
+				Sale = Round(Sale * Alloc,2),
+
+				Cost = Round(Cost * Alloc,2),
+
+				Expense = NULL,				
+
+				GrossProfit = Round(GrossProfit * Alloc,2)
+
+				WHERE TranSource = 'A'
+
+
+
+
+
+
+
+			
+
+			--Adjust for rounding errors.
+
+			-----------------------------------------------------------
+
+			CREATE TABLE #GPLedgerRoundingFix(
+
+				LedgerID INT,
+
+				CalcSale MONEY,
+
+				CalcCost MONEY,
+
+				CalcGP MONEY,
+
+				Sale MONEY,
+
+				Cost MONEY,
+
+				GP MONEY,
+
+				AdjSale MONEY,
+
+				AdjCost MONEY,
+
+				AdjGP MONEY
+
+			)
+
+			
+
+			INSERT #GPLedgerRoundingFix(LedgerID,CalcSale,CalcCost,CalcGP)
+
+				SELECT LedgerID, Sum(Sale),Sum(Cost),Sum(GrossProfit) 
+
+				FROM #BuysellGradeAllocList
+
+				GROUP BY LedgerID
+
+
+
+			UPDATE #GPLedgerRoundingFix SET
+
+				#GPLedgerRoundingFix.Sale = #BuySelllist.Sale,
+
+				#GPLedgerRoundingFix.Cost = #BuySelllist.Cost,
+
+				#GPLedgerRoundingFix.GP = #BuySelllist.Grossprofit
+
+			FROM #GPLedgerRoundingFix 
+
+			INNER JOIN #BuySelllist ON #GPLedgerRoundingFix.LedgerID = #BuySelllist.LedgerID
+
+
+
+			UPDATE #GPLedgerRoundingFix Set
+
+				AdjSale = Sale - CalcSale, 
+
+				AdjCost = Cost - CalcCost,
+
+				AdjGP = GP - CalcGP
+
+			
+
+			--Apply rounding fixes.	
+
+			UPDATE #BuysellGradeAllocList SET
+
+				Sale = A.Sale + AdjSale,
+
+				Cost = A.COst + AdjCost,
+
+				GrossProfit = A.GrossProfit + AdjGP
+
+			FROM #BuysellGradeAllocList A 
+
+			INNER JOIN #GPLedgerRoundingFix B ON A.LedgerID = B.LedgerID AND A.SeqNo = 1			 
+
+				
+
+			-----------------------------------------------------------
+
+
+
+			--Update BuySellList
+
+			UPDATE #BuySelllist SET 
+
+				Sale = B.Sale,
+
+				Cost = B.Cost,
+
+				GrossProfit = B.GrossProfit,
+
+				GradeID = B.GradeID,
+
+				TotalWeightLbs = B.WeightLbs,
+
+				SeqNo = 1		
+
+			FROM #BuySelllist A INNER JOIN #BuysellGradeAllocList B ON A.LedgerID =  B.LedgerID AND B.SeqNo = 1
+
+
+
+			INSERT #BuySelllist(LedgerID,BuySellNo,GrossProfit,Source,TradeDt,CustID,VendorID,GradeID,TotalWeightLbs,Sale,Cost,AdjType,AdjReason,GLAcct,PONumber,AdjustQty,SeqNo,DoGradeAlloc) 
+
+			SELECT 
+
+				B.LedgerID,B.BuySellNo,B.GrossProfit,Source,TradeDt,CustID,VendorID,B.GradeID,B.WeightLbs,B.Sale,B.Cost,AdjType,AdjReason,GLAcct,PONumber,AdjustQty,B.SeqNo,1
+
+				FROM #BuySelllist A 
+
+				INNER JOIN #BuysellGradeAllocList B ON A.LedgerID = B.LedgerID AND B.SeqNo > 1
+
+
+
+		END
+
+
+
+
+
+
+
+
+
+		
+
+
+
+
+
+
+
+    -- CREATE SUPPLIER ALLOCATION RECORDS FOR EVERY TRANSACTION. 
+
+    --==========================================================
+
+
+
+    -- BROKERAGE 
+
+	INSERT #SupplierAlloc(AllocType,VendorID,GradeID,BuySellNo,LedgerID,Allocation,InvVal,[Source],Qty,Sales,Cost,GrossProfit,TotalProfit,AdjQty,BrkExp)
+
+        SELECT 'BRK',
+
+				BUYSELL.VendorID, 
+
+				#BUYSELLLIST.GradeID,
+
+				BUYSELL.BuySellNo, 
+
+				LedgerID, 
+
+				1.00, NULL, 
+
+				#BUYSELLLIST.[Source], 				
+
+				#BUYSELLLIST.TotalWeightLbs,
+
+				#BUYSELLLIST.Sale,   
+
+				#BUYSELLLIST.Cost,
+
+				#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.AdjustQty,
+
+				BuySell.PFreightChg	
+
+			FROM BUYSELL INNER JOIN #BUYSELLLIST ON BUYSELL.BUYSELLNO = #BUYSELLLIST.BUYSELLNO			
+
+			WHERE ([Source] = 'B')
+
+				AND
+
+				(
+
+					BuySell.VENDORID <> '(INV)' 
+
+					OR 
+
+					(BuySell.VENDORID = '(INV)' AND NOT EXISTS(SELECT WksInvID FROM WKSInventory WHERE WKSInventory.BuySellno = BuySell.BuySellNo))
+
+				  )
+
+
+
+
+
+
+
+  
+
+  -- PURCHASE ADJUSTMENTS.    
+
+    INSERT #SupplierAlloc(AllocType,VendorID,GradeID,BuySellNo,LedgerID,Allocation,InvVal,[Source],Qty,Sales,Cost,GrossProfit,TotalProfit,AdjQty)
+
+        SELECT 'ADJ',
+
+				#BUYSELLLIST.VendorID, 
+
+				#BUYSELLLIST.GradeID, 
+
+				#BUYSELLLIST.BuySellNo, 
+
+				LedgerID, 
+
+				1.00, NULL, 
+
+				#BUYSELLLIST.[Source], 				
+
+				#BUYSELLLIST.AdjustQty,
+
+				#BUYSELLLIST.Sale,   
+
+				#BUYSELLLIST.Cost,
+
+				#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.AdjustQty				
+
+			FROM #BUYSELLLIST WHERE [Source] = 'A' AND AdjType = 'P'  
+
+
+
+
+
+
+
+   -- SALES ADJUSTMENTS.    
+
+    INSERT #SupplierAlloc(AllocType,VendorID, GradeID,BuySellNo,LedgerID,Allocation,InvVal,[Source],Qty,Sales,Cost,GrossProfit,TotalProfit,AdjQty)
+
+        SELECT 'ADJ',
+
+				#BUYSELLLIST.VendorID, 
+
+				#BUYSELLLIST.GradeID, 
+
+				#BUYSELLLIST.BuySellNo, 
+
+				LedgerID, 
+
+				1.00, NULL, 
+
+				#BUYSELLLIST.[Source], 				
+
+				0,	--#BUYSELLLIST.AdjustQty,
+
+				#BUYSELLLIST.Sale,   
+
+				#BUYSELLLIST.Cost,
+
+				#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.AdjustQty				
+
+			FROM #BUYSELLLIST 
+
+			WHERE [Source] = 'A' AND (AdjType = 'S' ) 
+
+			AND				
+
+				(
+
+					(#BUYSELLLIST.VENDORID <> '(INV)')
+
+					OR
+
+					(#BUYSELLLIST.VENDORID = '(INV)' AND  Coalesce(AdjReason,'') = 'TOLERANCE ADJUSTMENT')	
+
+					OR
+
+					(#BUYSELLLIST.VENDORID = '(INV)' AND NOT EXISTS(SELECT 1 FROM WKSINVENTORY WHERE WKSINVENTORY.BuySellNo = #BUYSELLLIST.BuySellNo ))			   
+
+				)
+
+
+
+
+
+
+
+
+
+  
+
+   -- BROKERAGE BANK FEES & INTEREST CHARGES.    
+
+    INSERT #SupplierAlloc(AllocType,VendorID, BuySellNo,LedgerID,Allocation,InvVal,[Source],Qty,Sales,Cost,GrossProfit,TotalProfit,AdjQty)
+
+        SELECT 'FEES',
+
+				#BUYSELLLIST.VendorID, 
+
+				#BUYSELLLIST.BuySellNo, 
+
+				LedgerID, 
+
+				1.00, NULL, 
+
+				#BUYSELLLIST.[Source], 				
+
+				#BUYSELLLIST.AdjustQty,
+
+				#BUYSELLLIST.Sale,   
+
+				#BUYSELLLIST.Cost,
+
+				#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.AdjustQty				
+
+			FROM #BUYSELLLIST 
+
+			WHERE ([Source] = 'F' OR [Source] = 'N' OR [Source] = 'D') AND (ISNULL(#BUYSELLLIST.VENDORID,'') <> '(INV)')
+
+
+
+ 
+
+    --INVENTORY PURCHASES **NON-CONVERTING **  
+
+    --==============================================   
+
+	INSERT #SupplierAlloc(AllocType,VendorID,GradeID,BuySellNo,LedgerID,WksDetailID,[Source],Qty,InvVal,TotalProfit,Sales,Cost,AdjQty)
+
+        SELECT 
+
+			'INV',
+
+			Inventory.VendorID, 
+
+			Inventory.GradeID,
+
+			WksInventory.BuySellNo, 
+
+			#BUYSELLLIST.LedgerID,
+
+			WksInventory.DetailID,			
+
+			#BUYSELLLIST.[Source],							
+
+			sum( dbo.CnvToBaseQtyUOM(WksInventory.[Weight],WksInventory.UOM) ),			
+
+			sum(WksInventory.wksInvValue),
+
+			#BUYSELLLIST.GrossProfit,
+
+			#BUYSELLLIST.Sale,
+
+			#BUYSELLLIST.Cost,
+
+			COALESCE(#BUYSELLLIST.AdjustQty,0)		
+
+        FROM WksInventory 
+
+			INNER JOIN #BUYSELLLIST ON WksInventory.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+			INNER JOIN Inventory ON WksInventory.Lotno = Inventory.Lotno 
+
+			INNER JOIN BUYSELL InvoiceBuysell WITH(NOLOCK)  ON WksInventory.BUYSELLNO = InvoiceBuysell.BUYSELLNO   
+
+			WHERE WksInventory.[Weight] <> 0 			
+
+			AND Coalesce(Inventory.ConvertingJobNo,0) = 0					--Exclude Converting Lots.
+
+			AND Coalesce(AdjType,'') <> 'P'									--Exclude Purchase Adjustments
+
+			AND Coalesce(AdjReason,'') <> 'TOLERANCE ADJUSTMENT'
+
+        GROUP BY WksInventory.BuySellNo, LedgerID, DetailID,[Source],Inventory.VendorID,Inventory.GradeID,#BUYSELLLIST.GrossProfit,#BUYSELLLIST.Sale,#BUYSELLLIST.Cost,#BUYSELLLIST.AdjustQty
+
+    
+
+
+
+
+
+
+
+    --INVENTORY PURCHASES **CONVERTING**  
+
+    --=========================================================================================================================			
+
+    -- Brakdown by Sublot.   
+
+    INSERT #_SubInventory	
+
+        SELECT 
+
+			WksInventory.BuySellNo,
+
+			#BUYSELLLIST.LedgerID,
+
+			WksInventory.DetailID,	--Sales Worksheet Detail ID		
+
+			WksInventory.WksInvID,  
+
+			#BUYSELLLIST.[Source],							
+
+			InventorySubLots.Lotno,
+
+			row_number() OVER (Partition by WksInventory.WksInvID, #BUYSELLLIST.LedgerID order by WksInventory.WksInvID, #BUYSELLLIST.LedgerID), 	
+
+			--row_number() OVER (Partition by #BUYSELLLIST.LedgerID, InventorySubLots.Lotno order by #BUYSELLLIST.LedgerID,InventorySubLots.Lotno), 						
+
+			InventorySubLots.VendorID, 
+
+			Inventory.GradeID, 
+
+			InventorySubLots.InvValuePrct,
+
+			InventorySubLots.WeightPrct,
+
+			WksInventory.WksInvValue,
+
+			dbo.CnvToBaseQtyUOM(WksInventory.[Weight],WksInventory.UOM),
+
+			NULL,NULL,#BUYSELLLIST.AdjustQty			
+
+		FROM #BUYSELLLIST 
+
+		INNER JOIN WksInventory ON  #BUYSELLLIST.BUYSELLNO = WksInventory.BUYSELLNO 
+
+        INNER JOIN Inventory WITH(NOLOCK)  ON WksInventory.Lotno = Inventory.Lotno 
+
+        INNER JOIN InventorySubLots ON InventorySubLots.Lotno = Inventory.LotNo         
+
+        WHERE WksInventory.[Weight] <> 0 		
+
+			AND Coalesce(ConvertingJobNo,0) <> 0				--Exclude Converting Lots.
+
+			AND Coalesce(#BUYSELLLIST.AdjType,'') <> 'P'						--Exclude Purchase Adjustments		
+
+			AND Coalesce(AdjReason,'') <> 'TOLERANCE ADJUSTMENT'
+
+
+
+
+
+	UPDATE #_SubInventory SET 
+
+		InvValue = Round(TotalInvValue * InvValuePrct,2),
+
+		InvWeight = Round(TotalWeightLbs * WeightPrct,0)
+
+
+
+
+
+			
+
+	-- TRUE-UP COST ALLOCATION VARIANCES.
+
+	CREATE TABLE #_TrueUp(WksInvID INT, LedgerID INT, Lotno CHAR(10), TotalCost Money, TotalWeight Decimal(18,5), 
+
+					AllocCost Money, AllocWeight Decimal(18,5), Variance Money DEFAULT 0, 
+
+					WtVariance Decimal(18,5) DEFAULT 0)	
+
+
+
+	INSERT #_TrueUp( WksInvID, LedgerID, Lotno, TotalCost, TotalWeight, AllocCost, AllocWeight )
+
+		SELECT WksInvID, LedgerID, Lotno, TotalInvValue, TotalWeightLbs, SUM(InvValue), SUM(InvWeight)  
+
+		FROM #_SubInventory GROUP BY WksInvID, LedgerID, Lotno, TotalInvValue, TotalWeightLbs
+
+
+
+	UPDATE #_TrueUp SET Variance = TotalCost - AllocCost,
+
+						WtVariance = TotalWeight - AllocWeight
+
+
+
+	--True-up Cost.					
+
+	UPDATE #_SubInventory 
+
+		SET	#_SubInventory.InvValue = #_SubInventory.InvValue + Variance 		
+
+		FROM #_SubInventory INNER JOIN #_TrueUp ON #_SubInventory.LedgerID = #_TrueUp.LedgerID AND #_SubInventory.WksInvID = #_TrueUp.WksInvID
+
+		WHERE #_SubInventory.LotSeq = 1 AND Variance <> 0	
+
+	--True-up Weight.					
+
+	UPDATE #_SubInventory 
+
+		SET	#_SubInventory.InvWeight = #_SubInventory.InvWeight + WtVariance 		
+
+		FROM #_SubInventory INNER JOIN #_TrueUp ON #_SubInventory.LedgerID = #_TrueUp.LedgerID AND #_SubInventory.WksInvID = #_TrueUp.WksInvID
+
+		WHERE #_SubInventory.LotSeq = 1 AND WtVariance <> 0	
+
+
+
+	-- POPULATE CONVERTING ALLOCATIONS.
+
+	INSERT #SupplierAlloc(AllocType,VendorID,GradeID,BuySellNo,LedgerID,WksDetailID,[Source],Qty,InvVal,TotalProfit,Sales,Cost,AdjQty)	
+
+        SELECT 'INV',
+
+			#_SubInventory.VendorID,
+
+			#_SubInventory.GradeID,
+
+			#_SubInventory.BuySellNo,
+
+			#_SubInventory.LedgerID,
+
+			#_SubInventory.DetailID,
+
+			#_SubInventory.[Source],
+
+			sum(InvWeight),
+
+			sum(InvValue),			
+
+			#BUYSELLLIST.GrossProfit,
+
+			#BUYSELLLIST.Sale,
+
+			#BUYSELLLIST.Cost,
+
+			#BUYSELLLIST.AdjustQty
+
+		FROM #_SubInventory INNER JOIN #BUYSELLLIST ON #_SubInventory.LedgerID = #BUYSELLLIST.LedgerID  
+
+			GROUP BY #_SubInventory.VendorID,#_SubInventory.GradeID, #_SubInventory.BuySellNo,#_SubInventory.LedgerID,
+
+				#_SubInventory.DetailID,#_SubInventory.[Source],#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.Sale,#BUYSELLLIST.Cost,#BUYSELLLIST.AdjustQty
+
+
+
+
+
+
+
+
+
+	--=========================================================================================================================			
+
+    
+
+     --GROSS PROFIT ADJUSTMENTS AND WRITE OFFS (Not associated with any supplier)
+
+     IF @ReferrerNo = ''
+
+		 INSERT #SupplierAlloc(AllocType,VendorID,GradeID, BuySellNo,LedgerID,Allocation,InvVal,[Source],Qty,Sales,Cost,GrossProfit,TotalProfit)
+
+		 SELECT 'GPJ',
+
+				Inventory.VendorID, --'(GPA)', 
+
+				Inventory.GradeID,
+
+				Convert(char(12),#BUYSELLLIST.LedgerID), 
+
+				#BUYSELLLIST.LedgerID, 
+
+				1.00, NULL, 
+
+				#BUYSELLLIST.[Source], 				
+
+				dbo.Convert_to_UOM(GPLEDGER.AdjWeight,AdjWeightUOM,'L') Qty,
+
+				#BUYSELLLIST.Sale,   
+
+				#BUYSELLLIST.Cost,
+
+				#BUYSELLLIST.GrossProfit,
+
+				#BUYSELLLIST.GrossProfit
+
+			FROM #BuySellList 
+
+				INNER JOIN GPLEDGER ON #BuySellList.LedgerID = GPLedger.LedgerID 
+
+				LEFT JOIN Inventory ON GPLEDGER.LotNo = Inventory.LotNo
+
+			WHERE #BuySellList.SOURCE = 'I'    --SOURCE = 'E'
+
+
+
+
+
+
+
+
+
+    -- GET TOTAL WEIGHT & PROFIT OF EACH (INV) INVENTORY SALE WORKSHEET	
+
+    --=================================================================
+
+    --(Note: Can not use worksheet totalweightlbs field because sale wt may be diff then purchase weights)   
+
+
+
+
+
+
+
+    
+
+    INSERT #TotalInvVal
+
+    SELECT BuySellno, 
+
+		LedgerID, 
+
+		Sum(COALESCE(InvVal,0)), 
+
+		Sum(Qty)				
+
+    FROM #SupplierAlloc
+
+    WHERE (AllocType = 'INV' OR AllocType = 'BRK') 
+
+    GROUP BY BuySellNo, LedgerID
+
+    
+
+--SELECT * FROM #TotalInvVal	
+
+
+
+
+
+    UPDATE #SupplierAlloc SET 
+
+		TotalQty = Total_Qty,
+
+		TotalInvVal = CASE WHEN AllocType = 'BRK' THEN NULL ELSE Total_InvVal END		
+
+    FROM #SupplierAlloc INNER JOIN #TotalInvVal ON #SupplierAlloc.BuySellNo = #TotalInvVal.BuysellNo
+
+        AND #SupplierAlloc.LedgerID = #TotalInvVal.LedgerID
+
+        INNER JOIN BUYSELL WITH(NOLOCK) ON BUYSELL.BUYSELLNO = #SupplierAlloc.BUYSELLNO
+
+    WHERE AllocType='INV' OR AllocType = 'BRK' 
+
+
+
+
+
+
+
+	-- GET TOTAL WEIGHT OF THE WORKSHEET DETAILS FOR EACH INVENTORY SALE.
+
+	--===================================================================
+
+	--(Note: Donot rely on WksDetail.PWeight matching linked inventory items) 
+
+	INSERT #WKSDETAIL
+
+		SELECT DetailID, #SupplierAlloc.BuySellno, SAmount, SUM(Qty) 		
+
+			FROM #SupplierAlloc INNER JOIN WKSDETAIL ON #SupplierAlloc.WksDetailID = WKSDETAIL.DetailID  
+
+			WHERE AllocType='INV'  AND Source = 'B'
+
+			GROUP BY DetailID, #supplieralloc.BuySellno, SAmount  
+
+
+
+
+
+	-- CALC PROFIT PER UOM ON EACH INVENTORY LOT SOLD.
+
+	--================================================
+
+	/* Special Case: Get value of any product sales not tied to inventory. Treat these as sales chargebacks. */
+
+	INSERT #ChargeBackItems
+
+		SELECT WksDetail.BuySellNo, Sum(SAmount)
+
+			FROM WksDetail INNER JOIN #BUYSELLLIST ON WksDetail.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+			WHERE #BUYSELLLIST.VendorID = '(INV)' AND Source = 'B'
+
+				AND NOT EXISTS(SELECT WksInvID FROM WksInventory WITH (NOLOCK) WHERE WksInventory.DetailID = WksDetail.DetailID )
+
+			GROUP BY WksDetail.BuysellNo
+
+
+
+
+
+
+
+	----/* (Calculate Sales, Chargebacks & Expenses per Inventory Item)*/
+
+    UPDATE #SupplierAlloc 		
+
+		SET 
+
+			--(Worksheet Detail Sales per base UOM) X Inventory Weight
+
+			InvSale = ( (#WKSDETAIL.SAmount / #WKSDETAIL.TotalQty) * Qty), 
+
+						
+
+			--Worksheet Charegbacks per base UOM. 
+
+			InvSaleChgBk = (((BuySell.SFreightChg + COALESCE(#ChargeBackItems.ChargeBackAmt,0)) / #SupplierAlloc.TotalQty) * Qty),			
+
+			
+
+			--Worksheet Expenses per base UOM. 
+
+			ExpVal =((( BuySell.PFreightChg) / #SupplierAlloc.TotalQty) * Qty)		 	  
+
+			
+
+    FROM #WKSDETAIL WITH(NOLOCK) INNER JOIN #SupplierAlloc ON #WKSDETAIL.WksDetailID = #SupplierAlloc.WksDetailID
+
+		INNER JOIN BUYSELL WITH(NOLOCK) ON BUYSELL.BUYSELLNO = #SupplierAlloc.BuySellNo		
+
+		LEFT JOIN #ChargeBackItems ON BUYSELL.BuySellNo = #ChargeBackItems.BuySellNo
+
+	WHERE AllocType = 'INV' AND Source = 'B' AND #WKSDETAIL.TotalQty <> 0 AND #SupplierAlloc.TotalQty <> 0
+
+
+
+
+
+	
+
+	/* (Calculate Profit per Inventory Item)*/
+
+	UPDATE #SupplierAlloc 	
+
+		SET 
+
+			Sales = round(InvSale + InvSaleChgBk,2),
+
+			Cost = Round(ExpVal + InvVal,2),
+
+			GrossProfit = round((InvSale + InvSaleChgBk) - ExpVal - InvVal,2),
+
+			InvSale = InvSale+InvSaleChgBk
+
+	WHERE AllocType = 'INV' AND Source = 'B'
+
+
+
+
+
+	--/* APPLY BROKERAGE EXPENSES */  
+
+  UPDATE #SupplierAlloc 		
+
+		SET ExpVal = BrkExp WHERE Source = 'B' AND AllocType = 'BRK'
+
+
+
+
+
+	
+
+	-- ALLOCATE ADJUSTMENTS BY RELATIVE WEIGHT 
+
+	--========================================
+
+    UPDATE #SupplierAlloc 
+
+    SET 		
+
+		Allocation =  (Qty/TotalQty),		
+
+		GrossProfit = round(TotalProfit*(Qty/TotalQty),2),
+
+		Sales = round(Sales *(Qty/TotalQty),2),   
+
+		Cost = round(Cost *(Qty/TotalQty),2)   
+
+	WHERE AllocType = 'INV' AND TotalQty <> 0 AND (Source = 'A' Or Source='F' Or Source='N' OR Source = 'D') 
+
+	
+
+
+
+
+
+    -- ASSIGN WEIGHTS FOR REPORTING.
+
+	--==============================
+
+
+
+	-- Set weight to zero for non-purchase
+
+    UPDATE #SupplierAlloc SET Qty=0 WHERE (Source <> 'B' AND Source <> 'A' )  OR  (Source = 'A' AND AdjQty = 0)
+
+    
+
+   --Allocate Purchase Adjustment Weight to contributing suppliers.
+
+    UPDATE #SupplierAlloc Set Qty = round((Qty/TotalQty)* AdjQty,0) WHERE Source = 'A' and AllocType <> 'ADJ' and AdjQty <> 0 AND TotalQty <> 0 
+
+
+
+	-- Set Purchase Adjustment Weight for Brokerage.    
+
+	UPDATE #SupplierAlloc Set Qty = AdjQty WHERE AllocType = 'BRK' AND Source = 'A'
+
+
+
+
+
+	-- Assign GP Adj label.
+
+	UPDATE #SupplierAlloc SET VendorNm = CASE WHEN #SupplierAlloc.VendorID = '(GPA)' THEN '(Gross-Profit Adj)' ELSE Supplier.CompanyNm END 
+
+		FROm #SupplierAlloc LEFT JOIN Counterparty Supplier ON Supplier.CPID = #SupplierAlloc.VendorID
+
+
+
+
+
+
+
+
+
+	------------------------------------------------------------------------------------------------------------
+
+	-- MASTER GROSS PROFIT TRUE-UP SECTION
+
+	------------------------------------------------------------------------------------------------------------
+
+
+
+	CREATE TABLE #_TrueUpWrkList(
+
+		LedgerID INT,
+
+		BuySellNo CHAR(12),
+
+		GrossProfit MONEY,
+
+		Sales MONEY,
+
+		Cost MONEY,
+
+		CalcGrossProfit MONEY,
+
+		CalcSales MONEY,
+
+		CalcCost MONEY,
+
+		FixGrossProfit MONEY,
+
+		FixSales MONEY,
+
+		FixCost MONEY
+
+	)
+
+
+
+	CREATE TABLE #_TrueUpGP_Apply(
+
+		AllocID INT,
+
+		LedgerID INT,
+
+		ApplyGrossProfit MONEY,
+
+		ApplySales MONEY,
+
+		ApplyCost MONEY,
+
+		Seq INT
+
+		)
+
+
+
+	INSERT #_TrueUpWrkList
+
+		select	
+
+			#SupplierAlloc.LedgerID, #SupplierAlloc.BuySellNo, 
+
+			GPLedger.GrossProfit, GPLedger.Sale, GPLedger.Cost,
+
+			sum(#SupplierAlloc.GrossProfit), sum(#SupplierAlloc.sales), sum(#SupplierAlloc.cost), 
+
+			0,0,0	
+
+	from #SupplierAlloc INNER JOIN GPLEDGER ON #SupplierAlloc.LedgerID = GPLEDGER.LedgerID
+
+	--where #SupplierAlloc.source = 'B' 
+
+	group by #SupplierAlloc.LedgerID, #SupplierAlloc.BuySellNo, GPLedger.GrossProfit, GPLedger.Sale, GPLedger.Cost
+
+	HAVING SUM(#SupplierAlloc.GrossProfit) <> GPLEDGER.GrossProfit
+
+
+
+
+
+	UPDATE #_TrueUpWrkList
+
+		SET FixGrossProfit = GrossProfit - CalcGrossProfit,
+
+			FixSales = Sales-CalcSales,
+
+			FixCost = Cost-CalcCost		
+
+
+
+	INSERT #_TrueUpGP_Apply
+
+		select	#SupplierAlloc.AllocID, 
+
+				#SupplierAlloc.LedgerID, 
+
+				#_TrueUpWrkList.FixGrossProfit,
+
+				#_TrueUpWrkList.FixSales,
+
+				#_TrueUpWrkList.FixCost,
+
+				row_number() OVER (Partition by #SupplierAlloc.LedgerID order by #SupplierAlloc.LedgerID) Seq 	
+
+		from #SupplierAlloc INNER JOIN #_TrueUpWrkList ON #SupplierAlloc.LedgerID = #_TrueUpWrkList.LedgerID
+
+		ORDER BY #SupplierAlloc.LedgerID 
+
+
+
+	UPDATE #SupplierAlloc SET
+
+		GrossProfit = GrossProfit + ApplyGrossProfit,
+
+		Sales = Sales + ApplySales,
+
+		Cost = Cost + ApplyCost
+
+		FROM #SupplierAlloc INNER JOIN #_TrueUpGP_Apply ON #SupplierAlloc.AllocID = #_TrueUpGP_Apply.AllocID AND Seq = 1
+
+
+
+	--==============================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-- PRODUCE FINAL REPORT: GROSS PROFIT BY SUPPLIER + PRODUCT.
+
+	--==========================================================
+
+	IF @ReportType = 'SUPPLIER' BEGIN
+
+
+
+
+
+	--Get Customer Name for Unapplied Cash Bank Fees	
+
+	IF EXISTS(Select * FROM #BuySellList WHERE Source = 'F' AND AdjType = 'B')
+
+		UPDATE #BuySellList SET CustID = GPLedger.AdjCPID
+
+			FROM #BuySellList
+
+			INNER JOIN GPLedger ON #BuySellList.LedgerID = GPLedger.LedgerID
+
+		WHERE #BuySellList.Source = 'F' AND #BuySellList.AdjType = 'B'
+
+
+
+
+
+	IF @RunBySummary=0 begin
+
+
+
+	
+
+		SELECT	CASE WHEN #SupplierAlloc.VendorID = '(GPA)' THEN '(Gross-Profit Adj)' ELSE Supplier.CompanyNm END AS Supplier,				
+
+				#SupplierAlloc.BuySellNo As [Wks No], 
+
+				Customer.CompanyNm Customer,
+
+				#BuySellList.TradeDt As [TradeDt], 
+
+				#BuySellList.PONumber As [OrderNo],
+
+				dbo.SETTRADETYPE(#BuySellList.[Source],#BuySellList.AdjType,#BuySellList.VendorID) AS [Type],
+
+				ISNULL(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM),0) AS [Weight],
+
+				#BuySellList.[Source],			
+
+				CAST(#SupplierAlloc.Sales As decimal(22,2)) As [Sales],  
+
+				CAST(#SupplierAlloc.ExpVal As decimal(22,2)) AS Expenses, 
+
+				CAST(#SupplierAlloc.Cost-#SupplierAlloc.ExpVal As decimal(22,2)) AS Purchase, 
+
+				CAST(#SupplierAlloc.Cost As decimal(22,2)) As [Cost],
+
+				CAST(#SupplierAlloc.GrossProfit As decimal(22,2)) As [GrossProfit],
+
+				CAST(ISNULL(#SupplierAlloc.GrossProfit/NULLIF(#SupplierAlloc.Sales,0),0) * 100 As decimal(22,2)) As [Margin],
+
+				CAST(ISNULL(#SupplierAlloc.GrossProfit/NULLIF(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM),0),0) As decimal(22,2)) As [MarginPerUOM],
+
+				WksType as '-Hidden-WksType'
+
+			FROM #BuySellList 
+
+				INNER JOIN #SupplierAlloc ON #BuySellList.LedgerID = #SupplierAlloc.LedgerID
+
+				LEFT JOIN Counterparty Supplier ON Supplier.CPID = #SupplierAlloc.VendorID
+
+				LEFT JOIN BUYSELL WITH(NOLOCK)  ON #BuySellList.BUYSELLNO = BUYSELL.BUYSELLNO	        
+
+				LEFT JOIN Counterparty Customer ON Customer.CPID = #BuySellList.CustID
+
+				LEFT JOIN Address WITH(NOLOCK) ON BuySell.CustID = Address.CpID AND BuySell.ShipToID = Address.Type 
+
+				LEFT JOIN COUNTRY WITH(NOLOCK) ON Address.Country=Country.CountryID
+
+			WHERE (@SupplierID = '' OR @SupplierID = #SupplierAlloc.VendorID	)	
+
+			AND (@CustomerID = '' OR @CustomerID = #BuySellList.CustID) 
+
+			AND (@CountryCode = '' OR Address.Country = @CountryCode)
+
+			ORDER BY Supplier.CompanyNm, #BuySellList.TradeDt, #SupplierAlloc.BuySellNo 
+
+     end
+
+
+
+	 else
+
+
+
+	 begin 
+
+		  SELECT 
+
+		        CASE WHEN #SupplierAlloc.VendorID = '(GPA)' THEN '(Gross-Profit Adj)' ELSE Supplier.CompanyNm END AS Supplier,				
+
+				'' As [Wks No], 
+
+				--Customer.CompanyNm Customer,
+
+				--#BuySellList.TradeDt As [Trade Date], 
+
+				--#BuySellList.PONumber As [Order No],
+
+				--'' AS [Type],
+
+				cast (ISNULL([dbo].[FormatQty](dbo.Convert_to_UOM(Sum(#SupplierAlloc.Qty),'L',@ReportUOM),@ReportUOM),0) as float) AS [Weight],
+
+				--#BuySellList.[Source],			
+
+				CAST(Sum(#SupplierAlloc.Sales) As decimal(22,2)) As [Sales],  
+
+				CAST(Sum(#SupplierAlloc.ExpVal) As decimal(22,2)) AS Expenses, 
+
+				CAST(Sum(#SupplierAlloc.Cost)-Sum(#SupplierAlloc.ExpVal) As decimal(22,2)) AS Purchase, 
+
+				CAST(Sum(#SupplierAlloc.Cost) As decimal(22,2)) As [Cost],
+
+				CAST(Sum(#SupplierAlloc.GrossProfit) As decimal(22,2)) As [GrossProfit],
+
+				CAST(ISNULL(Sum(#SupplierAlloc.GrossProfit)/NULLIF(Sum(#SupplierAlloc.Sales),0),0) * 100 As decimal(22,2)) As [Margin],
+
+				CAST(ISNULL(Sum(#SupplierAlloc.GrossProfit)/NULLIF(dbo.Convert_to_UOM(Sum(#SupplierAlloc.Qty),'L',@ReportUOM),0),0) As decimal(22,2)) As [MarginPerUOM],
+
+				'' as '-Hidden-WksType'
+
+			FROM #BuySellList 
+
+				INNER JOIN #SupplierAlloc ON #BuySellList.LedgerID = #SupplierAlloc.LedgerID
+
+				LEFT JOIN Counterparty Supplier ON Supplier.CPID = #SupplierAlloc.VendorID
+
+				LEFT JOIN BUYSELL WITH(NOLOCK)  ON #BuySellList.BUYSELLNO = BUYSELL.BUYSELLNO	        
+
+				LEFT JOIN Counterparty Customer ON Customer.CPID = #BuySellList.CustID
+
+				LEFT JOIN Address WITH(NOLOCK) ON BuySell.CustID = Address.CpID AND BuySell.ShipToID = Address.Type 
+
+				LEFT JOIN COUNTRY WITH(NOLOCK) ON Address.Country=Country.CountryID
+
+			WHERE (@SupplierID = '' OR @SupplierID = #SupplierAlloc.VendorID	)	
+
+			AND (@CustomerID = '' OR @CustomerID = #BuySellList.CustID) 
+
+			AND (@CountryCode = '' OR Address.Country = @CountryCode)
+
+			GROUP BY #SupplierAlloc.VendorID,Supplier.CompanyNm
+
+			ORDER BY Supplier.CompanyNm--, #BuySellList.TradeDt, #SupplierAlloc.BuySellNo 
+
+	 end
+
+
+
+
+
+
+
+			RETURN
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ -- PRODUCE FINAL REPORT: GROSS PROFIT BY SUPPLIER + PRODUCT + WKS. FOR RECYCLING PROFIT ANALYSIS
+
+    --==============================================================================================  
+
+	IF @ReportType = 'SUPPLIER+GRADE+WKS' BEGIN
+
+
+
+		-- SET DEFAULT SCALE WEIGHT.
+
+		SELECT @ScaleWeightNm = CoalEsce(OptionValue,'LBS') FROM Options WHERE OptionName = 'ScaleWtUOM'
+
+		IF @ScaleWeightNm = 'LBS' BEGIN
+
+			SET @ScaleWeight = 'L'
+
+			SET @ScaleWeighFactor = 2000
+
+		END
+
+		IF @ScaleWeightNm = 'KG' BEGIN
+
+			SET @ScaleWeight = 'K'
+
+			SET @ScaleWeighFactor = 1000
+
+		END		
+
+
+
+		--Re-Assign Account for Purchase Adjustments on Inventory Sales.
+
+		UPDATE #SupplierAlloc SET VendorID = GPLedger.AdjCPID, VendorNm = COunterparty.CompanyNm 
+
+			FROM #SupplierAlloc inner join gpledger on #SupplierAlloc.ledgerid = gpledger.ledgerid 
+
+				INNER JOIN Counterparty ON Counterparty.CPID = GPLedger.AdjCPID 
+
+			WHERE AllocType = 'ADJ' And VendorID = '(INV)' --AND #SupplierAlloc.Cost <> 0 
+
+
+
+		--Re-Assign Product from Expenses 
+
+		UPDATE #SupplierAlloc
+
+			SET AltProductName = (SELECT TOP 1 (InvoiceDesc) from wksdelivery WHERE wksdelivery.BuYSellno = #SupplierAlloc.BuySellno)
+
+		WHERE GradeID IS NULL
+
+		UPDATE #SupplierAlloc SET AltProductName = 'MISC-CHGS' WHERE GradeID IS NULL AND AltProductName IS NULL 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		INSERT #RecyProfitData
+
+		SELECT 
+
+			#SupplierAlloc.BuySellNo,
+
+			AllocType,
+
+			--ROW_NUMBER() OVER (Partition by BuySell.BuySellNo, AllocType order by BuySell.BuySellNo,AllocType), 	
+
+			BuySell.InvoiceDt,
+
+			#SupplierAlloc.VendorID,
+
+			#SupplierAlloc.VendorNm,
+
+			ShipFromID,
+
+			#SupplierAlloc.GradeID,
+
+			CASE WHEN Grade.Description IS NULL THEN #SupplierAlloc.AltProductName ELSE Grade.Description END GradeNm,
+
+			Qty WeightLbs,
+
+			Cost Purchase,
+
+			#SupplierAlloc.ExpVal , 
+
+			0 Adjustment,
+
+			Sales,
+
+			GrossProfit,
+
+			CASE WHEN COALESCE(ReferrerNo1,'') = '' THEN ReferrerNo2 ELSE ReferrerNo1 END, 
+
+			BuySell.PFreightChg,
+
+			#SupplierAlloc.TotalQty,
+
+			0,0,0,0,0,0 
+
+		FROM #SupplierAlloc INNER JOIN BUYSELL WITH (NOLOCK) ON #SupplierAlloc.BuySellNo = BuySell.BuySellNo
+
+		LEFT JOIN Grade WITH (NOLOCK) ON #SupplierAlloc.GradeID = Grade.GradeID
+
+		WHERE 
+
+			(@SupplierID = '' OR @SupplierID = #SupplierAlloc.VendorID	)	
+
+			--(@Location = '' OR @Location = #SupplierAlloc.Location )
+
+		ORDER by Buysell.BuySellno, AllocType
+
+
+
+		IF @ReferrerNo <> ''  
+
+			UPDATE #RecyProfitData SET Referrer = @ReferrerNo 
+
+		
+
+
+
+
+
+
+
+
+
+		--A. Round & Assign Inventory Sales Expenses.
+
+		UPDATE #RecyProfitData SET Freight = Round(Freight,2) WHERE AllocType = 'INV'				
+
+		--B. Calculate & Assign Expenses.
+
+		UPDATE #RecyProfitData SET Freight = Round(WksExpenses * (Qty/TotalQty),2) WHERE AllocType = 'BRK' And TotalQty <> 0 
+
+		--C. Apply Freight Portion.
+
+		UPDATE #RecyProfitData SET Purchase = Purchase - Freight WHERE AllocType = 'INV' OR AllocType = 'BRK'  
+
+		--D. Assign Purchase Adjustments
+
+		UPDATE #RecyProfitData SET Adjustment = Purchase, Purchase =0  WHERE AllocType = 'ADJ' AND Sales=0 AND Purchase <> 0
+
+		--E. Assign per UOM Prices		
+
+		UPDATE	#RecyProfitData SET
+
+				SalesPerUOM = round((Sales/Qty) * @ScaleWeighFactor,2), 
+
+				PurchasePerUOM = round((Purchase/Qty) * @ScaleWeighFactor,2),
+
+				AdjustmentPerUom = round((Adjustment/Qty) * @ScaleWeighFactor,2),
+
+				FreightPerUOM = round((Freight/Qty) * @ScaleWeighFactor,2),  
+
+				GrossProfitUOM = round((GrossProfit/Qty) * @ScaleWeighFactor,2) 
+
+			WHERE COALESCE(Qty,0) <> 0 
+
+
+
+		SELECT 			
+
+			NULL WarehouseID,			
+
+			VendorID,
+
+			VendorNm,	
+
+			ShipFromID,		
+
+			GradeID,
+
+			GradeNm,
+
+			'' UnitType,						
+
+			Qty BaseWeight, 
+
+			Sales,		
+
+			SalesPerUOM,
+
+			Purchase, 
+
+			PurchasePerUOM,	
+
+			Freight,
+
+			FreightPerUom,
+
+			Adjustment,
+
+			AdjustmentPerUOM,
+
+			0 IntFreight, 	
+
+			0 Processing,
+
+			1 ShipmentCnt,
+
+			BuySellNo,
+
+			NULL ScaleTicketNo,
+
+			InvoiceDt,
+
+			1 IsSoldAsGrade,
+
+			Referrer.Name,
+
+			0 ProfitItemID,
+
+			'Actual' PriceModel,
+
+			GrossProfit Profit,
+
+			GrossProfitUOM
+
+			FROM #RecyProfitData LEFT JOIN REFERRER ON #RecyProfitData.Referrer = Referrer.ReferrerNo
+
+			ORDER BY VendorNm, ShipFromID, GradeID, BuySellNo
+
+		
+
+		RETURN
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    -- PRODUCE FINAL REPORT: GROSS PROFIT BY SUPPLIER + PRODUCT.
+
+--==========================================================  
+
+
+
+	IF @ReportType = 'SUPPLIER+GRADE' OR @ReportType = 'SUPPLIER+GRADE+WKS' BEGIN
+
+
+
+		--*Group by Vendor+Grade	
+
+		IF @GroupBy = 0 BEGIN
+
+			SELECT	
+
+				#SupplierAlloc.VendorNm Supplier,							
+
+				'' ShipFrom ,
+
+				UPPER(Grade.Description) [Description],	
+
+				COUNT(DISTINCT #SupplierAlloc.BuySellNo) AS Shipments,					
+
+				SUM(#SupplierAlloc.Sales) Sales,  				
+
+				SUM(#SupplierAlloc.Cost) TotalCost, 				
+
+				SUM(#SupplierAlloc.GrossProfit) GrossProfit,
+
+				SUM(   dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM)  ) [Weight],
+
+				'' As [AvgCost],
+
+				CAST(SUM(#SupplierAlloc.GrossProfit)/NULLIF(SUM(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM)),0) As decimal(10,2)) AS [GP/UOM]
+
+			FROM #SupplierAlloc 
+
+				LEFT JOIN BUYSELL WITH(NOLOCK) ON #SupplierAlloc.BUYSELLNO = BUYSELL.BUYSELLNO	        
+
+				LEFT JOIN Counterparty Supplier ON Supplier.CPID = #SupplierAlloc.VendorID				
+
+				LEFT JOIN Counterparty Customer ON Customer.CPID = BuySell.CustID
+
+				LEFT JOIN GRADE ON #SupplierAlloc.GradeID = Grade.GradeID
+
+			WHERE 
+
+				(@SupplierID = '' OR @SupplierID = #SupplierAlloc.VendorID	)	
+
+				AND (@CustomerID = '' OR @CustomerID = BuySell.CustID)    				
+
+			GROUP BY #SupplierAlloc.VendorNm, Grade.[Description]
+
+			ORDER BY VendorNm, [Description]			
+
+		END
+
+
+
+		--*Group by Vendor+Location+Grade	
+
+		IF @GroupBy = 1 BEGIN
+
+			SELECT	
+
+				#SupplierAlloc.VendorNm,
+
+				BuySell.ShipFromID ShipFrom,
+
+				UPPER(Grade.Description) Description,	
+
+				COUNT(DISTINCT #SupplierAlloc.BuySellNo) AS Shipments,			
+
+				SUM(#SupplierAlloc.Sales) Sales,  				
+
+				SUM(#SupplierAlloc.Cost) TotalCost, 				
+
+				SUM(#SupplierAlloc.GrossProfit) GrossProfit,
+
+				CAST(SUM(#SupplierAlloc.GrossProfit)/NULLIF(SUM(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM)),0) As decimal(10,2)) AS [GP/UOM],
+
+				'' As [AvgCost],
+
+				SUM(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM)) [Weight]
+
+			FROM #SupplierAlloc 
+
+				LEFT JOIN BUYSELL WITH(NOLOCK) ON #SupplierAlloc.BUYSELLNO = BUYSELL.BUYSELLNO				
+
+				LEFT JOIN Counterparty Supplier ON Supplier.CPID = #SupplierAlloc.VendorID				
+
+				LEFT JOIN Counterparty Customer ON Customer.CPID = BuySell.CustID
+
+				LEFT JOIN GRADE ON #SupplierAlloc.GradeID = Grade.GradeID
+
+			WHERE 
+
+				(@SupplierID = '' OR @SupplierID = #SupplierAlloc.VendorID	)	
+
+				AND (@CustomerID = '' OR @CustomerID = BuySell.CustID)    				
+
+			GROUP BY #SupplierAlloc.VendorNm, BuySell.ShipFromID, Grade.Description
+
+			ORDER BY VendorNm, ShipFrom, [Description]
+
+		END
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-- PRODUCE FINAL REPORT: GROSS PROFIT BY PRODUCT.
+
+	--===============================================
+
+	
+
+	
+
+	IF @ReportType = 'GRADE' BEGIN
+
+
+
+		UPDATE #SupplierAlloc SET
+
+			SalesPerUOM = #SupplierAlloc.Sales / ISNULL(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM),0),
+
+			CostsPerUom  = #SupplierAlloc.Cost / ISNULL(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM),0),
+
+			MarginPerUOM = #SupplierAlloc.GrossProfit / ISNULL(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM),0)
+
+			WHERE ISNULL(#SupplierAlloc.Qty,0) <> 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+		--Detail Report
+
+		IF @GroupBy = 0 
+
+
+
+
+
+			SELECT 				
+
+				CASE WHEN Grade.[Description] IS NULL THEN 'UNASSIGNED' ELSE Grade.[Description] END AS GradeNm, 
+
+				InvoiceDt PostingDt,
+
+				BUYSELL.ShippingDt,
+
+				CASE WHEN Source='B' THEN 'Invoice' ELSE 'Adjustment' END TranType,
+
+				#SupplierAlloc.BuySellNo TranNo, 
+
+				ISNULL(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM),0) AS Quantity,
+
+				SalesPerUOM,
+
+				#SupplierAlloc.Sales,
+
+				CostsPerUOM,
+
+				#SupplierAlloc.Cost,
+
+				MarginPerUOM,
+
+				#SupplierAlloc.GrossProfit Margin ,
+
+				#SupplierAlloc.BuySellNo as [Wks #]
+
+				FROM #SupplierAlloc 
+
+				LEFT JOIN BUYSELL WITH(NOLOCK) ON #SupplierAlloc.BUYSELLNO = BUYSELL.BUYSELLNO	        
+
+				LEFT JOIN Counterparty Supplier ON Supplier.CPID = #SupplierAlloc.VendorID				
+
+				LEFT JOIN Counterparty Customer ON Customer.CPID = BuySell.CustID
+
+				LEFT JOIN GRADE ON #SupplierAlloc.GradeID = Grade.GradeID				
+
+			WHERE 
+
+				(@SupplierID = '' OR @SupplierID = #SupplierAlloc.VendorID	)	
+
+				AND (@CustomerID = '' OR @CustomerID = BuySell.CustID)   
+
+				AND (@ProductCategory = '' OR Grade.ProductCategoryID = @ProductCategory)
+
+				AND (@ProductGrade = '' OR Grade.GradeID = @ProductGrade) 
+
+				ORDER BY Grade.Description
+
+		
+
+		--Summary Report	
+
+		IF @GroupBy = 1 BEGIN
+
+			
+
+			CREATE TABLE #Summary(
+
+				GradeNm CHAR(100),
+
+				GradeID CHAR(15),
+
+				Weight DECIMAL(22,5),
+
+				Sales MONEY,
+
+				SalesPerUOM MONEY,
+
+				Costs MONEY,
+
+				CostsPerUOM MONEY,
+
+				Margin MONEY,
+
+				MarginPerUOM MONEY,
+
+				ProductCategory char(30)
+
+			)
+
+
+
+			INSERT #Summary
+
+			SELECT 
+
+				CASE WHEN Grade.[Description] IS NULL THEN 'UNASSIGNED' ELSE UPPER(Grade.[Description]) END AS GradeNm, 				
+
+				Grade.GradeID,
+
+				SUM(ISNULL(dbo.Convert_to_UOM(#SupplierAlloc.Qty,'L',@ReportUOM),0)) AS Quantity,
+
+				SUM(#SupplierAlloc.Sales),0,
+
+				SUM(#SupplierAlloc.Cost),0,
+
+				SUM(#SupplierAlloc.GrossProfit),0,
+
+				Grade.ProductCategoryID AS [Product Category]
+
+				FROM #SupplierAlloc 
+
+				LEFT JOIN BUYSELL WITH(NOLOCK) ON #SupplierAlloc.BUYSELLNO = BUYSELL.BUYSELLNO	        
+
+				LEFT JOIN Counterparty Supplier ON Supplier.CPID = #SupplierAlloc.VendorID				
+
+				LEFT JOIN Counterparty Customer ON Customer.CPID = BuySell.CustID
+
+				LEFT JOIN GRADE ON #SupplierAlloc.GradeID = Grade.GradeID
+
+			WHERE 
+
+				(@SupplierID = '' OR @SupplierID = #SupplierAlloc.VendorID	)	
+
+				AND (@CustomerID = '' OR @CustomerID = BuySell.CustID)   
+
+				AND (@ProductGrade = '' OR Grade.GradeID = @ProductGrade) 
+
+				AND (@ProductCategory = '' OR Grade.ProductCategoryID = @ProductCategory) 				
+
+				GROUP BY Grade.[Description], Grade.GradeID, Grade.ProductCategoryID
+
+				ORDER BY Grade.[Description], Grade.GradeID  --IS NULL THEN 'UNASSIGNED' ELSE Grade.[Description] END 
+
+
+
+			UPDATE #Summary SET
+
+				SalesPerUOM = Sales/Weight,
+
+				CostsPerUOM = Costs/Weight,
+
+				MarginPerUOM = Margin/Weight
+
+			WHERE Weight <> 0 
+
+
+
+			SELECT * FROM #Summary
+
+
+
+
+
+
+
+		END
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

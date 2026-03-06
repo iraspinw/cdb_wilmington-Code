@@ -1,0 +1,560 @@
+CREATE   PROCEDURE [dbo].[cw_GetGrossProfitByCustomerGrade] 
+
+	@FromDate datetime, 
+
+	@ToDate datetime, 
+
+	@CoID char(2), 
+
+	@TradeType varchar(25), 
+
+	@ReportUOM CHAR(1) = 'L', 
+
+	@DoSummary BIT = 0,	
+
+	@WksNo CHAR(12) ='',
+
+	@DateFormat CHAR(10) = 'MM/dd/yyyy'
+
+AS
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--10/17/2022 DSH: Created (requested by OVOL)
+
+--10/21/2022 DN: zero weight of adjustments, added wks type in detail report, weight conversions
+
+--10/21/2022 ZT: Added Date format param
+
+
+
+	IF @FromDate = '' OR @ToDate = '' BEGIN
+
+		SET @FromDate = '1/1/1980' 
+
+		SET @ToDate = DATEADD(DAY,1,GETDATE())
+
+	END
+
+
+
+
+
+
+
+
+
+	Create Table #BuySellList (
+
+		LedgerID INT,
+
+		BuySellNo CHAR(12),		
+
+		[Source] CHAR(1),
+
+		TradeDt Datetime,
+
+		CustID CHAR(12),				
+
+		VendorID  CHAR(12),		
+
+		Sale Money,
+
+		Cost Money,
+
+		GrossProfit Money,
+
+		TotalWeightLbs Decimal(22,5),
+
+		AdjType CHAR(1),
+
+		AdjReason VARCHAR(30),
+
+		GLAcct VARCHAR(12),
+
+		Nodetails BIT
+
+	)
+
+	Create Index #PK_BuysellLst ON #BuySellList(BuysellNo)	
+
+
+
+
+
+
+
+
+
+    -- GET GROSS PROFIT TRANSACTIONS 
+
+    --==============================
+
+	
+
+	--FILL WORKSHEETS.	
+
+	INSERT #BuySelllist
+
+	SELECT	
+
+		gpLedger.LedgerID,
+
+		gpledger.BuySellNo,
+
+		[Source],
+
+		TradeDT,
+
+		CustID,
+
+		VendorID, 		
+
+		Sale,
+
+		Cost,
+
+		GrossProfit,
+
+		TotalWeightLbs,
+
+		'' AdjType,
+
+		'' AdjReason,
+
+		'' GLAcct,0
+
+		FROM GPLedger WITH(NOLOCK) 
+
+			INNER JOIN BuySell WITH(NOLOCK)  ON gpledger.buysellno = buysell.buysellno	
+
+		WHERE
+
+			GPLedger.[Source] = 'B' AND BUYSELL.[Status] = 'I'
+
+			AND (@CoID = '' OR (BuySell.CoID = @CoID)) 
+
+			AND (TradeDt >=@FromDate OR @FromDate = '')
+
+			AND (TradeDt <=@ToDate OR @ToDate = '')
+
+			AND	(@TradeType = '' OR (BUYSELL.TradeType = @TradeType)) 		
+
+			AND (buysell.custid <> '(INV)' AND buysell.custid <> '(PLANT)' AND buysell.custid  <> '{C}' )
+
+			AND (@WksNo = '' OR (@WksNo <> '' AND GPLedger.BuYSellno = @WksNo))
+
+
+
+		
+
+	--FILL ADJUSTMENTS.	
+
+	INSERT #BuySelllist
+
+	SELECT	gpLedger.LedgerID,
+
+			gpledger.BUYSELLNO,
+
+			[Source],
+
+			TradeDt,
+
+			CASE WHEN AdjType='S' THEN GPLedger.AdjCPID ELSE BuySell.CustID END AS CustID,		
+
+			BuySell.VendorID,   
+
+			Sale,
+
+			Cost,
+
+			GrossProfit,
+
+			CASE WHEN AdjType='P' THEN dbo.CnvToBaseQtyUOM(AdjWeight,AdjWeightUOM) ELSE 0 END AS AdjustQty, 
+
+			AdjType,
+
+			AdjReason,
+
+			GPLedger.GLAcct,0					
+
+		FROM GPLedger WITH(NOLOCK) 
+
+			LEFT JOIN BuySell WITH(NOLOCK)  ON gpledger.buysellno = buysell.buysellno	
+
+		WHERE
+
+		GPLedger.[Source] <> 'B' AND GPLedger.[Source] <> 'C' AND GPLedger.[Source] <> 'J'  --(C,J for internal interest)
+
+		AND (GPLedger.TradeDt >=@FromDate AND GPLedger.TradeDt <=@ToDate) 
+
+		AND (GPLEdger.AdjPosted = 'Y' OR GPLedger.[Source] = 'I')
+
+		AND (@CoID = '' OR (BuySell.CoID = @CoID OR GPLedger.MiscCOID = @COID))
+
+		AND (@TradeType = '' OR (GPLEDGER.MiscTradeType = @TradeType OR BUYSELL.TradeType = @TradeType)) 
+
+		AND (@WksNo = '' OR (@WksNo <> '' AND GPLedger.BuYSellno = @WksNo))
+
+
+
+
+
+	-- IDENTFY NO DETAILS
+
+	UPDATE #BuysellList	SET NoDetails = 1 WHERE NOT EXISTS(Select * from WksDetail WHERE WksDetail.Buysellno = #BuysellList.Buysellno )
+
+
+
+	-- UNIQUE LIST OF WORKSHEETS
+
+	SELECT DISTINCT BuySellNo INTO #WksList FROM #BuySelllist
+
+
+
+	-- GET TOTAL BASE WEIGHTS
+
+	SELECT	#WksList.BuysellNo,
+
+			SUM(dbo.Convert_to_UOM(wksdetail.SWeight,wksdetail.SWeightUOM,'L')) TotalWt
+
+	INTO #TOTALWT
+
+	FROM #WksList INNER JOIN WksDetail ON #WksList.BuYSellNo = WksDetail.BuysellNo
+
+	GROUP BY #WksList.BuysellNo
+
+
+
+
+
+
+
+	-- CREATE GRADE ALLOCATION TABLE
+
+	Select	wksdetail.BuySellNo, 
+
+			#BuySelllist.TradeDt,
+
+			#BuySelllist.LedgerID,	
+
+			wksdetail.DetailID,
+
+			wksdetail.GradeID,
+
+			#BuySelllist.CustID,
+
+			SPACE(100) Customer,
+
+			SPACE(100) GradeDescription,
+
+			wksdetail.Sweight,		
+
+			wksdetail.SWeightUOM, 
+
+			wksdetail.SAmount,
+
+			wksdetail.PAmount,
+
+			wksdetail.SAmount-wksdetail.PAmount GradeGP,
+
+			dbo.Convert_to_UOM(wksdetail.SWeight,wksdetail.SWeightUOM,'L') BaseWtLb,
+
+			CONVERT(DECIMAL(22,5),0) Total_BaseWtLb,
+
+			CONVERT(DECIMAL(22,5),0) Factor,
+
+			#BuySelllist.Source [Source],
+
+			#BuySelllist.Sale Sale,
+
+			#BuySelllist.Cost Cost,
+
+			#BuySelllist.GrossProfit GP,
+
+			CONVERT(MONEY,0) CostToAlloc,
+
+			CONVERT(MONEY,0) SalesToAlloc,
+
+			#BuySellList.VendorID	--needed for wks type in detail report
+
+		INTO #GradeAllocation
+
+		FROM wksdetail INNER JOIN #BuySelllist ON wksdetail.buysellno = #BuySelllist.buysellno		
+
+		ORDER BY BuySellNo
+
+
+
+	-- ASSIGN TOTAL BASE WEIGHT PER WORKSHEET
+
+	UPDATE #GradeAllocation 
+
+		SET Total_BaseWtLb = TotalWt			
+
+		FROM #GradeAllocation INNER JOIN #TOTALWT ON #TOTALWT.BuYSellNo = #GradeAllocation.BuysellNo
+
+
+
+	-- ASSIGN ALLOCATION FACTOR
+
+	UPDATE #GradeAllocation
+
+		SET Factor =  BaseWtLb / Total_BaseWtLb 	
+
+		WHERE Total_BaseWtLb <> 0 	
+
+
+
+	--UPDATE ADJUSTMENTS
+
+	UPDATE #GradeAllocation SET 
+
+		SAmount=Round(Sale * Factor,2),
+
+		PAmount=Round(Cost * Factor,2),
+
+		GradeGP=Round(Sale * Factor,2) -  Round(Cost * Factor,2)
+
+		WHERE [Source] <> 'B'
+
+
+
+
+
+	--GET SALES AND COST DIFFERENCES TO ALLOCATE
+
+	SELECT BuysellNo, LedgerID, Sale, Cost, SUM(SAmount) GradeSale, SUM(PAmount) GradeCost, CONVERT(MONEY,0) SalesToAlloc, CONVERT(MONEY,0) CostToAlloc 
+
+		INTO #GradeGP FROM #GradeAllocation 
+
+		WHERE #GradeAllocation.Source='B'
+
+		GROUP BY buysellNo, LedgerID, Sale, Cost
+
+	UPDATE #GradeGP SET SalesToAlloc = Sale-GradeSale, CostToAlloc=Cost-GradeCost
+
+
+
+	
+
+	UPDATE #GradeAllocation SET
+
+		CostToAlloc = #GradeGP.CostToAlloc,
+
+		SalesToAlloc = #GradeGP.SalesToAlloc
+
+		FROM #GradeAllocation  INNER JOIN #GradeGP ON #GradeAllocation.BuySellNo = #GradeGP.BuySellNo
+
+		WHERE [Source] = 'B' 
+
+	
+
+	UPDATE #GradeAllocation SET
+
+		PAmount = PAmount + ROUND(CostToAlloc * Factor,2),
+
+		SAmount = SAmount + ROUND(SalesToAlloc * Factor,2),	
+
+		GradeGP = GradeGP + ROUND(SalesToAlloc * Factor,2) - ROUND(CostToAlloc * Factor,2)
+
+		WHERE [Source] = 'B'
+
+
+
+
+
+	--GET NON-WORKSHEET GP TRANSACTIONS
+
+	Select TradeDt, GLAcct, ADJReason, [Source], SUM(Sale) Sale,SUM(Cost) Cost,SUM(GrossProfit) GrossProfit
+
+		INTO #OTHERTRX
+
+		from #buyselllist WHERE [Source] NOT IN ('B','A') AND BuysellNo = '' AND NoDetails = 0
+
+		GROUP BY TradeDt, GLAcct, ADJReason, [Source] 
+
+	INSERT #GradeAllocation(TradeDT, BuySellNo,DetailID,GradeID,GradeDescription,SAmount,PAmount,GradeGP,SWeight,SWeightUOM,[Source])
+
+		SELECT TradeDt, '',0,'',ISNULL(AdjReason,''), Sale,Cost,GrossProfit,0,'L',[Source] FROM #OTHERTRX
+
+
+
+
+
+	-- WORKSHEETS WITH NO DETAILS
+
+	INSERT #GradeAllocation(BuySellNo,LedgerID,TradeDt,DetailID,GradeID,GradeDescription,SAmount,PAmount,GradeGP,SWeight,SWeightUOM,[Source])
+
+		SELECT BuySellNo,LedgerID,TradeDt, 0,'','(NO PRODUCT)', Sale,Cost,GrossProfit,0,'L',[Source] 
+
+		FROM #BuysellList WHERE NoDetails = 1 AND [Source] IN ('B','A','F','I')
+
+	
+
+
+
+	UPDATE #GradeAllocation	SET GradeDescription = '(INV-WO)' WHERE Source = 'I'
+
+	UPDATE #GradeAllocation	SET GradeDescription = '(BANK-FEE)' WHERE Source = 'F'
+
+	UPDATE #GradeAllocation	SET GradeDescription = UPPER(Grade.[Description]) 
+
+		FROM #GradeAllocation INNER JOIN GRADE ON #GradeAllocation.GradeID = Grade.GradeID WHERE [Source] NOT IN('I','F')
+
+	
+
+	UPDATE #GradeAllocation SET Customer = UPPER(Counterparty.CompanyNm) 
+
+		FROM #GradeAllocation INNER JOIN Counterparty ON #GradeAllocation.CustID = Counterparty.CPID		
+
+	UPDATE #GradeAllocation	SET Customer = '(NA)' WHERE Customer IS NULL
+
+
+
+	update #GradeAllocation set BaseWtLb = 0.00 where Source = 'A' or Source = 'D' or Source = 'F'	--adjusting weight carryover for adjustments, discounts, and fees.
+
+
+
+
+
+	
+
+
+
+	------------------------------------------------------------------------------------------------------------------------
+
+	--FINAL SUMMARY REPORT
+
+	--IF @DoSummary = 1 BEGIN
+
+	--	SELECT 
+
+	--		Customer, 
+
+	--		GradeDescription,			
+
+	--		SUM(SAmount) Sales,
+
+	--		SUM(PAmount) Cost,
+
+	--		SUM(GradeGP) GrossProfit,
+
+	--		SUM(BaseWtLb) BaseWt,
+
+	--		CustID,
+
+	--		GradeId		
+
+	--	from #GradeAllocation 
+
+	--	GROUP BY Customer, GradeDescription, CustID, GradeID			
+
+	--	ORDER BY Customer, GradeDescription			
+
+	--	RETURN
+
+	--END
+
+
+
+
+
+
+
+
+
+	------------------------------------------------------------------------------------------------------------------------
+
+	--FINAL DETAIL REPORT
+
+	SELECT 
+
+		convert(varchar,LedgerID) as [Tran No],
+
+		#GradeAllocation.BuysellNo as [Wks No],
+
+		FORMAT(TradeDt,@DateFormat) as [Trade Date],
+
+		case when (Customer = '(INVENTORY)' or Customer = '(NA)' ) then '[Non-Customer]' else Customer end as Customer , 
+
+		GradeDescription as [Product],
+
+		SAmount as [{C}Sales],
+
+		PAmount as [{C}Total Cost],
+
+		GradeGP as [{C}Gross Profit],
+
+		convert(varchar,(isnull(DBO.CONVERT_TO_UOM(BaseWtLb, 'L', @ReportUOM),0.00))) as [Weight UOM],	--weight conversions
+
+		CASE WHEN #GradeAllocation.custid = '(INV)' THEN 'R' WHEN #GradeAllocation.vendorid='(INV)' THEN 'S' ELSE 'W' END as [WksType]	--worksheet type
+
+	FROM #GradeAllocation 
+
+	ORDER BY Customer, GradeDescription, TradeDt
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----**DEBUG**
+
+--DECLARE @GP1 MONEY
+
+--DECLARE  @GP2 MONEY
+
+--SELECT @GP1  = ROUND(SUM(GradeGP),2) FROM #GradeAllocation
+
+--SELECT @GP2 = ROUND(SUM(GrossProfit),2) FROM #BuySelllist
+
+--SELECT @GP2  GrossProfit,  @GP1 ReportGrossProfit  
+
+
+
+
+

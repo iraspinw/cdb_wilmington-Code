@@ -1,0 +1,46 @@
+CREATE proc [dbo].[cw_GetAttachments] 
+
+	@SourceID varchar(15),
+
+	@Source char(1)
+
+
+
+as
+
+		
+
+		SELECT		
+
+			'' as ' ',
+
+			DocID as '-Hidden-DocumentID', 	
+
+			Desc1 as 'Description',
+
+			createddt as 'Created',
+
+			UserDef.UserNm as 'User',
+
+			FileExt as '-Hidden-FileExt',
+
+			'IMG' as '-Hidden-Type',
+
+			'' as '-Hidden-FormID',
+
+			'' as '-Hidden-DocFormID',
+
+			'' as '-Hidden-DocTitle'
+
+		FROM DocumentImage 
+
+			left JOIN UserDef ON DocumentImage.Createdby = UserDef.UserID 
+
+			AND (RefType=@Source)
+
+		WHERE RefID = @SourceID
+
+				
+
+
+

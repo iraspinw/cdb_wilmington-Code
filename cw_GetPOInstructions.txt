@@ -1,0 +1,11 @@
+
+
+
+
+Create PROC [dbo].[cw_GetPOInstructions]
+
+ AS
+
+--09/23/2014 MEC: Created
+
+	SELECT * FROM POInstruction

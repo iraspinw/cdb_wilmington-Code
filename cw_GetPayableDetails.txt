@@ -1,0 +1,98 @@
+CREATE proc [dbo].[cw_GetPayableDetails] @PayableID int, @buysellno varchar(12) as
+
+
+
+declare @ItemType char(1)
+
+if @PayableID = 0 begin
+
+	select @ItemType = 'S'
+
+end
+
+else begin
+
+	select @ItemType=ItemIDSource from payables where payableid=@PayableID
+
+end
+
+
+
+if @ItemType = 'S' and @PayableID=0 begin
+
+	select [description] GradeNm, unittype.UnitType, PayableID, payables.buysellno, Fxamount, isnull(IsSplit,0) as IsSplit, CurrencyCd from payables 
+
+	inner join wksdetail on wksdetail.DetailID = payables.ItemID
+
+	inner join grade on wksdetail.gradeid = grade.GradeID
+
+	left join unittype on wksdetail.UnitType = unittype.TypeID
+
+	where payables.buysellno=@buysellno and ItemIDSource = 'S'
+
+end
+
+
+
+if @ItemType = 'S' and @PayableID <> 0 begin
+
+	select [description] GradeNm, unittype.UnitType, PayableID, payables.buysellno, Fxamount, isnull(IsSplit,0) as IsSplit, CurrencyCd from payables 
+
+	inner join wksdetail on wksdetail.DetailID = payables.ItemID
+
+	inner join grade on wksdetail.gradeid = grade.GradeID
+
+	left join unittype on wksdetail.UnitType = unittype.TypeID
+
+	where payables.payableid=@PayableID and ItemIDSource = 'S'
+
+end
+
+
+
+else if @ItemType='D' begin
+
+	select InvoiceDesc GradeNm, '' as UnitType, PayableID, payables.buysellno, payables.Fxamount, isnull(IsSplit,0) as IsSplit, payables.CurrencyCd from payables 
+
+	inner join wksdelivery on wksdelivery.ItemID = payables.ItemID	
+
+	where payables.payableid=@PayableID and ItemIDSource = 'D'
+
+end
+
+else if @ItemType='E' begin
+
+	select [Name] GradeNm, '' as UnitType, PayableID, payables.buysellno, payables.Fxamount, isnull(IsSplit,0) as IsSplit, payables.CurrencyCd from payables 
+
+	inner join ExpenseAlloc_Detail on ExpenseAlloc_Detail.id = payables.ItemID
+
+	inner join GLAccount on glaccount.GLAcct = ExpenseAlloc_Detail.GLAcct	
+
+	where payables.PayableID=@payableID and ItemIDSource = 'E'
+
+end
+
+else if @ItemType='A' begin
+
+	select [Name] GradeNm, '' as UnitType, PayableID, payables.buysellno, Fxamount, isnull(IsSplit,0) as IsSplit, CurrencyCd from payables 
+
+	inner join GPLedger on GPLedger.LedgerID= payables.ItemID
+
+	inner join GLAccount on glaccount.GLAcct = GPLedger.GLAcct
+
+	where payables.payableid = @payableID and ItemIDSource = 'A'
+
+end
+
+else if @ItemType='C' begin
+
+	select [Name] GradeNm, '' As UnitTYpe, PayableID, payables.buysellno, payables.Fxamount, isnull(IsSplit,0) as IsSplit, payables.CurrencyCd from payables 
+
+	inner join ConvertingJob_Expenses on ConvertingJob_Expenses.id = payables.ItemID
+
+	inner join GLAccount on glaccount.GLAcct = ConvertingJob_Expenses.GLAcct		
+
+	where payables.payableid = @PayableID and ItemIDSource = 'C'
+
+end
+

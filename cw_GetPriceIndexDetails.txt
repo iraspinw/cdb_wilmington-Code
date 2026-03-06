@@ -1,0 +1,58 @@
+CREATE PROC [dbo].[cw_GetPriceIndexDetails] @EffectiveDate datetime 
+
+AS
+
+--4/17/2006 BM: Created
+
+--4/24/2006 BM: Always Order by Index Name
+
+--02/03/2009 DSH Allowed Price column to be numm to dsitinguish zero prices.
+
+SET NOCOUNT ON
+
+Create Table #Prices(
+
+    IndexNm varchar(65),
+
+    Price Money NULL,
+
+    Priced Bit,
+
+    IndexID INT,    
+
+    EffectiveDate datetime,
+
+    DetailID int,
+
+	PriceUOM varchar(10))
+
+
+
+--GET PRICED INDEXES
+
+    INSERT #Prices
+
+	SELECT IndexNm, Price,  1 as Priced, PriceIndex.IndexID, EffectiveDate,PriceIndexDetail.DetailID, priceindex.PriceUOM
+
+	FROM PriceIndexDetail INNER JOIN PriceIndex ON PriceIndexDetail.indexID = PriceIndex.IndexID
+
+	WHERE EffectiveDate = @EffectiveDate
+
+
+
+--GET UN-PRICED INDEXES
+
+	INSERT #prices
+
+	SELECT IndexNm, NULL, 0 as Priced, PriceIndex.IndexID, getdate(),0, priceuom
+
+	FROM PriceIndex 
+
+	WHERE IndexID NOT IN (SELECT IndexID FROM #prices)
+
+
+
+	SELECT IndexNm, dbo.removetrailingzeros(Price) as price, Priced, IndexID, EffectiveDate, DetailID, PriceUOM FROM #prices
+
+	ORDER BY IndexNm ASC
+

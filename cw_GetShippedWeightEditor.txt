@@ -1,0 +1,94 @@
+CREATE PROC [dbo].[cw_GetShippedWeightEditor] 
+
+@FromDt datetime, 
+
+@ToDt datetime, 
+
+@CoID char(2), 
+
+@CustID varchar(15),
+
+@VendorID varchar(15)
+
+as
+
+
+
+--9/2/2021 Alex: Created
+
+
+
+-- [dbo].[cw_GetShippedWeightEditor] 
+
+
+
+ Declare @OpenMonth as date
+
+   SELECT @OpenMonth=OpenMonth FROM SYSTEMINFO WITH (NOLOCK) WHERE ID = '00'
+
+
+
+
+
+ select WKSDetail.BuySellNo as [wks#],
+
+ --ShipToID as Warehouse, 
+
+ CounterParty.CompanyNm as Customer,
+
+ ShipToID as Location,
+
+  dbo.FormatQty(WKSDetail.SWeight,WKSDetail.SWeightUOM) as  Weight,
+
+ dbo.CnvUOM_Names( WKSDetail.SWeightUOM) as [WT UOM],
+
+ --cast(FORMAT(WKSDetail.PPrice,'0.##') as varchar(50)) +'/'+ dbo.CnvUOM_Names(WKSDetail.SPriceUOM) as [Price],
+
+ WKSDetail.SPrice as [{C}Price],
+
+ dbo.CnvUOM_Names(WKSDetail.SPriceUOM) as [Price UOM],
+
+ SAmount as [{C}Extension],
+
+ WKSDetail.DetailID,
+
+ 'S' as type,
+
+ case when rtrim(WKSDetail.InvoiceDesc)='' then grade.Description else rtrim(WKSDetail.InvoiceDesc) end Product
+
+ 
+
+from WKSDetail 
+
+ inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo
+
+ inner join grade on grade.GradeID = WKSDetail.GradeID
+
+ inner join CounterParty on CounterParty.CpID = BuySell.CustID
+
+ where VendorID = '(INV)' 
+
+     and status not in ('I') 
+
+	 and BuySell.ShippingDt>@OpenMonth 
+
+	 and isnull(PublicTradeID,0)=0
+
+	 and ((SELECT count(*) from Receipt WITH (NOLOCK) where BuySellNo = WKSDetail.BuySellNo AND (Reversed=0 OR Reversed IS NULL))=0)
+
+	 and ((Select isnull(ARTrkPaymentAmt,0) From BuySell WITH (NOLOCK) Where BuySellNo = WKSDetail.BuySellNo) = 0)
+
+	 AND (BuySell.ShippingDt >= @FromDt And BuySell.ShippingDt <= @ToDt)
+
+	 AND (BuySell.CoID = @CoID or @CoID = '')
+
+	 AND (BuySell.CustID = @CustID or @CustID = '')
+
+	 AND (BuySell.VendorID = @VendorID or @VendorID = '')
+
+	-- and (select count(*) from inventory where [Weight] <> QtyOnHand and buysellno = WKSDetail.BuySellNo)=0
+
+
+
+
+

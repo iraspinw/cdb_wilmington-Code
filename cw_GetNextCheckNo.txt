@@ -1,0 +1,50 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetNextCheckNo] 
+
+
+
+	@COID char(2) 
+
+
+
+AS
+
+
+
+--11/18/2020 MEC: Copied for cieTrade.net Cash Distributions
+
+
+
+--cw_GetNextCheckNo '00'
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	IF @COID = '' BEGIN
+
+		SET @COID = '00'
+
+	END
+
+
+
+	DECLARE @CheckNo int
+
+	SELECT @CheckNo = NextCheckNo FROM CheckSetup WHERE ISNULL(COID,'') = @COID
+
+	
+
+	IF ISNULL(@CheckNo,0) = 0
+
+		SELECT @CheckNo = NextCheckNo FROM CheckSetup WHERE ISNULL(COID,'') = ''
+
+	
+
+	SELECT @CheckNo AS CheckNo
+

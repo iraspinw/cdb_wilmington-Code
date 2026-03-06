@@ -1,0 +1,260 @@
+CREATE   PROCEDURE [dbo].[cw_GetInventoryExpAlloc] @LotNo char(25) AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--02/18/2016 MEC: Copied for cieTrade.net
+
+--12/29/2016 DSH REVISED
+
+--02/05/2018 DSH Fixed Reporting on Expense Allocation Costs
+
+--04/06/2018 MEC: Added GLAccount in place of 'Cost of Goods'
+
+--04/11/2023 DSH: Fixed Expression of expenses in Natural Currency.
+
+
+
+	CREATE TABLE #ExpList(
+
+		RefNo VARCHAR(20),
+
+		[Source] VARCHAR(15),
+
+		[Name] VARCHAR(100),
+
+		COmpanyNm VARCHAR(100),
+
+		TxDate DATE,
+
+		Amount MONEY,
+
+		FxAmount MONEY,
+
+		CurrencyCd CHAR(3)
+
+	)
+
+
+
+	DECLARE @PostDate DATE
+
+    Declare @FxRate Decimal(25,14)
+
+    Declare @CurrencyCd char(3)
+
+    SELECT @FxRate = FxRate, @CurrencyCd = CurrencyCd, @PostDate = RcvDt FROM Inventory WITH(NOLOCK) where Lotno = @LotNo
+
+    If @FxRate = 0 SET @FxRate = 1
+
+
+
+
+
+
+
+    -- GET SUPPLIER COSTS.
+
+	INSERT #ExpList 
+
+    SELECT 
+
+		BuySell.BuySellNo [RefNo], 
+
+		'Wks' [Source], 
+
+		RTRIM(GLAccount.Name) + '-' + RTRIM(PurchGLAcct) [Name], --'Cost of Goods' [Name], 
+
+		Counterparty.CompanyNm, 
+
+		InvoiceDt AS TxDate, 
+
+		wksDetail.PAmount Amount, 
+
+		wksDetail.PFXAmount AS FxAmount, 
+
+		@CurrencyCd As CurrencyCd
+
+    FROM BuySell WITH(NOLOCK)  INNER JOIN wksDetail ON BuySell.BuySellNo = wksDetail.BuySellNo
+
+    INNER JOIN Counterparty WITH(NOLOCK) ON Counterparty.CpID = BuySell.VendorID
+
+    INNER JOIN Grade WITH (NOLOCK) ON Grade.GradeID = WksDetail.GradeID
+
+    LEFT JOIN GLAccount WITH (NOLOCK) ON Grade.PurchGLAcct = GLAccount.GLAcct
+
+    WHERE wksDetail.LotNo = @LotNo
+
+
+
+
+
+
+
+
+
+
+
+    -- GET PURCHASE EXPENSES.
+
+	INSERT #ExpList 
+
+    SELECT 
+
+		BuySell_LotExpAlloc.BuySellNo [RefNo], 
+
+		'Wks' [Source], 
+
+		RTRIM(isnull(GLAccount.Name, 'Unassigned Expenses')) + '-' + RTRIM(GLAccount.GlAcct) [Name], 
+
+		Counterparty.CompanyNm, 
+
+		@PostDate AS TxDate, 
+
+		Amount HcAmount, 
+
+		ROUND(Amount/@FxRate,2) FxAmount,   --FxAmount (This needs to be fixed - problem is link to Expense record is not good)
+
+		@CurrencyCd As CurrencyCd
+
+    FROM BuySell_LotExpAlloc WITH(NOLOCK) 
+
+    LEFT JOIN Counterparty WITH(NOLOCK) ON BuySell_LotExpAlloc.VendorID = Counterparty.CpID
+
+    LEFT JOIN GLAccount WITH(NOLOCK) ON BuySell_LotExpAlloc.GLAcct = GLAccount.GLAcct
+
+    WHERE BuySell_LotExpAlloc.LotNo = @LotNo
+
+	
+
+
+
+
+
+
+
+    -- GET EXPENSE ALLOCATED TO THE INVENTORY THROUGH THE EXP ALLOC MODULE.
+
+    INSERT #ExpList 
+
+	SELECT 
+
+		ExpenseAllocation.BuySellNo [RefNo], 
+
+		'Exp Alloc' [Source], 
+
+        GLAccount.Name, 
+
+        CompanyNm,  --12/10/2012--
+
+        ExpenseAllocation.PostingDt AS TxDate, 
+
+        ExpenseAlloc_LotGLDetail.Amount,
+
+        ExpenseAlloc_LotGLDetail.Amount/@FxRate AS FxAmount,
+
+		@CurrencyCd As CurrencyCd
+
+    FROM ExpenseAllocation 
+
+		INNER JOIN ExpenseAlloc_LotGLDetail ON ExpenseAlloc_LotGLDetail.TransNo = ExpenseAllocation.TransNo
+
+		INNER JOIN GLAccount WITH(NOLOCK) ON ExpenseAlloc_LotGLDetail.GLAcct = GLAccount.GLAcct
+
+		LEFT JOIN Counterparty ON ExpenseAlloc_LotGLDetail.CPID = Counterparty.CPID
+
+    WHERE ExpenseAlloc_LotGLDetail.LotNo = @LotNo and ExpenseAllocation.IsPosted = 1 
+
+
+
+
+
+
+
+
+
+	-- GET CONVERTING JOB EXPENSE
+
+	INSERT #ExpList 
+
+	SELECT 
+
+		'CJ-'+cast(Inventory.ConvertingJobNo as char(12)) [RefNo], 
+
+		'Converting' [Source],
+
+		'Cost of Goods', 
+
+		Counterparty.CompanyNm, 
+
+		JobDate as TxDate, 
+
+		ConvertingAllocation.Amount AS InvValue,
+
+		ConvertingAllocation.Amount/@FxRate AS FxAmount, 
+
+		@CurrencyCd as currencycd
+
+	FROM Inventory WITH(NOLOCK) INNER JOIN ConvertingJob WITH(NOLOCK) ON ConvertingJob.JobNo = Inventory.ConvertingJobNo
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON Counterparty.CpID = ConvertingJob.supplierid
+
+	INNER JOIN ConvertingAllocation WITH(NOLOCK) ON ConvertingAllocation.LotDesc = Inventory.LotNo
+
+	WHERE Inventory.LotNo = @LotNo 
+
+
+
+	
+
+	-- GET MANUAL INVENTORY EXPENSE.
+
+	INSERT #ExpList 
+
+	SELECT 
+
+		LotNo [RefNo], 
+
+		'(Data-Load)' [Source], 
+
+		'Cost of Goods', 
+
+		CompanyNm, 
+
+		RcvDt AS TxDate, 
+
+		OrigInvValue, 
+
+		OrigInvValue/@FxRate AS FxAmount, 
+
+		CurrencyCd
+
+	FROM Inventory WITH (NOLOCK)
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON Counterparty.CpID = Inventory.VendorID
+
+	WHERE LotNo = @LotNo AND ManualEntry = 'Y'
+
+	ORDER BY TxDate
+
+
+
+
+
+
+
+	SELECT * FROM #ExpList
+
+
+
+
+
+
+
+
+
+--GO
+
+---exec cw_GetInventoryExpAlloc @LotNo=N'11562'
+

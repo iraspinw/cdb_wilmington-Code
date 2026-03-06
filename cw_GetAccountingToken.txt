@@ -1,0 +1,42 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetAccountingToken] @COID char(2)
+
+AS
+
+BEGIN
+
+--09/21/2015 MCM: Created
+
+--04/11/2019 BF: modified for department driven accounting
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	--SELECT TOP 1 AcctToken, AcctSecret, AcctCompany FROM SystemInfo
+
+	declare @MultiDeptAcct bit 
+
+	select @MultiDeptAcct = MultiDeptAccounting from systeminfo
+
+
+
+	if @MultiDeptAcct = 1 begin
+
+		select accttoken, acctsecret, acctcompany from accountingcompany where coid = @coid
+
+	end
+
+	else begin
+
+		select top 1 accttoken, acctsecret, acctcompany from accountingcompany where (@coid='' or @coid=coid)
+
+	end
+
+		
+
+END
+

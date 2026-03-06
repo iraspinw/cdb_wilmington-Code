@@ -1,0 +1,46 @@
+
+
+
+
+
+
+CREATE PROC [dbo].[cw_GetSaleReps]
+
+
+
+AS
+
+
+
+--10/01/2015 MEC: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		ReferrerNo [-Hidden- ReferrerNo], 
+
+		Name,
+
+		Active [Is Active], 
+
+		DefaultRate [Default Commission Rate], 
+
+		FixedCharge [Default Charge],
+
+		(Select UserNm From UserDef Where UserDef.DefSalesRepID = ReferrerNo) [Linked User Account]
+
+	FROM Referrer 
+
+	ORDER BY Name
+
+
+
+
+

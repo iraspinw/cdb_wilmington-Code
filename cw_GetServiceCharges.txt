@@ -1,0 +1,84 @@
+CREATE   PROCEDURE [dbo].[cw_GetServiceCharges] @CpID char(12)
+
+AS
+
+BEGIN
+
+--06/23/2015 MCM: Created
+
+--10/16/2019 DSH Added IS Manual Attribute
+
+--04/24/2020 RS: Exclude inactive Counterparties
+
+
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+    SELECT 
+
+	  c.[CpID]
+
+	  ,cp.CompanyNm AS [Counterparty]
+
+	  ,[Location]
+
+	  
+
+      ,dbo.GetChargeType(ChargeType) AS Charge
+
+	  ,g.[Description] Product
+
+	  ,u.UnitType AS [Packaging]
+
+	  ,EquipmentType.EqType AS [Equipment]
+
+	  ,[ChargeDesc] AS [Description]
+
+	  ,[Amount]
+
+	  ,IIF(ISNULL(IsManual, 0) = 0, '--', 'YES') AS [Apply-Manually]
+
+
+
+
+
+      ,[RelatedGradeID]
+
+      ,[RelatedEquipment]
+
+      ,c.[GLAcct]
+
+      ,[SurchargeType]
+
+      ,c.[UnitType]
+
+	  ,[ChargeID]
+
+      ,[ChargeType]
+
+	  ,IsManual
+
+	FROM [Counterparty_Charge] c
+
+	LEFT JOIN Counterparty cp ON cp.CpID = c.[CpID]
+
+	LEFT JOIN Grade g ON g.GradeID = c.[RelatedGradeID]
+
+	LEFT JOIN UnitType u ON u.TypeID = c.[UnitType]
+
+	LEFT JOIN EquipmentType ON EquipmentType.ShortName = RelatedEquipment
+
+	WHERE c.CpID = @CpID OR @CpID = ''
+
+	AND (ISNULL(cp.ActiveStatus,'')<>'I')
+
+END
+
+
+

@@ -1,0 +1,534 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetOverDueInvoice] @OverdueDays int, @COID char(2), @SalesRep varchar(10), @Country varchar(30), @OverdueDaysTo int
+
+AS
+
+
+
+BEGIN
+
+--09/27/2016 MCM: Created, modeled after [q_GetARInquiry]
+
+--01/11/2016 MCM: Corrected @OverdueDays filter
+
+--05/15/2018 RS:  Changed to use Contact instead of the Counterparty fields 
+
+--06/22/2018 RS:  Added "Primary" contact and email 
+
+--06/26/2020 RS:  Added support for the overdue days range (added @OverdueDaysTo) per CN Sweden
+
+--07/14/2020 DSH: IF Overduedaysto = 0: do not filter
+
+--10/22/2020 RS:  Changed SPACE(200) as APContact, SPACE(300) as APEmail (from SPACE(150))
+
+
+
+--03/15/2023 DN: moved over from desktop for .NET
+
+
+
+ 
+
+-- q_GetOverDueInvoice 40,'00','','',50
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	CREATE TABLE #wrkBuySellList(
+
+		BuySellNo CHAR(25),
+
+		CurrencyCd CHAR(3),
+
+		HCInvoice MONEY,
+
+		HCAdjustment MONEY,
+
+		HCPayments MONEY,
+
+		HCBalance MONEY,
+
+		FXInvoice MONEY,
+
+		FXAdjustment MONEY,
+
+		FXBalance MONEY
+
+	)
+
+
+
+	CREATE TABLE #LastPayment(
+
+		BuySellNo CHAR(25),
+
+		PaymentDt DATETIME,
+
+		CheckNo VARCHAR(25),
+
+		ARBatchNo VARCHAR(25),
+
+		Amount money,
+
+		CustID char(25)
+
+	)
+
+	CREATE INDEX #PKLastPayment ON #LastPayment(BuySellNo)
+
+
+
+	-- GET LAST PAYMENT INFO.
+
+	INSERT #LastPayment
+
+		SELECT  Receipt.BuySellNo, PaymentDt = max(PaymentDt), SPACE(15) as CheckNo, SPACE(15) as ARBatchNo, 0 AS AMount, BuySell.CustID
+
+		FROM Receipt WITH(NOLOCK) INNER JOIN BUYSELL WITH(NOLOCK)  ON Receipt.BuySellno = BuySell.BuySellNo
+
+		WHERE ISNULL(BuySell.IsAgency,0) <> 1 AND Amount > 0 
+
+		AND Receipt.reversed <> 1
+
+		AND BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(PLANT)' AND BuySell.CustID <> '{C}'
+
+		AND (@COID = '' or (Buysell.coid = @COID))
+
+		GROUP BY Receipt.BuySellNo,BuySell.CustID
+
+	
+
+	UPDATE #Lastpayment SET CheckNo = (SELECT TOP 1 CheckNo FROM Receipt WHERE BuySellNo = #LastPayment.BuySellNo ORDER BY PaymentDt DESC)
+
+	FROM #LastPayment
+
+
+
+	UPDATE #Lastpayment SET ARBatchNo = (SELECT TOP 1 ARBatchNo FROM Receipt WHERE BuySellNo = #LastPayment.BuySellNo ORDER BY PaymentDt DESC)
+
+	FROM #LastPayment
+
+
+
+	UPDATE #Lastpayment SET Amount = (SELECT TOP 1 Amount FROM Receipt WHERE BuySellNo = #LastPayment.BuySellNo ORDER BY PaymentDt DESC)
+
+	FROM #LastPayment
+
+
+
+	-- GET LAST PAYMENT USING UNAPPLIED CASH.
+
+	SELECT RECEIPT.BuySellNo, PaymentDt=max(UACashLedger.EntryDt)
+
+	INTO #UACLastPayment 
+
+	FROM Receipt WITH(NOLOCK) INNER JOIN UACashLedger ON Receipt.LedgerID = UACashLedger.LedgerID
+
+	INNER JOIN BUYSELL WITH(NOLOCK)  ON Receipt.BuySellno = BuySell.BuySellNo
+
+	WHERE ISNULL(BuySell.IsAgency,0) <> 1 AND Amount > 0 
+
+	AND Receipt.reversed <> 1
+
+	AND BuySell.CustID <> '(INV)' AND BuySell.CustID <> '(PLANT)' AND BuySell.CustID <> '{C}'
+
+	AND (@COID = '' or (Buysell.coid = @COID))
+
+	GROUP BY Receipt.BuySellNo
+
+
+
+	UPDATE #LastPayment SET #LastPayment.PaymentDt = #UACLastPayment.PaymentDt 
+
+		FROM #LastPayment INNER JOIN #UACLastPayment ON #LastPayment.BuySellNo = #UACLastPayment.BuySellNo
+
+
+
+	INSERT #wrkBuySellList(BuySellNo,FXInvoice,FXAdjustment,HCInvoice,HCAdjustment,FxBalance,HCBalance)
+
+			SELECT	BuySell.BuySellNo,BuySell.FxInvoiceAmt+isNull(BuySell.FxSalesTaxAmt,0),FXSAdjustment+isNull(FXSalesTaxAdjAmt,0),						
+
+					SalesAmt+isNull(SFreightChg,0)+isNull(SalesTaxAmt,0),SAdjustment+isNull(SalesTaxAdjAmt,0),BuySell.FxBalanceDue,BuySell.SBalanceDue
+
+			FROM BuySell 
+
+			WHERE round(SBalanceDue,2) <> 0 AND InvoiceDt <= getdate() 
+
+			AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' AND Status = 'I'  AND ISNULL(BuySell.IsAgency,0) <> 1			
+
+    
+
+
+
+	SELECT 
+
+		Counterparty.CompanyNm as CustomerNm, 
+
+        BuySell.BuySellNo, 
+
+		BuySell.TradeType,
+
+		CompanyInfo.CompanyDesc  ,
+
+		Buysell.RefSONo AS SO,	--(SELECT TOP 1 SPo FROM wksdetail WITH(NOLOCK)  WHERE wksDetail.BuysellNo = Buysell.BuysellNo) AS SO,         
+
+		InvoiceDate=InvoiceDt, 		
+
+		ShippingDate=ShippingDt,	    
+
+        PostingDate=InvoicePrintDt,
+
+		--PaymentDate=(SELECT TOP 1  convert(sql_variant,  DATEADD(dd, DATEDIFF(dd, 0, PaymentDt), 0)) FROM #LastPayment WHERE #LastPayment.CustID = BuySell.CustID ORDER BY PaymentDt DESC),
+
+		PaymentDate=convert(sql_variant,  DATEADD(dd, DATEDIFF(dd, 0, #LastPayment.PaymentDt), 0)), 
+
+		BuySell.DueDt,    
+
+		CountryNm=Address.Country,   
+
+		Address.Region ShipToRegion,  
+
+		PickupFrom.Region ShipFromRegion, 
+
+		BuySell.PriceBasis,
+
+		BuySell.RefEquipNo,
+
+		Referrer.Name,
+
+		BuySell.CurrencyCd,
+
+		FXInvoiceAmt=FXInvoice,
+
+		FXAdjAmt=FXAdjustment,
+
+		InvoiceAmt=HCInvoice,
+
+		AdjAmt=HCAdjustment,
+
+		BuySell.Terms, 
+
+		Supplier.CompanyNm as SupplierNm,
+
+		Counterparty.CreditLimit,
+
+		(SELECT TOP 1 ExpDt FROM Credit WITH(NOLOCK) WHERE Credit.CpID = BuySell.CustID ORDER BY ProtocolID Desc) AS ExpDt,
+
+		Ship_Post_Days=DateDiff(day,ShippingDt,InvoicePrintDt), 
+
+        Post_Pay_Days=DateDiff(day,InvoicePrintDt,(SELECT TOP 1  PaymentDt FROM #LastPayment WHERE #LastPayment.CustID = BuySell.CustID ORDER BY PaymentDt DESC)),
+
+	    Ship_Pay_Days=DateDiff(day,ShippingDt,(SELECT TOP 1  PaymentDt FROM #LastPayment WHERE #LastPayment.CustID = BuySell.CustID ORDER BY PaymentDt DESC)),
+
+		--LastPaymentDt=(SELECT TOP 1  PaymentDt FROM #LastPayment WHERE #LastPayment.CustID = BuySell.CustID ORDER BY PaymentDt DESC),
+
+		LastPaymentDt=#LastPayment.PaymentDt,
+
+		FxBalanceDue=FXBalance,												--FX Balance Due
+
+		SBalanceDue=HCBalance,												--HC Balance Due
+
+		--(SELECT TOP 1  CheckNo FROM #LastPayment WHERE #LastPayment.CustID = BuySell.CustID ORDER BY PaymentDt DESC) CheckNo,
+
+		#LastPayment.CheckNo,
+
+		PastDueDays=DateDiff(day,BuySell.DueDt,getdate()),					--Days Currently Past Due Date
+
+		DBAAddress.CoName as DBAName,
+
+		BuySell.RelNo,
+
+		Address.[Type] Location,
+
+		Vessel.VesselName as Vessel,
+
+		BuySell.BunkerPort as PlaceOfDeliv,
+
+		Convert(Money,'0') A31_60,
+
+		Convert(Money,'0') A61_90,
+
+		Convert(Money,'0') A91,
+
+		Convert(Money,'0') A1_30,
+
+		Convert(Money,'0') CurrentBalance,
+
+		Convert(Money,'0') PastDue,
+
+		Buysell.Notes,
+
+		Convert(VARCHAR(25),'') as SORef,
+
+		BuySell.BookingNo,
+
+		BookSheet.LoadPort,
+
+		--(SELECT TOP 1 ContainerNo FROM Container WITH(NOLOCK) WHERE BuySell.BuySellno = Container.BuySellNo) AS ContainerNo,
+
+		RiskCover,		
+
+		Buysell.PSupplierCost HCSupplierCost,
+
+		Buysell.PCurrencyCd HCSupplierCurrCd,
+
+		Buysell.FXSupplierCost,
+
+		Buysell.PFreightChg HCExpenses,
+
+		CounterParty.ActiveCreditProtocolID,
+
+		SPACE(100) ProtocolComment,
+
+		CASE Billingterm.ExcludeFromCreditCheck WHEN 1 THEN 'YES' ELSE 'NO' END IsSecured,
+
+		--(SELECT TOP 1  ARBatchNo FROM #LastPayment WHERE #LastPayment.CustID = BuySell.CustID ORDER BY PaymentDt DESC) ARBatchNo, --#LastPayment.ARBatchNo,
+
+		#LastPayment.ARBatchNo,
+
+		Buysell.ProblemNotes,
+
+		SPACE(3) ProtocolCurrCode,
+
+		SPACE(100) ProtocolReference,
+
+		#LastPayment.Amount LastPayment,
+
+		--(SELECT TOP 1  Amount FROM #LastPayment WHERE #LastPayment.CustID = BuySell.CustID ORDER BY PaymentDt DESC) LastPayment,
+
+		BuySell.CustID,
+
+		SPACE(200) as APContact, SPACE(300) as APEmail	----05/15/2018 RS: CounterParty.APContact,CounterParty.APEmail
+
+	INTO #Data
+
+	FROM BuySell WITH(NOLOCK) 
+
+	INNER JOIN #wrkBuySellList ON #wrkBuySellList.BUYSELLNO = BUYSELL.BUYSELLNO
+
+	INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID    
+
+	INNER JOIN Counterparty Supplier WITH(NOLOCK) ON BuySell.VendorID = Supplier.CpID	
+
+	INNER JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.COID = BuySell.COID
+
+	LEFT JOIN DBAAddress WITH(NOLOCK) ON DBAAddress.CoAddrID = BuySell.DBAAddrID	    
+
+    LEFT JOIN Address WITH(NOLOCK) ON Address.CpID = BuySell.CustID AND Address.Type = BuySell.ShipToID 
+
+	LEFT JOIN Address PickupFrom WITH(NOLOCK) ON PickupFrom.CpID = BuySell.VendorID AND PickupFrom.Type = BuySell.ShipFromID 
+
+	LEFT JOIN Referrer WITH(NOLOCK) ON BuySell.ReferrerNo1 = Referrer.ReferrerNo    
+
+	LEFT JOIN Billingterm ON BuySell.Terms = Billingterm.term
+
+	--LEFT JOIN #LastPayment ON (BuySell.CustID = #LastPayment.CustID) --(BuySell.BuySellNo = #LastPayment.BuySellNo)
+
+	LEFT JOIN #LastPayment ON (BuySell.BuySellNo = #LastPayment.BuySellNo)	
+
+	LEFT JOIN BookSheet WITH(NOLOCK) ON BuySell.BookingNo = BookSheet.BookingNo
+
+	LEFT JOIN Vessel WITH(NOLOCK) ON BuySell.VesselID = Vessel.VesselID
+
+	WHERE 
+
+	(@COID = '' OR Buysell.coid = @COID) 	
+
+	AND (@SalesRep = '' OR (BuySell.ReferrerNo1 = @SalesRep OR BuySell.ReferrerNo2 = @SalesRep))
+
+	AND (@Country = '' OR [Address].Country = @Country)
+
+	
+
+
+
+	--GET AP CONTACT AND EMAIL FROM CONTACTS TABLES  --05/15/2018 RS
+
+	--UPDATE #DATA SET APContact = ISNULL((SELECT TOP 1 ContactNm FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID 
+
+	--				WHERE roleNm = 'Collections' AND ct.CpID = #DATA.CustID and ISNULL(ct.ContactNm,'') <> ''),'')
+
+	--FROM #DATA WHERE APContact = ''
+
+	
+
+	--UPDATE #DATA SET APEmail = ISNULL(  STUFF(  (SELECT ';' + ct.Email FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID 
+
+	--				WHERE roleNm = 'Collections' AND ct.CpID = #DATA.CustID and ISNULL(ct.Email,'') <> '' FOR XML PATH('')  ), 1, 1, ''), '')
+
+	--FROM #DATA WHERE APEmail = ''
+
+	
+
+	
+
+		
+
+	--TRY PRIMARY CONTACT AND EMAIL	 --DN: 3/24/2023
+
+	update #Data set APContact = collect.ContactNm, APEmail= collect.Email from CounterParty
+
+	inner join Contact collect on collect.CpID = CounterParty.CpID 
+
+	inner join ContactRoleAssignment assign on assign.CT_ID = collect.CT_ID and RoleNm = 'collections'
+
+	where collect.CpID = #data.CustID
+
+
+
+	update #Data set APContact = Contact.ContactNm, APEmail = contact.Email 
+
+		from CounterParty
+
+		inner join Contact  on Contact.CpID = CounterParty.CpID 
+
+		where Contact.IsPrimary = 1 and Contact.CpID = #Data.CustID and (isnull(#Data.APContact,'') = '' or isnull(#Data.APEmail,'') = '' )
+
+
+
+
+
+	--UPDATE #DATA SET APContact = ISNULL((SELECT TOP 1 ContactNm FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID 
+
+	--				WHERE roleNm = 'Primary' AND ct.CpID = #DATA.CustID and ISNULL(ct.ContactNm,'') <> ''),'')
+
+	--FROM #DATA WHERE APContact = ''
+
+
+
+	--UPDATE #DATA SET APEmail = ISNULL(  STUFF(  (SELECT ';' + ct.Email FROM Contact ct INNER JOIN ContactRoleAssignment cra ON cra.CT_ID = ct.CT_ID 
+
+	--				WHERE roleNm = 'Primary' AND ct.CpID = #DATA.CustID and ISNULL(ct.Email,'') <> '' FOR XML PATH('')  ), 1, 1, ''), '')
+
+	--FROM #DATA WHERE APEmail = ''
+
+
+
+
+
+
+
+
+
+
+
+	--Update Protocol Comment
+
+	UPDATE #DATA SET ProtocolComment = SUBSTRING(Remarks,1,100),
+
+					 ProtocolCurrCode = CurCode,
+
+					 ProtocolReference = AgendaRef
+
+		FROM #DATA INNER JOIN Credit ON #Data.ActiveCreditProtocolID = Credit.ProtocolID
+
+		WHERE #DATA.ActiveCreditProtocolID IS NOT NULL 
+
+
+
+	UPDATE #DATA SET ProtocolCurrCode = dbo.xDoc_GetSYSCURRENCY() 
+
+	WHERE RTRIM(ProtocolCurrCode) = '' AND CreditLimit <> 0 
+
+
+
+
+
+
+
+	UPDATE #DATA SET CountryNm = Country.Name FROM #DATA INNER JOIN Country WITH(NOLOCK) ON #DATA.CountryNm = Country.CountryID	
+
+		
+
+	--Set Past Due Days to last payment date if balance is zero.
+
+	UPDATE #DATA SET PastDueDays = DateDiff(day,DueDt,LastPaymentDt) FROM #DATA WHERE SBalanceDue = 0
+
+	
+
+	
+
+
+
+	
+
+    UPDATE #DATA SET PaymentDate = 'OPEN' FROM #DATA WHERE PaymentDate IS NULL
+
+    UPDATE #DATA SET PaymentDate = 'OPEN' FROM #DATA WHERE SBalanceDue > 0  --*1
+
+    UPDATE #DATA SET SORef = POReference FROM #DATA INNER JOIN PO WITH(NOLOCK) ON PO.PONumber = #DATA.SO 
+
+	
+
+	
+
+	--UPDATE AGING BUCKETS
+
+	UPDATE #DATA SET A1_30 = SBalanceDue WHERE PastDueDays>=1 AND PastDueDays<=30  AND PaymentDate = 'OPEN'
+
+	UPDATE #DATA SET A31_60 = SBalanceDue WHERE PastDueDays>=31 AND PastDueDays<=60  AND PaymentDate = 'OPEN'
+
+	UPDATE #DATA SET A61_90 = SBalanceDue WHERE PastDueDays>=61 AND PastDueDays<=90  AND PaymentDate = 'OPEN'
+
+	UPDATE #DATA SET A91 = SBalanceDue WHERE PastDueDays>=91 AND PaymentDate = 'OPEN'
+
+
+
+	UPDATE #DATA SET PastDue = SBalanceDue WHERE PastDueDays>=1  AND PaymentDate = 'OPEN'	
+
+	
+
+	UPDATE #DATA SET CurrentBalance = SBalanceDue WHERE PastDueDays<1 AND PaymentDate = 'OPEN'	
+
+
+
+	
+
+	--DELETE FROM #DATA WHERE PastDue = 0
+
+
+
+	SELECT '' as 'Chk',CustID,CustomerNm as Customer, 
+
+		(SELECT TOP 1 LastPayment FROM #Data d2 WHERE d2.CustID = #Data.CustID AND ISNULL(LastPayment,0) <> 0 ORDER BY PaymentDate DESC) as [{C}Last Payment], 
+
+		(SELECT TOP 1 PaymentDate FROM #Data d2 WHERE d2.CustID = #Data.CustID AND PaymentDate <> 'OPEN' AND PaymentDate IS NOT NULL ORDER BY PaymentDate DESC) [Payment Date],
+
+		SUM(FxBalanceDue) FxBalanceDue, SUM(FxBalanceDue) [{C}Balance Due], 
+
+		0, 
+
+		RTRIM(APContact) [Contact], RTRIM(APEmail) [Email], SUM(A1_30) A1_30, SUM(A31_60) A31_60, 
+
+		SUM(A61_90) A61_90, SUM(A91) A91, SUM(PastDue) [{C}Past Due]
+
+		FROM #Data 
+
+		--WHERE EXISTS(SELECT * FROM #Data d2 WHERE d2.CustID = #Data.CustID AND (PastDueDays >= @OverdueDays and PastDueDays <= @OverdueDaysTo))
+
+		WHERE (PastDueDays >= @OverdueDays and PastDueDays <= @OverdueDaysTo) and PastDueDays <> '0'
+
+		GROUP BY CustID,CustomerNm,APContact,APEmail
+
+		ORDER BY CustomerNm
+
+
+
+	--SELECT PastDue,PastDueDays,* FROM #Data
+
+
+
+	--SELECT * FROM #Data order by customernm
+
+	--Where customernm = 'Rock Tenn'
+
+END
+
+
+

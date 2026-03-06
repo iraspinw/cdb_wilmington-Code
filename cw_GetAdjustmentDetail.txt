@@ -1,0 +1,188 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetAdjustmentDetail] @iKey Integer AS
+
+SET NOCOUNT ON
+
+-- 11/22/2005: DSH Added FromJob field
+
+-- 02/09/2006: DSH Added APBatchNo
+
+-- 04/30/2007: BF added additional check for payables.buysellno=gpledger.buysellno 
+
+-- 07/23/2007: JW added AdjReqDate to re-derive spot rate used when adjustment was entered.
+
+-- 09/26/2008 DSH: Added attributes for FxContract No
+
+-- 10/14/2008 MCM: Added AdjDocTitle column
+
+-- 10/16/2008 RS: Added AdjAlternateReasonDesc
+
+-- 12/04/2008 DSH Added AdjCOID
+
+-- 12/02/2009 DSH (SALES-TAX-PRJ) Added Sales Tax fields for Tax Adjustment Project
+
+-- 07/20/2011 MCM: Added Rev Billing check
+
+-- 11/08/2011 MCM: Added AdjWeight and AdjWeightUOM
+
+-- 09/25/2012 MCM: Added AdjReportDt
+
+-- 07/21/2021 MEC: Added columns for Fixed Pricing
+
+    
+
+    DECLARE @APBATCHNO char(15)
+
+    DECLARE @NUMITEMS INT
+
+    DECLARE @FXAMOUNT money
+
+    DECLARE @AdjType char(1)
+
+    DECLARE @MEMOTYPE varchar(10)
+
+    DECLARE @RevBatchNo int
+
+
+
+
+
+    SELECT @APBatchNo = APBatchNo, @AdjType = ADJTYPE FROM GPLEDGER WITH(NOLOCK) WHERE  LedgerID = @iKey
+
+
+
+    IF @ADJType = 'P' BEGIN
+
+        SELECT @FXAMOUNT = FXAMOUNT, @NUMITEMS = NumOfItems FROM PAYABLESBATCH WITH(NOLOCK) WHERE APBatchNo = @APBATCHNO
+
+        IF @FXAmount < 0 SET @MEMOTYPE='D' 
+
+        IF @FXAmount > 0 AND @NUMITEMS =1 SET @MEMOTYPE='C' 
+
+        IF @FXAmount > 0 AND @NUMITEMS > 1 SET @MEMOTYPE='I'  --Invoice 
+
+    END
+
+
+
+    SELECT 
+
+		TradeDt, 
+
+		Sale, 
+
+		Cost, 
+
+		AdjCpID, 
+
+		AdjType, 
+
+		AdjReason, 
+
+		AdjApproved, 
+
+        AdjNotes, 
+
+        Commission, 
+
+        AdjCurrencyCd, 
+
+        AdjFxAmount, 
+
+        GPLedger.GLAcct, 
+
+        ADjPosted, 
+
+        AdjPostDt,
+
+        AdjCompleted, 
+
+        FromJob, 
+
+        gpledger.APBatchNo, 
+
+        (SELECT Payables.InvoiceNo FROM PAYABLES WITH(NOLOCK) WHERE PAYABLES.ItemID = GPLEDGER.LEDGERID AND GPLEDGER.ADJTYPE = 'P'
+
+		AND payables.buysellno = GPLedger.buysellno) AS InvoiceNo,
+
+        @MEMOTYPE,
+
+        @FXAMOUNT AS VoucherAmt,
+
+		AdjReqDate,
+
+        FxContractNo,
+
+        FxContractRate,
+
+		AdjDocTitle, 
+
+        AdjAlternateReasonDesc,
+
+        AdjCOID,
+
+        AdjSalesTaxAmt,
+
+        AdjFxSalesTaxAmt,
+
+        AdjMemoNo,
+
+        AdjWeight,
+
+		AdjWeightUOM,
+
+		AdjReportDt,
+
+		FP_MarketPrice,
+
+		FP_Discount,
+
+		FP_Rate,
+
+		FP_NetPrice,
+
+		FP_NetPriceUOM,
+
+		FP_DetailID,
+
+		SWeight,
+
+		SWeightUOM,
+
+		SFxAmount,
+
+		SalesTaxCode
+
+        FROM GPLedger WITH(NOLOCK) 
+
+		inner join buysell on buysell.BuySellNo = GPLedger.BuySellNo
+
+		left join salestaxcode on buysell.salestaxcodeid= salestaxcode.SalesTaxCodeID
+
+		LEFT JOIN WKSDetail WITH(NOLOCK) ON WKSDetail.DetailID = GPLedger.FP_DetailID
+
+        WHERE LedgerID = @iKey
+
+
+
+
+
+	-- CHECK IF RECORD IN AN UNPOSTED REV BILLING BATCH
+
+	SELECT TOP 1 @RevBatchNo = GPLedger.ReverseBatchNo FROM ReverseBillingStatement WITH(NOLOCK) 
+
+		INNER JOIN GPLedger WITH(NOLOCK) ON GPLedger.ReverseBatchNo = ReverseBillingStatement.ReverseBatchNo AND GPLedger.AdjCpID = ReverseBillingStatement.CpID
+
+		WHERE GPLedger.LedgerID = @iKey
+
+	
+
+	IF ISNULL(@RevBatchNo,0) <> 0
+
+		SELECT 1 AS IsRevBilling
+
+	ELSE
+
+		SELECT 0 AS IsRevBilling
+

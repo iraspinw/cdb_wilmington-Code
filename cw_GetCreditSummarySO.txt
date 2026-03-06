@@ -1,0 +1,148 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCreditSummarySO] 
+
+	@CpID char(12),
+
+	@PONumber char(15) = ''
+
+
+
+	AS 
+
+	---[dbo].[cw_GetCreditSummarySO]  '43696','90925'
+
+	---[dbo].[cw_GetCreditSummarySO]  '43696','90926'
+
+	---[dbo].[cw_GetCreditSummarySO]  '43698','90931'
+
+	---[dbo].[cw_GetCreditSummarySO]  '43698','90929'
+
+	--Get creaditLimit
+
+	declare @creaditLimit money 
+
+
+
+	select @creaditLimit=counterparty.CreditLimit
+
+	FROM counterparty WITH(NOLOCK)	
+
+	LEFT JOIN credit WITH(NOLOCK) ON Counterparty.activecreditprotocolid = Credit.protocolid 
+
+	WHERE Counterparty.CpID = @CpID
+
+
+
+
+
+	----Get AddCurrentAmount flag
+
+	--declare @AddCurrentAmount varchar(5) 
+
+	--select 
+
+	--@AddCurrentAmount =(case when @PONumber not in (select isnull(BuySell.RefSONo,'') from BuySell where BuySell.CustID = @CpID ) then 'Y' else 'N' end) 
+
+	----from PODetail
+
+	----inner join Po on Po.PONumber = PODetail.PONumber
+
+	----where Po.CpID = @CpID and Po.PONumber =@PONumber
+
+
+
+ --  if (@PONumber='') begin  set @AddCurrentAmount= 'Y' end
+
+
+
+
+
+   -- Get UntiedWorksheetAmount and UntiedWorksheetchargeBack
+
+   declare @UntiedWorksheetAmount float 
+
+   declare @UntiedWorksheetchargeBack  float 
+
+
+
+   select 
+
+   @UntiedWorksheetAmount=sum(isnull(WKSDetail.SFxAmount,0)),
+
+   @UntiedWorksheetchargeBack=sum(isnull(WksDelivery.ChgToCustAmt,0))
+
+   from WKSDetail 
+
+   inner join BuySell on BuySell.BuySellNo=WKSDetail.BuySellNo
+
+   left join WksDelivery on WksDelivery.BuySellNo=BuySell.BuySellNo
+
+   where BuySell.CustID = @CpID 
+
+   and  rtrim(ltrim(isnull(BuySell.RefSONo,''))) =''
+
+
+
+    -- Get tiedWorksheetAmount 
+
+   declare @tiedWorksheetAmount float 
+
+   select 
+
+   @tiedWorksheetAmount=sum(isnull(WKSDetail.SFxAmount,0))
+
+   from WKSDetail 
+
+   inner join BuySell on BuySell.BuySellNo=WKSDetail.BuySellNo
+
+   where BuySell.CustID = @CpID 
+
+   and  rtrim(ltrim(isnull(BuySell.RefSONo,''))) =@PONumber
+
+
+
+   if (@PONumber='') begin  set @tiedWorksheetAmount= 0 end
+
+   --Final
+
+	select 
+
+	isnull(Sum(PODetail.FxAmount),0) as UnshippedOrdersTotal,
+
+	@creaditLimit  as creaditLimit,
+
+--	@AddCurrentAmount as AddCurrentAmount,
+
+	isnull(@UntiedWorksheetAmount,0) as UntiedWorksheetAmount,
+
+	isnull(@UntiedWorksheetchargeBack,0) as UntiedWorksheetchargeBack,
+
+	isnull(@tiedWorksheetAmount,0) as tiedWorksheetAmount
+
+	from PODetail
+
+	inner join Po on Po.PONumber = PODetail.PONumber
+
+	where Po.CpID = @CpID 
+
+	      and po.Source ='SO'
+
+		  and Po.PONumber not in (select isnull(BuySell.RefSONo,'') from BuySell)
+
+		  and (@PONumber ='' or Po.PONumber <> @PONumber)
+
+		  and Po.Status <>'CLOSED'
+
+
+
+		 
+
+
+
+	
+
+	
+

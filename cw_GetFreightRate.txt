@@ -1,0 +1,44 @@
+
+
+
+
+
+
+
+
+
+
+
+
+CREATE  PROCEDURE [dbo].[cw_GetFreightRate]  @FreightRateID int 
+
+
+
+--10/17/2018 alex: created
+
+--07/31/2023 DN: Added CPActive, CompanyNm
+
+
+
+AS
+
+SET NOCOUNT ON
+
+
+
+Select *,
+
+	CounterParty.CompanyNm,
+
+	CounterParty.ActiveStatus as CPActive
+
+from FreightRate
+
+left join CounterParty with(nolock) on FreightRate.CpID = counterparty.CpID
+
+where FreightRateID= @FreightRateID
+
+
+
+
+

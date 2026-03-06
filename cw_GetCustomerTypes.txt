@@ -1,0 +1,32 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCustomerTypes]
+
+AS
+
+BEGIN
+
+--11/11/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+
+
+    SELECT DISTINCT 
+
+		CustomerCO.CompanyNm AS Customer
+
+	FROM 
+
+		BookSheet 
+
+	LEFT JOIN PO as SalesPO WITH(NOLOCK) ON BookSheet.PONumber=SalesPO.PONumber
+
+	LEFT JOIN CounterParty as CustomerCO WITH(NOLOCK) ON SalesPO.CPID=CustomerCO.CPID
+
+	WHERE 
+
+		ISNULL(CompanyNm,'') <> '' ORDER BY CompanyNm
+
+END
+

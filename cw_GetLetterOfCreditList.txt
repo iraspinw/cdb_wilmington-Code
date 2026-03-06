@@ -1,0 +1,90 @@
+CREATE   PROCEDURE [dbo].[cw_GetLetterOfCreditList] 
+
+	@LCNo varchar(25),
+
+	@FromDt datetime, 
+
+	@ToDt datetime,
+
+	@Applicant char(12),
+
+	@PONo varchar(25)
+
+
+
+AS
+
+--10/27/2016: MN CREATED
+
+--04/03/2023 Nick: Last Ship Date now pulls Last Ship Date
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT
+
+		ID,
+
+		[LCNo],
+
+		[CurAmt] As [Amount],
+
+		[CurCode],
+
+		[IssueDt] As [Date of Issue],
+
+		LC.[ExpirationDt] As [Date of Expiry],
+
+		LC.LastShipDt As [Last Ship-Date],
+
+		[LCType] As [Form of L/C],
+
+		CI.CompanyDesc As [Dept],
+
+		[Beneficiary],
+
+		AC.CompanyNm As [Applicant],
+
+		[ApplicantAddrType],
+
+		[ApplicantAddr],
+
+		CC.CompanyNm As [ConsigneeNm],
+
+		[ConsigneeAddrType],
+
+		[ConsigneeAddr],
+
+		[CommodityDesc],
+
+		PO.PONumber As [Sales Order]
+
+	FROM LC
+
+	LEFT JOIN CounterParty AC WITH(NOLOCK) On AC.CpID = ApplicantCPID
+
+	LEFT JOIN CounterParty CC WITH(NOLOCK) On CC.CpID = ConsigneeCPID
+
+	LEFT JOIN CompanyInfo CI WITH(NOLOCK) ON CI.COID = LC.COID
+
+	OUTER APPLY (SELECT TOP 1 * FROM PO WITH(NOLOCK) WHERE (PO.IssuingLC_ID = LC.ID AND (@PONo = '' OR PO.PONumber = @PONo))) PO
+
+	WHERE
+
+		(@FromDt = '' or (IssueDt >= @FromDt) and (IssueDt <= @ToDt))
+
+		AND (@LCNo = '' OR LCNo = @LCNo)
+
+		AND (@Applicant = '' OR ApplicantCPID = @Applicant)
+
+		AND (@PONo = '' OR PO.PONumber = @PONo)
+
+	ORDER BY LCNo
+
+
+

@@ -1,0 +1,18 @@
+CREATE proc [dbo].[cw_GetDocumentNumbers] as
+
+
+
+--08/10/2016 MN: Created
+
+
+
+SELECT * FROM SystemID 
+
+WHERE 
+
+	TableNm IN ('BuySell', 'PO', 'SO', 'InvRcvBuySell', 'InvWrk', 'CONVERTJOB', 'SerialNo')
+
+ORDER BY TableNm
+
+
+

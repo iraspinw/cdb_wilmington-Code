@@ -1,0 +1,18 @@
+create proc [dbo].[cw_GetPettyCashLedger] 
+
+as
+
+
+
+
+
+	SELECT 
+
+		Name,
+
+		GLAcct 
+
+	FROM GLAccount 
+
+	where Cat = 'PETTY CASH'
+

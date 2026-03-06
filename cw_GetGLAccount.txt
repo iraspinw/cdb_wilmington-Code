@@ -1,0 +1,52 @@
+CREATE   PROCEDURE [dbo].[cw_GetGLAccount]
+
+	
+
+	@AccountID as varchar(100)
+
+	
+
+AS
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+-- 07/29/2015 MEC: Created for GL Account By ID
+
+-- 03/14/2023 Nick: Added LockDescription
+
+
+
+SELECT 
+
+	Name, 
+
+	Cat As [Class], 
+
+	GLAcct As [Account], 
+
+	SalesGLAcct, 
+
+	BankCurrencyCd,
+
+	PettyCashCOID,
+
+	isnull(LockDescription, 0) as LockDescription
+
+FROM 
+
+	GLAccount 
+
+WHERE
+
+	GLAcct = @AccountID
+
+
+
+
+

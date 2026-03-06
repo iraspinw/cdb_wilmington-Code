@@ -1,0 +1,22 @@
+
+
+CREATE PROC [dbo].[cw_GetTradeTypes]
+
+ AS
+
+--09/02/2014 MEC: Created
+
+--08/05/2015 MCM: Altered for settings, old code commented incase of errors
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	--SELECT TradeType As OriginalValue01, TradeType As Value01 from TradeType with (nolock)
+
+	SELECT RTRIM(TradeType) AS TradeType FROM TradeType
+

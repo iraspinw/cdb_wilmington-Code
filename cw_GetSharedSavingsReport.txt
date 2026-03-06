@@ -1,0 +1,98 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetSharedSavingsReport] 	@FromDt datetime, @ToDt datetime, @cpid char(12), @TypeName varchar(45) = '' AS
+
+
+
+--8/10/2020 Alex: Created
+
+
+
+--cw_GetSharedSavingsReport '','','',''
+
+
+
+
+
+    select 
+
+	 Address.Type as Location,
+
+	 sum(isnull(BillSheetDetail.Charge,0)) as [{C}Total Sales],
+
+     sum(isnull(ServiceRecordExpense.Benchmark,0)) as [{C}Total Benchmark],   
+
+     sum(isnull(ServiceRecordExpense.Benchmark,0))-  sum(isnull(BillSheetDetail.Charge,0)) as [{C}Savings],
+
+	 --case when sum(isnull(ServiceRecordExpense.Benchmark,0)) =0 then 0 else  (( sum(isnull(ServiceRecordExpense.Benchmark,0))-  sum(isnull(BillSheetDetail.Charge,0))) /  sum(isnull(ServiceRecordExpense.Benchmark,0)) ) * 100 end as [{C}Savings %],
+
+      SharedSavPercent as [{C}Savings %],
+
+	 (SharedSavPercent * (sum(isnull(ServiceRecordExpense.Benchmark,0))-  sum(isnull(BillSheetDetail.Charge,0))))/100   as [{C}Fee],
+
+	 counterparty.CompanyNm as Customer,
+
+	 BillSheet.CustID as [-hidden-CustID]
+
+
+
+	from Address
+
+    inner join BillSheet on BillSheet.ShipToID = Address.Type
+
+	inner join BillSheetDetail BillSheetDetailwithSharedSaving on  BillSheet.BillSheetID = BillSheetDetailwithSharedSaving.BillSheetID and BillSheetDetailwithSharedSaving.InvoiceDesc like '%Shared Saving%'
+
+	left join BillSheetDetail on BillSheet.BillSheetID = BillSheetDetail.BillSheetID and BillSheetDetail.InvoiceDesc not  like '%Shared Saving%'
+
+	left join ServiceRecordExpense on ServiceRecordExpense.DSE_ID = BillSheetDetail.DSE_ID
+
+	left join counterparty on counterparty.CpID = BillSheet.CustID
+
+	where ((@ToDt= '' and @FromDt = '') OR( BillSheet.InvoiceDt >= @FromDt AND BillSheet.InvoiceDt <= @ToDT))
+
+	AND (@cpid = '' OR BillSheet.CustID = @cpid)
+
+	AND (@TypeName = '' OR BillSheet.ShipToID = @TypeName)
+
+	--and BillSheetDetail.InvoiceDesc like '%Shared Saving%'
+
+	group by Type,CompanyNm,SharedSavPercent,BillSheet.CustID
+
+
+
+
+
+
+
+
+
+
+
+	--SELECT 
+
+	--Addr1 as Location,
+
+	-- sum(isnull(BuySell.FxInvoiceAmt,0)),
+
+	-- sum(isnull(ServiceRecordExpense.Benchmark,0)) as [Total Benchmark],
+
+	-- sum(isnull(ServiceRecordExpense.FxCostAmount,0))as [Total Charges],
+
+	--(  sum(isnull(ServiceRecordExpense.Benchmark,0)) -  	 sum(isnull(ServiceRecordExpense.FxCostAmount,0))) as [Benchmark-Charges]
+
+ --   from [Address] 	
+
+	--left join BuySell on BuySell.ShipToID = [Address].Type
+
+	--left join ServiceRecord on ServiceRecord.Account = BuySell.CustID and ServiceRecord.Location = [Address].Type
+
+	--left join ServiceRecordExpense on ServiceRecordExpense.DispatchScheduleKey = ServiceRecord.DispatchScheduleKey	
+
+	--where (@CPID='' or [Address].CpID = @CPID)
+
+ --          AND (@TypeName = '' OR [Address].Type = @TypeName)
+
+	--	   AND ((@ToDt= '' and @FromDt = '') OR( BuySell.ShippingDt >= @FromDt AND BuySell.ShippingDt <= @ToDT))
+
+	--group by Addr1
+

@@ -1,0 +1,96 @@
+CREATE proc [dbo].[cw_GetEmailListForConverting] @JobNo int
+
+
+
+as
+
+
+
+--cw_GetEmailListForConverting 2472
+
+
+
+-- 03/14/2019 MEC: Created for Email List on Converting
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	select ContactNm As Contact, email, IsNull(RoleNm,'Other') AS [Type]
+
+	FROM ConvertingJob_Expenses
+
+	INNER JOIN Contact ON ConvertingJob_Expenses.CpID = Contact.CpID
+
+	LEFT JOIN ContactRoleAssignment ON Contact.CT_ID = ContactRoleAssignment.CT_ID
+
+	where JobNo = @JobNo
+
+	and isnull(email,'') <> '' --and CpID <> '(INV)'
+
+
+
+	--select 'Billing Contact' as [Name], billingemail as Email, 'Supplier' as [Type]
+
+	--	from [Address] 
+
+	--	Inner Join Counterparty On Counterparty.CpID = [Address].CpID
+
+	--	where Counterparty.CpID=@CpID 
+
+	--	and isnull(billingemail,'') <> ''
+
+	--UNION
+
+	--select Contact, [Address].email, 'Supplier'
+
+	--	from [Address] 
+
+	--	Inner Join Counterparty On Counterparty.CpID = [Address].CpID
+
+	--	where Counterparty.CpID=@CpID 
+
+	--	and isnull([Address].email,'') <> ''
+
+	--UNION
+
+	--select Contact, [Address].email, 'Supplier'
+
+	--	from [Address] 
+
+	--	Inner Join Counterparty On Counterparty.CpID = [Address].CpID
+
+	--	where Counterparty.CpID=@CpID and InvoiceAddr = 'Y'
+
+	--	and isnull([Address].email,'') <> ''
+
+	--UNION
+
+	--select 'Billing Contact' as [Name], billingemail as Email, 'Supplier' as [Type]
+
+	--	from [Address] 
+
+	--	Inner Join Counterparty On Counterparty.CpID = [Address].CpID
+
+	--	where Counterparty.CpID=@CpID and InvoiceAddr = 'Y'
+
+	--	and isnull(billingemail,'') <> ''
+
+
+
+
+
+
+
+
+
+
+
+	order by [type]
+
+
+

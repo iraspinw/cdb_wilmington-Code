@@ -1,0 +1,616 @@
+CREATE   PROCEDURE [dbo].[cw_GetCounterparty]  @CpID char(12) AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--4/28/2005: BM: Added AvgBaleWtLBS
+
+--7/5/2005 BM: Added AllocID
+
+--11/30/2005 JW: added Counterparty_Referrer.ChgPer field
+
+--12/15/2005 DSH: Added support for Grades Of Interest/ Cleaned up Web Password result set.
+
+--12/21/2005 DSH: Added Industry Nm.
+
+--12/29/2005 BM: Added Website and SalesTypeID
+
+--01/04/2006 DSH: Added Sales TAx Code -- removed column from counterparty table.
+
+-- 02/06/2006 JW: Added checks on counterparty role to disallow user from unchecking the roles if they are in use
+
+--4/3/2006 JW: Added check on whether counterparty is warehouse and lock down companynm on counterparty screen  if is
+
+--4/3/2006 JW: Added field LastEdit
+
+--10/3/2006 BM: Added EDI Fields , PriceRegionID
+
+--1/9/2007 BF: added credit protocol select to end of procedure 
+
+--1/22/2007 BF: removed credit protocol select at end, added protocolID to original select
+
+--1/30/2007 JW: removed User_CreditCheck and CreditLimExpDt
+
+--02/07/2007 BF: added credit status check to end of proc to check for denied protocols
+
+--06/12/2007 DSH: Added Account Balance and Protocol Expiration.
+
+--08/22/2007 JW: added AutoFeedAPVoucher, IsInterCompany
+
+--10/4/2007 BF: Added AVG DSO DELAY FIELD
+
+--11/9/2007 BF: added agency filter on open AR calc
+
+--12/18/2007 MCM: Added DistributionMode to SELECT
+
+--2/21/2008 BF: added ACH fields to select
+
+--2/26/2008 BF: Added certification recordset
+
+--04/18/2008 DSH Removed TAX-ID & TaxType column - now being referenced in Address Table.  Old Code->AltRemitInfo,GLAcct_Other,CurrCode,'' TaxID,ActiveStatus,TermsCode,APFaxNo,MinWt,MinWtUOM,
+
+--11/20/2008 MCM: Added OurCustNo
+
+--12/11/2008 JW: Added User Defined fields
+
+--01/23/2009 MCM: Added OnHold to SELECT and Credit section
+
+--01/23/2009 MCM: Added UserDefined3 & UserDefined4 to SELECT
+
+--03/09/2009 DSH Added SKU Number to Products of Interest
+
+--03/23/2009 RS: InvoiceType added
+
+--06/04/2009 MCM: Added BillingCycle, StatementType, ReportUOM
+
+--07/15/2009 RS: BillOn added
+
+--09/02/2009 MCM: Added ReverseBilling
+
+--06/07/2010 MCM: Added WebIsAdmin
+
+--09/01/2010 BF: Added directions to address info
+
+--02/23/2011 MCM: Added RemitID to results
+
+--04/14/2011 MCM: Added BatchPay, CPSource, PrintPriceLetter
+
+--01/23/2012 RS: CPNameIntl
+
+--01/23/2012 DSH Renamed Fields and added Foreign Language Block.
+
+--04/17/2012 MCM: Added Counterparty_ProductsOfInterest.AltDesc
+
+--08/29/2012 EMR: Added Counterparty.EDIOutStartDt
+
+--12/04/2012 DSH Added Address.InternalFreight Cost
+
+--01/08/2013 RS: Show Pending Credit Protocol (if no type other exists)
+
+--04/18/2013 RS: Added Counterparty_ProductsOfInterest.InterestType,StartDt,ExpDt,Qty,QtyUOM added per CMS
+
+--06/07/2013 MCM: Added ScaleCheck
+
+--09/13/2013 MCM: Added LocationEmailContract
+
+--11/05/2013 MCM: Added PPrice and SupplierID
+
+--01/31/2014 RS: Added Locations info
+
+--02/17/2014 DSH Added Dispatch Email Address
+
+--04/23/2014 RS: column name changed from DispatchEmail to BillingEmail
+
+--05/23/2014 RS: Added CommAgentID,CommGLAcct,CommRate,CommRatePer,CommCurrency
+
+--05/22/2015 RS: Contact,Telephone,Fax,Email blanked out in the first recordset before removal
+
+--09/10/2015 MCM: Added ReferenceIDCust
+
+--10/05/2015 MCM: Added AcctingIDVendor
+
+--12/08/2016 MEC: Added InvoiceFmt
+
+--04/30/2018 MN: Added Fetch Contacts
+
+--04/30/2019 Alex: Added InvoiceNote
+
+--04/30/2019 Alex: Added RemitID
+
+--04/30/2019 Alex: return  Addr4
+
+--07/25/2019 Alex: ReverseBilling,BillingCycle
+
+--01/06/2020 Alex: DistributionMode
+
+--02/14/2020 MN: Added certificate
+
+--2/3/2023 ZT: Added bank info
+
+--02/13/2023 DN: added ReverseBillingDocFormID, ReverseBillingDocUOM
+
+--02/21/2023 ZT: Added BANK_Email
+
+--03/14/2023 Nick: Added PaymentDays
+
+--03/23/2023 ZT: Added IsIntercompany
+
+--05/03/2023 Nick: Added ReasonCode, ReasonDescription
+
+--06/20/2023 Nick: Added CounterpartyLogo
+
+--cw_GetCounterparty '84698'
+
+
+
+	-- ADDED for Contact Support *BEGIN*
+
+	DECLARE @APContact varchar(50) = ''
+
+	DECLARE @APVoiceNo varchar(50) = ''
+
+	DECLARE @APFaxNo varchar(30) = '' -- field deprecated
+
+	DECLARE @APEmail varchar(300) = ''
+
+	SELECT Top 1 @APContact = ContactNm, @APVoiceNo = PhoneBusiness, @APEmail = Email From Contact WITH(NOLOCK) 
+
+	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	WHERE RoleNm In ('Collections', 'Primary') And CpID = @CpID Order By RoleNm
+
+	
+
+	DECLARE @ContactEmail varchar(150) = ''
+
+	DECLARE @Contact varchar(200) = ''
+
+	DECLARE @Telephone varchar(50) = ''
+
+	DECLARE @Email varchar(300) = '' -- field may be deprecated
+
+	SELECT Top 1 @Contact = ContactNm, @Telephone = PhoneBusiness, @ContactEmail = Email From Contact WITH(NOLOCK) 
+
+	Where CpID = @CpID AND IsNull(IsPrimary,0) = 1
+
+	--INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	--WHERE RoleNm In ('Billing', 'Primary') And CpID = @CpID Order By IsNull(IsPrimary,0) Desc, RoleNm
+
+	-- ADDED for Contact Support *END*
+
+
+
+    SELECT CpID,CompanyNm,Role,'' as Contact,'' as VoiceNo,'' as FaxNo,'' as EMail,ReferenceID,GLAcctSupplier,GroupNm,
+
+           InvoiceNote,ShippingLineRemarks,Terms,CustSvcRep,UserNotes,CreditLimit,@APContact APContact,@APVoiceNo APVoiceNo,ReqReview,
+
+           AltRemitInfo,GLAcctExpense,CurrCode,ActiveStatus,TermsCode,@APFaxNo APFaxNo,MinWt,MinWtUOM,
+
+           SendRcvWtFax,CommissionRole,ShipAddrForInvoice,
+
+           FreightType,WebLogin,WebUserID,WebPassword,IndustryNm, SalesTypeID, Website, convert( int,CpLastEdit) AS EditStamp, SCAC,CustomsCode,
+
+	       EDIVan, EDIVanID, EDIVanIDQualifier, EDIContact, EDIContactEmail, ActiveCreditProtocolID,@APEmail APEMail, AutoFeedAPVoucher, IsInterCompany,
+
+		   AvgDSODelay, DistributionMode, OurCustNo, UserDefined1, UserDefined2, OnHold, UserDefined3, UserDefined4,InvoiceType, BillingCycle,
+
+		   StatementType, ReportUOM,BillOn, ReverseBilling, WebIsAdmin, RemitID, BatchPay, CPSource, PrintPriceLetter, ForeignLang_CompanyNm, ForeignLang_AddressBlock,
+
+		   EDIOutStartDt, ScaleCheck, LocationEmailContract,CommAgentID,CommGLAcct,CommRate,CommRatePer,CommCurrency, AcctingIDCust, AcctingIDVendor, isFreight, InvoiceFmt,
+
+		   UserDefined1,UserDefined2,UserDefined3,UserDefined4,isnull(RemitID,0) as RemitID,isnull(ReverseBilling,0) as ReverseBilling,isnull(BillingCycle,'') as BillingCycle,isnull(DistributionMode,'') as DistributionMode,
+
+		   ReportGroup,isnull(BatchInvoiceGroup,0) as BatchInvoiceGroup,
+
+		   isnull(isBillingAddressOnly,0) as isBillingAddressOnly,
+
+		   isnull(BANK_Name, '') As BANK_Name,
+
+		   isnull(BANK_PaymentType, '') As BANK_PaymentType,
+
+		   isnull(BANK_AcctNo, '') As BANK_AcctNo,
+
+		   isnull(BANK_RoutingNo, '') As BANK_RoutingNo,
+
+		   isnull(BANK_SwiftNo, '') As BANK_SwiftNo,
+
+		    isnull(BANK_Email, '') As BANK_Email,
+
+		   RevBillingDocFormID,
+
+		   RevBillingDocUOM,
+
+		   isnull(PaymentDays, 0) as PaymentDays,
+
+		   isnull(ReasonCode, '') as ReasonCode,
+
+		   isnull(ReasonDescription, '') as ReasonDescription,
+
+		   Counterparty.CounterpartyLogo
+
+		   
+
+
+
+    FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID
+
+
+
+    SELECT Address.Type,Addr1,Addr2,Addr3,City,Region,PostalCd,Country.Name AS [Country],Instructions,Address.Notes,
+
+           EDI_ShipToCode,AvgBalewtLBS,AllocID, [Address].SalesTaxCodeID,SalesTaxCode.SalesTaxCode, PriceRegionID, EDI_ShipFromCode, TaxID, directions, 
+
+		   CRVCertType, CRVCertNum, InternalFreightCost,@ContactEmail BillingEmail,@Contact Contact,@Telephone Telephone, @Email Email, CountryID,Addr4
+
+	FROM Address WITH(NOLOCK) 
+
+	Left Join SalesTaxCode With(NoLock) On SalesTaxCode.SalesTaxCodeID = [Address].SalesTaxCodeID
+
+	LEFT JOIN Country With(NoLock) On Address.Country = Country.CountryID
+
+	where Address.CpID =  @CpID  AND InvoiceAddr = 'Y' 
+
+
+
+    -- SALES REPS
+
+    SELECT referrer.name as Name, Counterparty_Referrer.ReferrerNo, Rate, Charge, IsDefault, ChgPer  
+
+	FROM Counterparty_Referrer WITH(NOLOCK) 
+
+    INNER JOIN referrer WITH(NOLOCK) ON  Counterparty_Referrer.ReferrerNo = referrer.ReferrerNo
+
+    WHERE  CPID = @CpID
+
+	order by isdefault desc
+
+		
+
+    ---- PRODUCTS OF INTEREST
+
+    --SELECT ItemID, Description,a.GRADEID,a.UnitType,a.BW,a.BWUOM,a.COLOR,a.FINISH,a.RW,a.RWUOM,a.Core,a.CoreUOM,a.Caliper,a.SheetSIZE,a.SheetSizeUOM,
+
+    --       a.MWeight,a.Grain,a.JobLot,a.Condition,a.Spec,a.Notes,a.PriceIdea,a.PriceIdeaUOM,a.PriceIdeaCurrency, a.SpeciesID, SKU, AltDesc,
+
+    --       InterestType,StartDt,ExpDt,Qty,QtyUOM, PPrice, SupplierID
+
+    --FROM Counterparty_ProductsOfInterest a WITH(NOLOCK) INNER JOIN GRADE WITH(NOLOCK) ON a.GRADEID = GRADE.GRADEID
+
+    --WHERE CPID = @CpID
+
+
+
+	-- CHECK IS CUSTOMTER
+
+	declare @IsCustomer bit
+
+	SET @IsCustomer = 0
+
+	IF EXISTS(SELECT CpID From Counterparty WHERE CpID = @CpID and [Role] in ('A', 'C', 'P', 'X'))
+
+		SET @IsCustomer = 1
+
+
+
+	-- CHECK IS SUPPLIER
+
+	declare @IsSupplier bit
+
+	SET @IsSupplier = 0
+
+	IF EXISTS(SELECT CpID From Counterparty WHERE CpID = @CpID and [Role] in ('S', 'A', 'P', 'V'))
+
+		SET @IsSupplier = 1
+
+
+
+	-- CHECK IS FREIGHT/OTHER
+
+	declare @IsFreightOther bit
+
+	SET @IsFreightOther = 0
+
+	IF EXISTS(SELECT CpID From Counterparty WHERE CpID = @CpID and [Role] in ('D', 'A', 'V', 'X'))
+
+		SET @IsFreightOther = 1
+
+
+
+-- CHECK IS Intercompany
+
+	declare @IsIntercompany bit
+
+	SELECT @IsIntercompany = IsIntercompany FROM Counterparty WHERE CpID = @CpID
+
+
+
+	---- CHECK IS WAREHOUSE 
+
+	--declare @IsWarehouse bit
+
+	--SET @IsWarehouse = 0
+
+	--IF EXISTS(SELECT Top 1 CpID FROM Address WITH(NOLOCK) WHERE CpID = '(INV)' AND WarehouseID = @CpID)
+
+	--	SET @IsWarehouse = 1
+
+	
+
+	
+
+	SELECT @IsCustomer As IsCustomer, @IsSupplier As IsSupplier, @IsFreightOther As IsExpense, 0 As IsWarehouse, @IsIntercompany As IsIntercompany
+
+
+
+
+
+	SELECT TOP 1 * FROM Contact WHERE CpID = @CpID AND IsNull(IsPrimary,0) = 1 ORDER BY ContactNm DESC
+
+
+
+	
+
+	SELECT 
+
+		Certification.CertificationID, 
+
+		RegistrationNo, 
+
+		Certification.CertificationType
+
+	FROM Counterparty_Certification 
+
+	INNER JOIN Certification WITH(NOLOCK) ON Counterparty_Certification.CertificationTypeID = Certification.CertificationID
+
+	WHERE CpID = @CpID
+
+
+
+	SELECT CounterpartyGradeCodes.GradeID, [Description] AS [ProductNm], EDICode, EDIRef FROM CounterpartyGradeCodes 
+
+	INNER JOIN Grade WITH(NOLOCK) ON CounterpartyGradeCodes.GradeID = Grade.GradeID
+
+	WHERE CpID = @CpID
+
+
+
+	-- PRODUCTS OF INTEREST
+
+    SELECT ItemID, Description,a.GRADEID,a.UnitType,a.BW,a.BWUOM,a.COLOR,a.FINISH,a.RW,a.RWUOM,a.Core,a.CoreUOM,a.Caliper,a.SheetSIZE,a.SheetSizeUOM,
+
+           a.MWeight,a.Grain,a.JobLot,a.Condition,a.Spec,a.Notes,a.PriceIdea,a.PriceIdeaUOM,a.PriceIdeaCurrency, a.SpeciesID, a.SKU, AltDesc,
+
+           InterestType,StartDt,ExpDt,Qty,QtyUOM, PPrice, SupplierID
+
+    FROM Counterparty_ProductsOfInterest a WITH(NOLOCK) 
+
+    INNER JOIN GRADE WITH(NOLOCK) ON a.GRADEID = GRADE.GRADEID
+
+    WHERE CPID = @CpID
+
+
+
+	-- CHECK IS CUSTOMTER
+
+	declare @IsCustomerUse bit
+
+	SET @IsCustomerUse = 0
+
+	IF EXISTS(SELECT Top 1 CustID FROM BuySell WITH(NOLOCK) WHERE BuySell.CustID = @CpID)
+
+		SET @IsCustomerUse = 1
+
+	IF @IsCustomerUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 CpID FROM PO WITH(NOLOCK) WHERE PO.CpID = @CpID AND Source = 'SO')
+
+			SET @IsCustomerUse = 1
+
+	END
+
+	IF @IsCustomerUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 Account FROM ServiceRecord WITH(NOLOCK) WHERE Account = @CpID)
+
+			SET @IsCustomerUse = 1
+
+	END
+
+	IF @IsCustomerUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 CustID FROM BillSheet WITH(NOLOCK) WHERE CustID = @CpID)
+
+			SET @IsCustomerUse = 1
+
+	END
+
+	IF @IsCustomerUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 AdjCpID FROM GPLedger WITH(NOLOCK) WHERE AdjCpID = @CpID And AdjType = 'S')
+
+			SET @IsCustomerUse = 1
+
+	END
+
+	IF @IsCustomerUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 AccountID FROM DispatchJob WITH(NOLOCK) WHERE AccountID = @CpID)
+
+			SET @IsCustomerUse = 1
+
+	END
+
+	IF @IsCustomerUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 Customer FROM Equipment_Location WITH(NOLOCK) WHERE Customer = @CpID)
+
+			SET @IsCustomerUse = 1
+
+	END
+
+
+
+	-- CHECK IS SUPPLIER
+
+	declare @IsSupplierUse bit
+
+	SET @IsSupplierUse = 0
+
+	IF EXISTS(SELECT Top 1 VendorID FROM BuySell WITH(NOLOCK) WHERE BuySell.VendorID = @CpID)
+
+		SET @IsSupplierUse = 1
+
+	IF @IsSupplierUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 CpID FROM PO WITH(NOLOCK) WHERE PO.CpID = @CpID AND Source = 'PO')
+
+			SET @IsSupplierUse = 1
+
+	END
+
+	IF @IsSupplierUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 CpID FROM Budget WITH(NOLOCK) WHERE Budget.CpID = @CpID)
+
+			SET @IsSupplierUse = 1
+
+	END
+
+	IF @IsSupplierUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 AdjCpID FROM GPLedger WITH(NOLOCK) WHERE AdjCpID = @CpID And AdjType = 'P')
+
+			SET @IsSupplierUse = 1
+
+	END
+
+	IF @IsSupplierUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 CarrierID FROM DispatchJob WITH(NOLOCK) WHERE CarrierID = @CpID)
+
+			SET @IsSupplierUse = 1
+
+	END
+
+	IF @IsSupplierUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 FrtCarrierID FROM ServiceRecord WITH(NOLOCK) WHERE FrtCarrierID = @CpID)
+
+			SET @IsSupplierUse = 1
+
+	END
+
+	IF @IsSupplierUse = 0 BEGIN
+
+		IF EXISTS(SELECT Top 1 Receiver FROM ServiceRecord WITH(NOLOCK) WHERE Receiver = @CpID)
+
+			SET @IsSupplierUse = 1
+
+	END
+
+
+
+	-- CHECK IS SERVICE
+
+	declare @IsServiceUse bit
+
+	SET @IsServiceUse = 0
+
+	IF EXISTS(SELECT Top 1 VendorID FROM wksDelivery WITH(NOLOCK) WHERE wksDelivery.VendorID = @CpID)
+
+		SET @IsServiceUse = 1
+
+
+
+	-- CHECK IS FREIGHT
+
+	declare @IsFreightUse bit
+
+	SET @IsFreightUse = 0
+
+	IF EXISTS(SELECT Top 1 VendorID FROM wksDelivery WITH(NOLOCK) WHERE wksDelivery.VendorID = @CpID AND IsNull(WksDelivery.isFreight,0) = 1)
+
+		SET @IsFreightUse = 1
+
+
+
+	SELECT @IsCustomerUse As CustomerInUse, @IsSupplierUse As SupplierInUse, @IsServiceUse As ServiceInUse, @IsFreightUse As FreightInUse
+
+
+
+ --   -- GET CREDIT STATUS & EXPIRATION DATE.
+
+ --   --01/08/2013 RS: Changed to display pending credit protocol 
+
+	--DECLARE @ActiveCreditProtocolID int
+
+	--SET @ActiveCreditProtocolID = (SELECT activecreditprotocolid FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID)
+
+	
+
+	----PENDING CREDIT PROTOCOL
+
+	--IF @ActiveCreditProtocolID = 0 BEGIN
+
+	--	select TOP 1 status, ExpDt, Credit.OnHold, protocolid
+
+	--	from credit WITH(NOLOCK)
+
+	--	--inner join counterparty WITH(NOLOCK) on counterparty.cpid = @cpid
+
+	--	WHERE credit.CPID = @cpid AND status = 'Pending'
+
+	--	ORDER BY AgendaDate Desc
+
+	--END
+
+	--ELSE BEGIN
+
+	----APPROVED OR DENIED CREDIT PROTOCOL
+
+	--	select status, ExpDt, Credit.OnHold, protocolid 
+
+	--	from credit WITH(NOLOCK)
+
+	--	inner join counterparty WITH(NOLOCK) on activecreditprotocolid = protocolid and counterparty.cpid = @cpid
+
+	--END
+
+	
+
+
+
+ --   -- GET OPEN A/R BALANCE.
+
+ --   SELECT sum(SBalanceDue) FROM BuySell WITH(NOLOCK) 
+
+ --       WHERE round(SBalanceDue,2) <> 0 AND CUSTID = @CPID AND Invoiced = '1' AND ISNULL(BuySell.IsAgency,0) <> 1
+
+
+
+
+
+	----GET CERTIFICATIONS
+
+	--SELECT CertificationType , RegistrationNo, counterparty_certification.certificationtypeid 
+
+ --       from counterparty_Certification WITH(NOLOCK) Inner join certificationtype on certificationtype.certificationtypeid = counterparty_certification.certificationtypeid
+
+	--	where counterparty_Certification.cpid = @CPID
+
+	
+
+
+
+
+
+
+
+-- cw_GetCounterparty '568001'
+
+
+
+
+

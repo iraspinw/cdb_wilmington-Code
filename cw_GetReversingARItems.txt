@@ -1,0 +1,36 @@
+CREATE proc [dbo].[cw_GetReversingARItems] @ARBatchNo int as
+
+select sum(sale) * -1,sum(adjFxAmount) * -1, GLAcct, adjcurrencycd 
+
+	from gpledger 
+
+	where ARBatchNo = @ARBatchNo
+
+	and (AdjReason = 'BANK FEE' or adjreason='INTEREST CHG')
+
+	group by GLAcct, AdjCurrencyCd
+
+
+
+
+
+	select sale * -1,AdjFxAmount * -1,GLAcct, adjcurrencycd 
+
+	from gpledger 
+
+	where ARBatchNo = @ARBatchNo
+
+	and (AdjReason = 'SALES DISCOUNT')
+
+
+
+	select sum(amount) *-1,sum(FxAmount) * -1, glacct, currencycd, PostingType, CPID, BuySellNo
+
+	from receipt
+
+	inner join ReceiptBatch on ReceiptBatch.ARBatchNo = receipt.ARBatchNo
+
+	where receipt.arbatchno = @ARBatchNo
+
+	group by glacct, CurrencyCd, PostingType, cpid, buysellno
+

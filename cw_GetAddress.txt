@@ -1,0 +1,74 @@
+CREATE   PROCEDURE [dbo].[cw_GetAddress] @cpid char(12), @GEXCLINVREMITADDR CHAR(1), @TypeName varchar(45) = '' AS
+
+--4/28/2005 bm: Added AvgBaleWtLBS
+
+--7/5/2005   bm: Added AllocID
+
+--07/08/2010 MCM: Added brackets and nolocks
+
+--09/30/2010 RS: OR @CPID = '(OTHER)' added
+
+--06/21/2011 MCM: Added SpcInstruc
+
+--08/04/2011 MEC: Added Addr1 for Receiving/Breakdown Sheet
+
+--10/21/2011 MCM: Modified to return at least one address even when exclude remit address option is used requested by Dan/David
+
+--03/29/2013 MCM: Filter out inactive WH
+
+--02/22/2023 MEC: Added SalesTaxCodeID
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	DECLARE @AddressCnt int
+
+
+
+	IF @CPID = '(PLANT)' OR @CPID = '(INV)' BEGIN
+
+		SELECT [TYPE],AvgBaleWtLBS,AllocID,Addr1 ,SalesTaxCodeID
+
+			from [Address] 
+
+			LEFT JOIN Counterparty Warehouse ON Warehouse.CpID = [Address].WarehouseID
+
+			where [Address].CpID = '(INV)' AND (ISNULL(Warehouse.ActiveStatus,'') = 'A' OR ISNULL(Warehouse.ActiveStatus,'') = '')
+
+		RETURN
+
+	END
+
+	
+
+	SELECT @AddressCnt = COUNT([TYPE]) FROM [Address] WITH(NOLOCK) where CpID = @CPID
+
+
+
+    If (@GEXCLINVREMITADDR = 'N' OR @CPID = '(OTHER)' OR @AddressCnt = 1 OR @CPID = '(WAREHOUSE)')
+
+		SELECT [TYPE],AvgBaleWtLBS,AllocID,Addr1, Addr2, Addr3, City, Region, PostalCd, Country, Instructions, InvoiceAddr ,SalesTaxCodeID
+
+			from [Address] 			
+
+			where [Address].CpID = @CPID
+
+			AND (@TypeName = '' OR [Address].Type = @TypeName) --and isnull(inactive,0) <> 1
+
+	ELSE
+
+        SELECT [TYPE],AvgBaleWtLBS,AllocID,Addr1 ,SalesTaxCodeID
+
+			from [Address] 
+
+			where [Address].CpID = @CPID 			
+
+			AND InvoiceAddr <> 'Y' AND RemitToAddress <> 1
+
+
+

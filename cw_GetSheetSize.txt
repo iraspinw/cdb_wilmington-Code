@@ -1,0 +1,14 @@
+CREATE   PROCEDURE [dbo].[cw_GetSheetSize] AS
+
+--09/28/2016: MN CREATED
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT RTRIM(SheetSizeNm) AS SheetSizeNm FROM SheetSize
+
+
+

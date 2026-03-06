@@ -1,0 +1,26 @@
+CREATE PROC [dbo].[cw_GetBookingETD] 
+
+	
+
+	@BookingNo char(25)
+
+
+
+as 
+
+
+
+--06/09/2020 MEC: Added for Mehali to set the ETD on a booking to the shipdate on the worksheet
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT ETS As ETD FROM BookSheet WHERE BookingNo = @BookingNo
+
+
+

@@ -1,0 +1,14 @@
+CREATE PROC [dbo].[cw_GetTypeGrade] as
+
+--02/03/2015 MEC: Created for cieTrade.net
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT rtrim(Type) As color FROM TypeGrade
+
+
+

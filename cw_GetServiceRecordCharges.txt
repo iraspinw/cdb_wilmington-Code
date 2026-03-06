@@ -1,0 +1,78 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetServiceRecordCharges] 
+
+@Customer char(12)='' ,
+
+@Location varchar(45)='' ,
+
+@Equipment char(30)='' ,
+
+@Hauler char(12) ='', 
+
+@COID CHAR(2) = ''
+
+ AS 
+
+ --10/23/2020 Alex: Created for Service Record Charges
+
+ --09/12/2022 ZT: Added COID
+
+ --[dbo].[cw_GetServiceRecordCharges]  '','','',''
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	select
+
+	 ServiceRecord.DispatchScheduleKey as [-hidden- DispatchScheduleKey],
+
+	 Customer.CompanyNm as  Customer,
+
+	 ServiceRecord.Location,
+
+	 ServiceRecord.EquipmentType,
+
+	 Hauler.CompanyNm as Hauler,
+
+	 VendorExpence.CompanyNm as Vendor,
+
+	 ExpenseAccount.Name as [Expense Account],
+
+	 ChargebackAccount.Name as [Chargeback Account],
+
+	 cast(format(ServiceRecordExpense.Price,'0.00####') as varchar(150)) +'/'+ [dbo].[CnvUOM_Names] (ServiceRecordExpense.PriceUOM) as [Vendor Cost],
+
+	 cast(format(ServiceRecordExpense.PriceCust,'0.00####') as varchar(150)) +'/'+ [dbo].[CnvUOM_Names] (ServiceRecordExpense.PriceCustUOM) as [Customer Charge],
+
+	  ' ' as' '
+
+	from ServiceRecord 
+
+	inner join ServiceRecordExpense on   ServiceRecordExpense.DispatchScheduleKey =ServiceRecord.DispatchScheduleKey
+
+	inner join CounterParty Customer on Customer.CpID = ServiceRecord.Account
+
+	inner join CounterParty VendorExpence on ServiceRecordExpense.VendorID = VendorExpence.CpID
+
+	inner join CounterParty Hauler on ServiceRecord.FrtCarrierID = Hauler.CpID
+
+	left join GLAccount ExpenseAccount on ExpenseAccount.GLAcct = ServiceRecordExpense.GLAcct
+
+	left join GLAccount ChargebackAccount on ChargebackAccount.GLAcct = ServiceRecordExpense.GLAcct_Sales
+
+	left join grade on grade.GradeID =  ServiceRecord.GradeID
+
+	where (@Customer='' or @Customer = Customer.CpID)
+
+	and (@Location ='' or @Location = ServiceRecord.Location)
+
+	and (@Equipment='' or @Equipment =  ServiceRecord.EquipmentType)
+
+	and (@Hauler='' or @Hauler = ServiceRecord.FrtCarrierID)
+
+	and (@COID = '' OR @COID = ServiceRecord.COID)
+

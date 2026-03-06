@@ -1,0 +1,964 @@
+CREATE   PROCEDURE [dbo].[cw_GetGrossProfitByCustomer_TEST] 
+
+	@FromDt datetime, @ToDt datetime, 
+
+	@CoID char(2), 
+
+	@ForCustCPID char(12), 
+
+	@RefID varchar(10), 	
+
+	@TradeType varchar(25), 
+
+	@ReportUOM CHAR(1) = ''
+
+AS
+
+--M.N : 2/4/16 : Hidden all (INV) entries
+
+
+
+	--@IncludeInvPurchases char(1), 
+
+    --@ForSupplierCPID char(12), 
+
+	--@SortBy varchar(12),    
+
+	--@OrderNo char(15), 
+
+	--@DestCountry char(3), 
+
+
+
+--IF @SortBy = 1 --Sortby 1=Supplier 2=Customer   
+
+
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+
+
+	CREATE TABLE #SetWeight(
+
+		BuySellNo CHAR(12),
+
+		Qty DECIMAL(22,5)
+
+	)
+
+
+
+	CREATE TABLE #SetWeightUom(
+
+		BuySellNo CHAR(12),
+
+		QtyUom CHAR(3)
+
+	)
+
+
+
+    --INVENTORY ALLOCATION TABLE.
+
+    CREATE TABLE #SupplierAlloc(
+
+    BuySellNo char(12),
+
+    LedgerID INT,
+
+    VendorID char(12) , 
+
+    InvQty decimal(25,2),
+
+    TotalQty decimal(25,2),
+
+    Allocation decimal(25,18),
+
+    Source char(1),
+
+    AdjType char(1),
+
+    RefID char(10)
+
+    )
+
+
+
+
+
+    CREATE TABLE #REPORT (
+
+    Supplier varchar(50), 
+
+    BuySellNo varchar(15),
+
+    Customer varchar(50),
+
+    TradeDt datetime,
+
+    TradeDesc varchar(25),
+
+    Invoiced char(1),
+
+    Quantity decimal(20,4), 
+
+    QuantityUOM CHAR(3), 
+
+    Sales money,
+
+    SupplierCost money,
+
+    Expenses money,
+
+    Cost money,
+
+    GrossProfit money,     
+
+    _Source char(1),
+
+    _AdjType char(1),
+
+    LedgerID INT, 
+
+    OrderNo char(15),
+
+	BSExpenses Money,
+
+	Dept CHAR(2),
+
+	Margin DECIMAL(22,5),
+
+	MarginPerUom DECIMAL(22,5),
+
+	_CKWtUom BIT,
+
+	WksType char(1)
+
+    ) 
+
+
+
+	CREATE TABLE #BUYSELLLIST(
+
+		BuySellno CHAR(12),
+
+		LedgerID INT,
+
+		Source CHAR(1),
+
+		AdjType CHAR(1),
+
+		IsInventory BIT,
+
+		CkGP MONEY,
+
+		PRIMARY KEY (LedgerID)
+
+	)
+
+
+
+
+
+
+
+
+
+    -- GET ALL WORKSHEETS & ADJUSTMENTS THAT WE NEED TO REPORT ON. 
+
+	INSERT #BUYSELLLIST 
+
+    select 
+
+		gpledger.BUYSELLNO, 
+
+		gpLedger.LedgerID, 
+
+		GPLedger.Source, 
+
+		GPLedger.AdjType,
+
+		(CASE WHEN BuySell.VendorID = '(INV)' THEN 1 ELSE 0 END) IsInventory,
+
+		GPLedger.GrossProfit CkGP		
+
+    FROM GPLedger WITH(NOLOCK) 
+
+    LEFT JOIN BUYSELL WITH(NOLOCK)  ON gpledger.buysellno = BUYSELL.BUYSELLNO
+
+    WHERE
+
+		(GPLedger.TradeDt >= @FromDt And GPLedger.TradeDt <= @ToDt)
+
+		AND
+
+		(
+
+				(GPLedger.Source='B' AND Buysell.[Status] = 'I' AND CustID <> '(INV)' ) OR 
+
+				(GPLedger.Source='A' AND GPLedger.AdjPosted = 'Y' AND (GPLedger.AdjType = 'P' OR GPLedger.AdjType = 'S') )
+
+		)
+
+		AND (@TradeType = '' OR @TradeType = Buysell.TradeType)
+
+
+
+
+
+
+
+select sum(CkGP) from #BUYSELLLIST
+
+return
+
+
+
+
+
+    -- POPULATE INVENTORY ALLOCATION TABLE.
+
+    INSERT #SupplierAlloc(BuySellNo,LedgerID,VendorID,InvQty,Allocation,Source,AdjType,RefID)
+
+    SELECT 
+
+		#BUYSELLLIST.BuySellNo, 
+
+		#BUYSELLLIST.LedgerID, 
+
+		Inventory.VendorID, 
+
+		sum(dbo.calclbs(WksInventory.Weight,WksInventory.UOM)),
+
+		1,
+
+		#BuySellList.Source,
+
+		#BuySellList.AdjType,
+
+		RefID
+
+    FROM #BUYSELLLIST 	
+
+    LEFT JOIN WksInventory WITH(NOLOCK) ON #BUYSELLLIST.BUYSELLNO = WksInventory.BUYSELLNO
+
+    LEFT JOIN Inventory WITH(NOLOCK) ON WksInventory.Lotno = Inventory.Lotno     
+
+	WHERE IsInventory = 1
+
+    Group By #BUYSELLLIST.BuySellNo, #BUYSELLLIST.LedgerID, Inventory.VendorID, #BuySellList.Source, #BuySellList.AdjType,RefID
+
+
+
+
+
+
+
+--select * from #BUYSELLLIST
+
+--select sum(CkGP) from #BUYSELLLIST
+
+----select * from #SupplierAlloc
+
+
+
+
+
+    -- D.) GET TOTAL QUANTITIES FOR EACH WORKSHEET.
+
+    SELECT BuySellno, LedgerID, Sum(InvQty) AS Total_InvQty
+
+    INTO #TotalInvQty
+
+    FROM #SupplierAlloc
+
+    Group By BuySellNo, LedgerID
+
+    Create index #PK_TotalInvQty ON #TotalInvQty(BuySellNo)
+
+    
+
+
+
+
+
+    -- E.) CALCULATE ALLOCATION FACTORS. 
+
+    UPDATE #SupplierAlloc 
+
+    SET 
+
+    TotalQty = Total_InvQty,
+
+    Allocation = InvQty/Total_InvQty
+
+    FROM #SupplierAlloc INNER JOIN #TotalInvQty ON #SupplierAlloc.BuySellNo = #TotalInvQty.BuysellNo AND #SupplierAlloc.LedgerID = #TotalInvQty.LedgerID
+
+   WHERE Total_InvQty <> 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+    -- INVENTORY SALES.
+
+    -------------------
+
+    INSERT #REPORT(Supplier,BuySellNo,Customer,TradeDt,TradeDesc,Invoiced,Quantity,QuantityUOM,Sales,SupplierCost,Expenses,Cost,GrossProfit,_Source,_AdjType,Dept,_CkWtUom, WksType)
+
+    SELECT 
+
+    Supplier.CompanyNm Supplier, 
+
+    #SupplierAlloc.BuySellNo,
+
+    Customer.CompanyNm Customer,
+
+    GPLEDGER.TradeDt,
+
+    dbo.SETTRADETYPE(#SupplierAlloc.Source,#SupplierAlloc.AdjType,BuySell.VendorID) AS TradeDesc, 
+
+    CASE Buysell.Status WHEN 'I' THEN 1 ELSE 0 END AS Invoiced,
+
+    (Buysell.TotalWeightLbs*Allocation),	
+
+    'L', 
+
+    round(Sale*Allocation,2) AS Sales,
+
+    round(Cost*Allocation,2) AS SupplierCost,
+
+    round(BuySell.pFreightChg*Allocation,2) AS Expenses,
+
+    round(Cost*Allocation,2) AS Cost,
+
+    round(GrossProfit*Allocation,2) AS GrossProfit,
+
+    'V',    
+
+    #SupplierAlloc.AdjType,
+
+    BuySell.CoID,
+
+    1,
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+    FROM #SupplierAlloc 
+
+    INNER JOIN GPLEDGER WITH(NOLOCK)  ON #SupplierAlloc.LedgerID = GPLedger.LedgerID
+
+    left JOIN BUYSELL WITH(NOLOCK)  ON #SupplierAlloc.BuysellNo = BUYSELL.BuysellNo
+
+    left join Counterparty Customer WITH(NOLOCK) ON Customer.CPID = BuySell.CustID
+
+    left join Counterparty Supplier WITH(NOLOCK) ON Supplier.CPID = #SupplierAlloc.VendorID
+
+    LEFT JOIN Address WITH(NOLOCK) ON BuySell.CustID = Address.CpID AND BuySell.ShipToID = Address.[Type]
+
+    WHERE 
+
+		#SupplierAlloc.Source = 'B'
+
+		AND (BuySell.CoID = @CoID or @CoID = '')
+
+		--AND (@ForSupplierCpID = '' OR @ForSupplierCpID = Supplier.CPID)
+
+		AND (@ForCustCpID = '' OR @ForCustCpID = BuySell.CustID)
+
+		AND (@RefID = '' OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2 OR #SupplierAlloc.RefID = @RefID)
+
+		AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+		--AND (@DestCountry = '' OR Address.Country = @DestCountry)
+
+
+
+
+
+    -- INVENTORY SALES ADJUSTMENTS.
+
+    -------------------------------
+
+    INSERT #REPORT(Supplier,BuySellNo,Customer,TradeDt,TradeDesc,Invoiced,Quantity,QuantityUOM,Sales,SupplierCost,Expenses,Cost,GrossProfit,_Source,_AdjType,Dept, WksType)
+
+    SELECT 
+
+    Supplier.CompanyNm Supplier, 
+
+    #SupplierAlloc.BuySellNo,
+
+    Customer.CompanyNm Customer,
+
+    GPLEDGER.TradeDt,
+
+    dbo.SETTRADETYPE(#SupplierAlloc.Source,#SupplierAlloc.AdjType,BuySell.VendorID) AS TradeDesc, --    'Brokerage',   'Inv-Sale',
+
+    CASE Buysell.Status WHEN 'I' THEN 1 ELSE 0 END AS Invoiced,
+
+    AdjWeight*Allocation,	
+
+    AdjWeightUOM, 
+
+    round(Sale*Allocation,2) AS Sales,
+
+    round(Cost*Allocation,2) AS SupplierCost,
+
+    round(BuySell.pFreightChg*Allocation,2) AS Expenses,
+
+    round(Cost*Allocation,2) AS Cost,
+
+    round(GrossProfit*Allocation,2) AS GrossProfit,
+
+    'V',    
+
+    #SupplierAlloc.AdjType,
+
+    BuySell.CoID,
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+    FROM #SupplierAlloc     
+
+    INNER JOIN GPLEDGER WITH(NOLOCK)  ON #SupplierAlloc.LedgerID = GPLedger.LedgerID
+
+    LEFT JOIN BUYSELL WITH(NOLOCK)  ON #SupplierAlloc.BuysellNo = BUYSELL.BuysellNo
+
+    left join Counterparty Customer WITH(NOLOCK) ON Customer.CPID = BuySell.CustID
+
+    left join Counterparty Supplier WITH(NOLOCK) ON Supplier.CPID = #SupplierAlloc.VendorID
+
+    LEFT JOIN Address WITH(NOLOCK) ON BuySell.CustID = Address.CpID AND BuySell.ShipToID = Address.[Type]
+
+    WHERE 
+
+    	#SupplierAlloc.Source <> 'B'
+
+		AND (BuySell.CoID = @CoID or @CoID = '')
+
+		--AND (@ForSupplierCpID = '' OR @ForSupplierCpID = Supplier.CPID)
+
+		AND (@ForCustCpID = '' OR @ForCustCpID = BuySell.CustID)
+
+		AND (@RefID = '' OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2 OR #SupplierAlloc.RefID = @RefID)
+
+		AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+		--AND (@DestCountry = '' OR Address.Country = @DestCountry)
+
+
+
+    UPDATE #REPORT SET SupplierCost=SupplierCost-Expenses
+
+
+
+
+
+
+
+
+
+
+
+
+
+    -- BROKERAGE.
+
+    -------------
+
+    INSERT #REPORT(Supplier,BuySellNo,Customer,TradeDt,TradeDesc,Invoiced,Quantity,QuantityUOM,Sales,SupplierCost,Expenses,Cost,GrossProfit,_Source,_AdjType,LedgerID,BSExpenses,Dept,_CkWtUom, WksType)
+
+    Select 
+
+    Vendor.CompanyNm, 
+
+    GpLedger.BuySellNo, 
+
+    CUST.CompanyNm, 
+
+    TradeDt, 
+
+    dbo.SETTRADETYPE(GPLedger.Source,GPLedger.AdjType,BuySell.VendorID) AS TradeDesc, --    'Brokerage', 
+
+    CASE Buysell.Status WHEN 'I' THEN 1 ELSE 0 END AS Invoiced,
+
+    BuySell.TotalWeightLbs,
+
+    'L',
+
+    Sale,
+
+	Cost,
+
+    0, 
+
+    Cost, 
+
+    GrossProfit,
+
+    GPLedger.[Source],     
+
+    GPLedger.AdjType,    
+
+    GPLedger.LedgerID,
+
+	BuySell.PfreightChg,
+
+	BuySell.CoID,
+
+	1,
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+	FROM #BUYSELLLIST INNER JOIN GPLedger WITH(NOLOCK)  ON #BUYSELLLIST.LedgerID = GPLedger.LedgerID
+
+    LEFT JOIN BuySell WITH(NOLOCK)  ON gpledger.buysellno = buysell.buysellno
+
+    LEFT join Counterparty CUST WITH(NOLOCK) ON buysell.custid = CUST.cpid
+
+    LEFT join Counterparty VENDOR WITH(NOLOCK) ON buysell.vendorid = VENDOR.cpid
+
+    LEFT JOIN Address WITH(NOLOCK) ON BuySell.CustID = Address.CpID AND BuySell.ShipToID = Address.[Type]
+
+    WHERE 		
+
+		GPLedger.[Source] = 'B' AND BuySell.[Status] = 'I'
+
+		AND BuySell.VendorID <> '(INV)' 
+
+		--AND (@ForSupplierCpID = '' OR @ForSupplierCpID = Vendor.CPID)
+
+		AND (@ForCustCpID = '' OR @ForCustCpID = BuySell.CustID)
+
+		AND (@RefID = '' OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2)
+
+		AND (@CoID = '' OR BuySell.CoID = @CoID)
+
+		AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+		--AND (@DestCountry = '' OR Address.Country = @DestCountry)
+
+		--AND (@IncludeInvPurchases = 'Y' OR (@IncludeInvPurchases = 'N' AND buysell.custid <> '(INV)' AND buysell.custid <> '(PLANT)' AND buysell.custid  <> '{C}'))
+
+
+
+
+
+
+
+	-- ADJUSTMENTS (NOT FROM INVENTORY).
+
+    INSERT #REPORT(Supplier,BuySellNo,Customer,TradeDt,TradeDesc,Invoiced,Quantity,QuantityUOM,Sales,SupplierCost,Expenses,Cost,GrossProfit,_Source,_AdjType,LedgerID,BSExpenses,Dept, WksType)
+
+    Select 
+
+    Vendor.CompanyNm, 
+
+    GpLedger.BuySellNo, 
+
+    CUST.CompanyNm, 
+
+    TradeDt, 
+
+    dbo.SETTRADETYPE(GPLedger.Source,GPLedger.AdjType,BuySell.VendorID) AS TradeDesc, --    'Brokerage', 
+
+    CASE Buysell.Status WHEN 'I' THEN 1 ELSE 0 END AS Invoiced,
+
+    gpledger.AdjWeight,
+
+	gpledger.AdjWeightUOM,    
+
+    Sale,
+
+	Cost,
+
+    0, 
+
+    Cost, 
+
+    GrossProfit,
+
+    GPLedger.[Source],     
+
+    GPLedger.AdjType,    
+
+    GPLedger.LedgerID,
+
+	BuySell.PfreightChg,
+
+	BuySell.CoID,
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+	FROM #BUYSELLLIST INNER JOIN GPLedger WITH(NOLOCK)  ON #BUYSELLLIST.LedgerID = GPLedger.LedgerID    
+
+    left JOIN BuySell WITH(NOLOCK)  ON gpledger.buysellno = buysell.buysellno
+
+    left join Counterparty CUST WITH(NOLOCK) ON buysell.custid = CUST.cpid
+
+    left join Counterparty VENDOR WITH(NOLOCK) ON buysell.vendorid = VENDOR.cpid
+
+    left JOIN Address WITH(NOLOCK) ON BuySell.CustID = Address.CpID AND BuySell.ShipToID = Address.[Type]
+
+    WHERE     
+
+    (GPLedger.[Source] <> 'B')
+
+    AND isnull(BuySell.VendorID,'') <> '(INV)'
+
+    AND (GPLedger.AdjApproved <> 'N' OR GPLedger.AdjApproved IS NULL )
+
+    --AND (@ForSupplierCpID = '' OR @ForSupplierCpID = Vendor.CPID)
+
+    AND (@ForCustCpID = '' OR @ForCustCpID = BuySell.CustID)
+
+    AND (@RefID = '' OR @RefID = BuySell.ReferrerNo1 OR @RefID = BuySell.ReferrerNo2)
+
+    AND (BuySell.CoID = @CoID or @CoID = '')
+
+    AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+    --AND (@DestCountry = '' OR Address.Country = @DestCountry)
+
+
+
+
+
+
+
+
+
+
+
+ --   -- GROSS PROFIT ADJUSTMENTS.
+
+	--IF (@ForSupplierCpID = '' AND @ForCustCpID = '') BEGIN     
+
+	--	INSERT #REPORT(Supplier,BuySellNo,Customer,TradeDt,TradeDesc,Invoiced,Quantity,QuantityUOM,Sales,SupplierCost,Expenses,Cost,GrossProfit,_Source,_AdjType,LedgerID,BSExpenses,Dept)
+
+	--	Select 
+
+	--	'(Gross Profit Adjustment)', 
+
+	--	'' BuySellNo, 
+
+	--	'' CompanyNm, 
+
+	--	TradeDt, 
+
+	--	'GP-Adj', 
+
+	--	'1', 
+
+	--	null,null,
+
+	--	Sale,
+
+	--	Cost,
+
+	--	0, 
+
+	--	Cost, 
+
+	--	GrossProfit,
+
+	--	Source, 
+
+	--	AdjType,    
+
+	--	LedgerID,
+
+	--	0,
+
+	--	MiscCOID
+
+	--	FROM GPLedger WITH(NOLOCK)  
+
+	--	WHERE 
+
+	--		GPLedger.Source = 'E' 
+
+	--		AND TradeDt >= @FromDt And TradeDt <= @ToDt 
+
+	--		AND (GPLedger.MiscCOID = @CoID OR @CoID = '')     
+
+	--		AND (@TradeType = '' OR @TradeType = COALESCE(GPLedger.MiscTradeType,''))
+
+	--END		
+
+
+
+
+
+
+
+
+
+  --  -- INVENTORY WRITE-OFFS.
+
+  --  INSERT #REPORT(Supplier,BuySellNo,Customer,TradeDt,TradeDesc,Invoiced,Quantity,QuantityUOM,Sales,SupplierCost,Expenses,Cost,GrossProfit,_Source,_AdjType,LedgerID,BSExpenses,Dept)
+
+  --  SELECT 
+
+  --      Vendor.CompanyNm, 
+
+  --      GpLedger.Lotno, 
+
+  --      '(OTHER)', 
+
+  --      TradeDt, 
+
+  --      'Write-Off',
+
+  --      '1', 
+
+  --      dbo.convert_to_UOM(Inventory.QtyOnHand,Inventory.WeightUOM,'L'), 
+
+  --      'L',                      
+
+  --      Sale,
+
+	 --   0,
+
+  --      Cost, 
+
+  --      0, 
+
+  --      GrossProfit,
+
+  --      Source,         
+
+  --      '' AdjType,        
+
+  --      LedgerID,
+
+	 --   0,
+
+	 --   BuySell.CoID
+
+  --  FROM GPLedger WITH(NOLOCK) INNER JOIN INVENTORY ON GPLEDGER.Lotno = Inventory.Lotno 
+
+  --      INNER JOIN COUNTERPARTY Vendor ON Inventory.VendorID = Vendor.CPID
+
+  --      LEFT JOIN BUYSELL ON INVENTORY.BuySellNo = BuySell.BuySellno
+
+  --  WHERE TradeDt >= @FromDt And TradeDt <= @ToDt 
+
+  --      AND GPLedger.Source = 'I' 
+
+  --      AND (Coalesce(BuySell.CoID,'') = @CoID or @CoID = '')
+
+		--AND (@TradeType = '' OR @TradeType = COALESCE(BuySell.TradeType,''))
+
+		--AND (@ForCustCpID = '' OR @ForCustCpID = BuySell.CustID)
+
+
+
+
+
+	--Weight Conversions Section.
+
+	------------------------------------------------------------------------------------------------
+
+
+
+	-- ASSIGN CORRECT WEIGHT UOM ON REPORT RECORDS.
+
+	INSERT #SetWeightUom
+
+	SELECT 
+
+		Buysellno, 
+
+		(SELECT top 1 PUOM FROm WKsdetail where WKsdetail.BuySellno = #REPORT.BuySellNo ) WTUOM
+
+	from  #REPORT WHERE _CkWtUom = 1
+
+	
+
+	UPDATE #REPORT SET QuantityUOM = #SetWeightUom.QtyUOM 
+
+		FROM #REPORT INNER JOIN #SetWeightUom ON #REPORT.BuySellNo = #SetWeightUom.BuYSellNo
+
+		WHERE (QtyUOM = 'X' OR QtyUOM = 'E' OR QtyUOM = 'B') AND _CkWtUom = 1  
+
+
+
+	-- RECALC QTY ON FBM, M3, SQF
+
+	INSERT #SetWeight
+
+	SELECT WksDetail.BuySellNo, SUM(SWEIGHT) 
+
+		FROM WksDetail INNER JOIN #REPORT ON WksDetail.BuySellNo = #REPORT.BuySellNo
+
+		WHERE _source = 'B' 
+
+		Group By WksDetail.BuySellNo
+
+
+
+	UPDATE #REPORT SET Quantity = Qty
+
+		FROM #REPORT INNER JOIN #SetWeight ON #REPORT.BuySellNo = #SetWeight.BuySellNo
+
+		WHERE (QuantityUom = 'X' OR QuantityUom = 'E' OR QuantityUom = 'B') AND _CkWtUom = 1  
+
+
+
+	---- CONVERT TO REPORTING UOM
+
+	UPDATE #REPORT SET Quantity = dbo.Convert_to_uom(Quantity, QuantityUOM, @ReportUOM)
+
+
+
+		
+
+
+
+		
+
+	----BLANK QUANTITY ON NON WEIGHT RECORDS.
+
+	
+
+	IF 	@ReportUOM = 'E'  				
+
+		UPDATE #REPORT SET Quantity = 0
+
+			WHERE  QuantityUOM <> 'E' 
+
+
+
+	IF 	@ReportUOM = 'X' OR @ReportUOM = 'B' OR @ReportUOM = 'Q'  
+
+		UPDATE #REPORT SET Quantity = 0
+
+			WHERE  QuantityUOM <> 'X'  AND QuantityUOM <> 'B' AND QuantityUOM <> 'Q'  
+
+
+
+	IF 	@ReportUOM <> 'X' AND @ReportUOM <> 'B' AND @ReportUOM <> 'E' AND @ReportUOM <> 'Q'   		
+
+		UPDATE #REPORT SET Quantity = 0
+
+			WHERE  QuantityUOM = 'X' OR QuantityUOM = 'E' OR QuantityUOM = 'B'  OR QuantityUOM = 'Q' 
+
+			
+
+			
+
+			
+
+
+
+	------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+    --ASSIGN TRADE DESCRIPTIONS.
+
+    --UPDATE #REPORT SET Customer = '(Gross Profit Adjustment)', Invoiced = 1 WHERE TradeDesc='GP-Adj' OR _Source = 'E'    
+
+    UPDATE #REPORT SET Supplier='(Inventory)' WHERE Supplier IS NULL AND (TradeDesc='Inv-Sale' or TradeDesc='Sales-Disc')
+
+    UPDATE #REPORT SET SUPPLIER= Counterparty.CompanyNm FROM #REPORT INNER JOIN GPLEDGER WITH(NOLOCK)  ON #REPORT.LEdgerID = GPLEDGER.LEdgerID
+
+        INNER JOIN COUNTERPARTY ON GPLEDGER.ADJCPID = COUNTERPARTY.CPID
+
+        WHERE #REPORT.TradeDesc = 'Purch-Adj'
+
+	UPDATE #REPORT SET Expenses=BSExpenses,SupplierCost=SupplierCost-BSExpenses,Cost=Cost
+
+		WHERE #Report.TradeDesc='Brokerage'
+
+
+
+
+
+    -- I. ASSIGN SALES ORDER NUMBERS TO REPORT DETAIL.
+
+    --select distinct buysellno, (select TOP 1 SPO from wksdetail  WITH(NOLOCK) where wksdetail.buysellno = #report.buysellno and SPO <> '' and SPO IS NOT NULL) AS OrderNo into #ORDERS from #REPORT
+
+    --UPDATE #REPORT SET #REPORT.OrderNo = #ORDERS.OrderNo FROM #REPORT INNER JOIN #ORDERS ON #REPORT.BuySellno = #ORDERS.BuySellNo
+
+    --IF @OrderNo <> '' 
+
+    --    DELETE FROM #REPORT WHERE OrderNo <> @OrderNo or Orderno IS NULL
+
+
+
+	-- SET MARGIN
+
+	UPDATE #REPORT SET Margin = GrossProfit / Sales * 100 WHERE Sales <> 0 
+
+	UPDATE #REPORT SET MarginPerUOM = GrossProfit / Quantity WHERE Quantity <> 0 
+
+
+
+	-- FINAL REPORT.
+
+    SELECT	Customer,
+
+			TradeDt,
+
+			Supplier,
+
+			OrderNo,
+
+			BuySellNo As [Wks No],
+
+			TradeDesc Type,
+
+			Quantity As [Weight],
+
+			Sales,
+
+			SupplierCost Purchase,
+
+			Expenses,
+
+			Cost,
+
+			GrossProfit, 
+
+			Margin, 
+
+			MarginPerUOM, 
+
+			QuantityUOM,
+
+			WksType as '-Hidden-WksType'
+
+        FROM #REPORT 
+
+		WHERE Customer <> '(INVENTORY)'
+
+        ORDER BY Customer, TradeDt, BuysellNo
+
+
+
+
+
+
+

@@ -1,0 +1,32 @@
+CREATE PROC [dbo].[cw_GetTaxAuthority]
+
+AS
+
+
+
+--02/22/16 M.N: CREATED
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		ID As [-Hidden- ID],
+
+		AuthorityName As [Tax Name]
+
+		
+
+	FROM TaxAuthority With (NoLock) WHERE ID <> 0
+
+
+
+
+
+
+

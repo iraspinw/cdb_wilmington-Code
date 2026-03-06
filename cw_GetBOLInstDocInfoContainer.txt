@@ -1,0 +1,180 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetBOLInstDocInfoContainer] 
+
+	@BookingNo char(25), 
+
+	@BuySellNo char(12) = ''
+
+AS
+
+
+
+--11/09/2015 RS: Created
+
+--11/10/2015 RS: Added Comments,GradeDesc
+
+--10/31/2016 RS: Added LC logic 
+
+--11/01/2016 RS: Fixed GradeDesc
+
+--03/31/2017 RS: Changed CustAddr to use PO.BLConsignTo if exists
+
+
+
+-- cw_GetBOLInstDocInfo '12345BOOKING'
+
+-- cw_GetBookingContainerList 'HJCU316513'
+
+-- select * from booksheet where bookingno = 'HJCU316513'
+
+
+
+DECLARE @LCNo varchar(25)
+
+DECLARE @LCID int
+
+DECLARE @PONo char(15)
+
+DECLARE @COID char(2)
+
+DECLARE @BeneficiaryNm varchar(100)
+
+DECLARE @BeneficiaryAddr varchar(255)
+
+--DECLARE @ApplicantCPID char(12)
+
+--DECLARE @ApplicantAddr varchar(255)
+
+DECLARE @ConsigneeCPID char(12)
+
+DECLARE @ConsigneeAddr varchar(255)
+
+DECLARE @CommodityDesc varchar(1000)
+
+ 
+
+SET @ConsigneeAddr = ''
+
+SET @LCNo = ''
+
+SET @BeneficiaryNm = ''
+
+
+
+	SELECT @PONo = PONumber	FROM BookSheet WITH(NOLOCK)	WHERE BookSheet.BookingNo = @BookingNo
+
+	IF ISNULL(@PONo,'')<>'' BEGIN
+
+		SELECT @LCID = IssuingLC_ID	FROM PO WITH(NOLOCK) WHERE PONumber = @PONo
+
+		
+
+		SELECT @LCNo = LCNo, @ConsigneeAddr = ConsigneeAddr,@ConsigneeCPID = ConsigneeCPID,
+
+		--@ApplicantCPID = ApplicantCPID, @ApplicantAddr= ApplicantAddr,
+
+		@BeneficiaryAddr = Beneficiary, @BeneficiaryNm = CompanyInfo.CompanyNm,
+
+		@CommodityDesc = CommodityDesc
+
+		FROM LC WITH(NOLOCK) 
+
+		LEFT JOIN CompanyInfo WITH (NOLOCK) ON LC.COID = CompanyInfo.COID
+
+		WHERE LC.ID = @LCID
+
+	END
+
+
+
+
+
+	SELECT dbo.formatdate(GETDATE()) as [Date], SSLine.CompanyNm as Carrier, 
+
+		BookSheet.LoadPort, BookSheet.PortOfDischg, Booksheet.PlaceOfDeliv,Booksheet.ReceiptPlace,
+
+		Vessel, VoyageNo, BookSheet.PONumber,BookSheet.BookingNo, ETA, ETS,
+
+		Case When datalength(PO.BLConsignTo) > 0 Then PO.BLConsignTo Else dbo.xDoc_GetAddress(PO.CPID,PO.AddrType,0,0) END as CustAddr,
+
+		Trucker.CompanyNm as TruckerNm,
+
+		CompanyInfo.CompanyNm as ShipperNm,
+
+		Case When datalength(PO.BLShipper) > 0 Then PO.BLShipper Else dbo.xDoc_GetCompanyAddress(PO.COID) End as ShipperAddr,
+
+		dbo.xDoc_GetAddress(BookSheet.FreightFwdr,'',0,0) as FwdAgent,
+
+		IsNull(PO.BLNotifyParty,'') as NotifyParty,
+
+		BookSheet.Comments,
+
+		CAST(BookSheet.GradeDesc AS CHAR(1000)) as GradeDesc,
+
+		IsNull(PO.BLNotes,'') As BLNotes
+
+		INTO #REPORT
+
+ 		FROM BookSheet WITH(NOLOCK) 
+
+		INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BookingNo = BookSheet.BookingNo
+
+ 		LEFT JOIN Counterparty SSLine WITH(NOLOCK) ON BookSheet.Carrier = SSLine.CpID
+
+		LEFT JOIN PO WITH(NOLOCK) on PO.PONumber = BuySell.RefSONo
+
+ 		LEFT JOIN Counterparty Trucker WITH(NOLOCK) ON Booksheet.Trucker = Trucker.CpID
+
+ 		LEFT JOIN CompanyInfo WITH (NOLOCK) ON PO.COID = CompanyInfo.COID
+
+ 		WHERE BookSheet.BookingNo = @BookingNo
+
+ 	
+
+ 	IF IsNull(@BeneficiaryNm,'')<>''
+
+ 		UPDATE #REPORT SET ShipperNm = @BeneficiaryNm
+
+ 	
+
+ 	IF IsNull(@BeneficiaryAddr,'')<>''
+
+ 		UPDATE #REPORT SET ShipperAddr = @BeneficiaryAddr
+
+ 	
+
+ 	IF IsNull(@ConsigneeAddr,'')<>''
+
+ 		UPDATE #REPORT SET CustAddr = @ConsigneeAddr
+
+ 	
+
+ 	IF IsNull(@CommodityDesc,'')<>''
+
+ 		UPDATE #REPORT SET GradeDesc = @CommodityDesc
+
+ 	
+
+ 	
+
+ 	
+
+ 	SELECT * FROM #REPORT
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

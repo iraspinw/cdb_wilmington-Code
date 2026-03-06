@@ -1,0 +1,60 @@
+CREATE   PROCEDURE [dbo].[cw_GetNextSystemIDXP] @TableNm char(30), @ReturnID varchar(15) OUTPUT
+
+--10/24/2006 JW: added WITH(NOLOCK) for IFPs continuing deadlock issue
+
+--11/01/2006 JW: modified above change to READPAST FOR IFPs deadlock issue
+
+--05/01/2007 BF: changed @ReturnID to varchar for PO/SO/WKS with non-numeric IDs
+
+--01/05/2009 DSH: Added Transaction to help with concurrency issue that occured at KCI
+
+--05/30/2013 MCM: Increased TableNm parameter
+
+--12/07/2016 MEC: Added a default sysid seeding for tablenames no currently assigned
+
+AS
+
+
+
+--BEGIN TRANSACTION
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+	IF EXISTS(SELECT * FROM SystemID WHERE TableNm = @TableNm) BEGIN
+
+		UPDATE SystemID SET SysID = SysID + 1
+
+		WHERE TableNm = @TableNm
+
+		SELECT @ReturnID = SysID FROM SystemID  READPAST WHERE TableNm = @TableNm
+
+	END
+
+
+
+	--COMMENTED OUT 11/15/2017 BF: possible problem at STR
+
+	--------ELSE BEGIN
+
+	--------	--Insert Deafault SysID for TableNm if it does not currently exist
+
+	--------	INSERT INTO SystemID (TableNm, SysID) VALUES (@TableNm, 10000)
+
+	--------	SET @ReturnID = 10000
+
+	--------END
+
+	
+
+--COMMIT TRANSACTION
+
+
+
+RETURN @ReturnID
+
+
+

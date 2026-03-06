@@ -1,0 +1,17 @@
+CREATE PROC [dbo].[cw_GetReasonCodes]
+
+ AS
+
+
+
+--05/03/2023 Nick: Created
+
+
+
+	SELECT
+
+		ReasonCode.ReasonCodeName,
+
+		isnull(ReasonCode.ShowOnInquiry, 0) as ShowOnInquiry
+
+	FROM ReasonCode

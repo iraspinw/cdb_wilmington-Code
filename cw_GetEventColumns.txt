@@ -1,0 +1,30 @@
+
+
+
+
+CREATE  PROCEDURE [dbo].[cw_GetEventColumns] 
+
+	AS
+
+	
+
+--1/17/2020 alex: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	select 
+
+	SUBSTRING(
+
+		        (
+
+				SELECT '|' + CAST(Rtrim(DocEventType.EventShortName) AS VARCHAR)+'*140' FROM DocEventType order by DocEventType.EventSeqOrder
+
+				FOR XML PATH('')), 2,10000)  
+

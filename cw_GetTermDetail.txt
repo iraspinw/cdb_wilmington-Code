@@ -1,0 +1,8 @@
+create proc cw_GetTermDetail @TermID int as
+
+select Term, DaysToPay, RefNum, DueType, DiscType, DiscDays, DiscRate
+
+from billingterm
+
+where id=@termid
+

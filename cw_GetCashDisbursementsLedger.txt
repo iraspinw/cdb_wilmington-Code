@@ -1,0 +1,78 @@
+CREATE   PROCEDURE [dbo].[cw_GetCashDisbursementsLedger] 
+
+
+
+	@CustID VARCHAR(20) = '', 
+
+	@COID CHAR(2) = '',
+
+	@PostingFromDt datetime = '', 
+
+	@PostingToDt datetime = ''
+
+
+
+	AS
+
+	
+
+--11/18/2020 Alex: Created
+
+
+
+--cw_GetCashDisbursementsLedger 'PT-48', '02', '05/07/2021', '6/7/2021'
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SELECT  
+
+       [CDID]
+
+      ,cast([CheckNo] as varchar) as [Check No]
+
+      ,[CDBatchNo]  as  [Batch No]   
+
+	  ,GLAccount.Name as GLAcct
+
+      ,CompanyInfo.CompanyNm as Department
+
+      ,Case When PublicTradeCustomer.FileAs is null Then Counterparty.CompanyNm Else PublicTradeCustomer.FileAs End as Account
+
+      ,[PostingDt] as [Posting Date]
+
+      ,[PaymentAmt] as [{C} Payment Amt]
+
+      ,[CurrencyCd] as [Currency]
+
+      ,[Source]
+
+	  , PaymentType as [Payment Type]
+
+	  , (SELECT TOP 1 'YES' FROM CashDisbursementDetails CD inner join Payables on Payables.PayableID = CD.PayableID OR Payables.Reversed_PayableID = CD.PayableID
+
+		WHERE CD.BatchNo = CDBatchNo And IsNull(IsUndo,0) = 1) as [Is Undo]
+
+  FROM  CashDisbursements
+
+  left join GLAccount  on GLAccount.GLAcct = CashDisbursements.GLAcct
+
+  left join CompanyInfo on CompanyInfo.COID = CashDisbursements.COID
+
+  left join CounterParty on CounterParty.CPID = CashDisbursements.CPID
+
+  left join PublicTradeCustomer on CashDisbursements.PTCustID = PublicTradeCustomer.PTCustID
+
+	WHERE 
+
+		((@CustID = '') OR (@CustID Like 'PT-%' AND REPLACE(@CustID, 'PT-', '') = CashDisbursements.PTCustID) OR (CashDisbursements.CPID = @CustID))
+
+		AND (@COID = '' OR CashDisbursements.COID = @COID)
+
+		AND (@PostingFromDt = '' or ([PostingDt] >= @PostingFromDt))
+
+		AND (@PostingToDt = '' OR ([PostingDt] <= @PostingToDt))
+

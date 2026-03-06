@@ -1,0 +1,15 @@
+CREATE PROC [dbo].[cw_GetShipVia]  
+
+ AS  
+
+--09/23/2014 MEC: Created  
+
+--09/23/2014 MCM: col list
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	SELECT ShipVia, RTRIM(RefNum) AS RefNo FROM ShipVia WITH (NOLOCK) 

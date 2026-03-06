@@ -1,0 +1,230 @@
+CREATE   PROCEDURE [dbo].[cw_getbookinglist_dev] 
+
+	@BookingNo varchar(25), 
+
+	@CutoffFromDt datetime, 
+
+	@CutoffToDt datetime,
+
+	@OceanCarrier char(12),
+
+	@CustomerNm	varchar(25)
+
+AS
+
+--1/19/2005: dsh Added filter for Documents sent.
+
+--02/07/2005 - removed superfluous left join 'to userdef 
+
+--12/29/2005 DSH: Added time to cutoff date range of 11:59PM
+
+--9/26/2006 JW: Added PlaceOfDeliv
+
+--10/01/2007 MM: Added PlaceOfDeliv to SELECT
+
+--10/08/2008 RS: DocCutOffDate added
+
+--09/17/2009 MCM: Added GradeDesc
+
+--02/26/2010 BF: added/removed fields for udom changes
+
+--04/01/2010 RS: RcvdConfirmDt added
+
+--06/17/2010 DSH Added Column for last invoice no.
+
+--11/22/2010 RS: POReference added per IFP
+
+--04/13/2012 RS: FeederVessel column added
+
+--05/08/2012 MCM: Changed LastInvoiceNo to only return when PONumber has a value
+
+--05/09/2012 RS: ContainerRef added 
+
+--08/27/2012 RS: @SONo filter fixed; (SELECT POReference FROM PO...) changed to (SELECT TOP 1 POReference FROM PO)
+
+--02/14/2013 DSH Added earliest return date. (MEC:  Added default setting to 'Y')
+
+--04/05/2013 RS: @PODCountryID,@POLCountryID added
+
+--08/19/2013 DSH Added Shippers Ref.
+
+--08/26/2013 RS: LastInvShipDt added per IFP
+
+--12/19/2013 RS: @FFID added per 3Stone
+
+--04/09/2014 RS: @Vessel added per KC
+
+--07/11/2014 RS: CutOffDate and DocCutOffDate changed to include the time
+
+--01/26/2015 DSH Updated to remove date convert function calls hardcoded to MDY
+
+--02/03/2015 EMR: Added status
+
+--03/20/2015 RS: Added Voyage
+
+-- Copied for cieTrade.net from q_GetBookingList
+
+--12/03/2015 DSH Revised.
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	CREATE TABLE #BookingList(
+
+		BookSheetID INT,
+
+		BookingNo CHAR(15),
+
+		CutOffDate DATETIME,
+
+		OceanCarrier VARCHAR(100),
+
+		LoadPort VARCHAR(25),
+
+		DestPort VARCHAR(25),
+
+		ETA VARCHAR(20),
+
+		ETD VARCHAR(20),
+
+		ContainersBooked INT DEFAULT 0,
+
+		ContainersShipped INT DEFAULT 0,
+
+		ContainersOpen INT DEFAULT 0,
+
+		Vessel VARCHAR(30),
+
+		VoyageNo VARCHAR(15),
+
+		OrderNo CHAR(15),
+
+		Customer VARCHAR(100),
+
+		BookingDate DATETIME,
+
+		BookingDeptStatus CHAR(12) 
+
+	)
+
+	
+
+	INSERT #BookingList
+
+	SELECT  
+
+		BookSheet.BookSheetID, 
+
+		BookSheet.BookingNo, 
+
+		CutOffDate, 
+
+		SSLine.CompanyNm as OceanCarrier, 	
+
+		UPPER(LoadPort), 
+
+		UPPER(PortOfDischg), 
+
+		DATEADD(dd, DATEDIFF(dd, 0, ETA), 0)  as ETA, 
+
+		DATEADD(dd, DATEDIFF(dd, 0, ETS),0) as ETD, 
+
+		ContainerQty ContainersBooked, 
+
+		(SELECT COUNT(*) FROM Buysell WHERE Buysell.BookingNo = BookSheet.BookingNo ) ContainersShipped,
+
+		0 ContainersOpen, 
+
+		Vessel,
+
+		VoyageNo,
+
+		BookSheet.PONumber OrderNo, 
+
+		CustomerCO.CompanyNm Customer,
+
+		BookDate,
+
+		BookingDeptStatus
+
+	
+
+	FROM BookSheet WITH(NOLOCK) 
+
+	LEFT JOIN Counterparty SSLine WITH(NOLOCK) on BookSheet.Carrier = SSLine.CpID
+
+	LEFT JOIN PO as SalesPO WITH(NOLOCK) ON BookSheet.PONumber=SalesPO.PONumber
+
+	LEFT JOIN CounterParty as CustomerCO WITH(NOLOCK) ON SalesPO.CPID=CustomerCO.CPID	
+
+	LEFT JOIN Ports POL WITH(NOLOCK) ON POL.portnm = Booksheet.LoadPort
+
+	LEFT JOIN Ports WITH(NOLOCK) ON Ports.portnm = Booksheet.PortOfDischg
+
+	WHERE 
+
+		(@BookingNo = '' or BookSheet.BookingNo like @BookingNo + '%')
+
+		AND (@BookingNo <> '' or (CutOffDate >= @CutoffFromDt and  CutOffDate <= @CutoffToDt + '11:59 PM'))
+
+		AND (@OceanCarrier = '' OR (BookSheet.Carrier = @OceanCarrier))
+
+		AND (@CustomerNm = '' OR (@CustomerNm = CustomerCO.CompanyNm))
+
+	
+
+	UPDATE #BookingList SET ContainersOpen = ContainersBooked-ContainersShipped
+
+
+
+
+
+	-- FINAL LIST
+
+	SELECT 
+
+		BookSheetID [-Hidden-BookSheetID],
+
+		BookingNo,
+
+		CutOffDate,
+
+		OceanCarrier,
+
+		LoadPort,
+
+		DestPort,
+
+		ETA,
+
+		ETD,
+
+		ContainersBooked,
+
+		ContainersShipped,
+
+		ContainersOpen,
+
+		Vessel,
+
+		VoyageNo,
+
+		OrderNo,
+
+		Customer,
+
+		BookingDate,
+
+		BookingDeptStatus 
+
+	FROM #BookingList
+
+	ORDER BY BookingNo
+
+
+

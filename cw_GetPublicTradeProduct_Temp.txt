@@ -1,0 +1,72 @@
+CREATE   PROCEDURE [dbo].[cw_GetPublicTradeProduct_Temp] 
+
+	@TempID int,
+
+	@DetailID int = 0
+
+
+
+AS
+
+--10/28/2016: MN CREATED
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT
+
+		DetailID,
+
+		UserID,
+
+		TradeID,
+
+		[PublicTradeDetail_Temp].GradeID,
+
+		WtUOM,
+
+		GrossWt,
+
+		TareWt,
+
+		NetWt,
+
+		PDID,
+
+		Price,
+
+		PriceUOM,
+
+		SalesAmount,
+
+		Paid,
+
+		PaidDt,
+
+		PaidUser,
+
+		BuySellNo,
+
+		PayableDt,
+
+		Grade.[Description],
+
+		'2' AS [PTCustID]
+
+	FROM [PublicTradeDetail_Temp]
+
+	LEFT JOIN Grade ON Grade.GradeID = [PublicTradeDetail_Temp].GradeID
+
+	WHERE SessionID = @TempID
+
+	AND @DetailID = 0 OR DetailID = @DetailID
+
+	ORDER BY DetaiLID
+
+
+

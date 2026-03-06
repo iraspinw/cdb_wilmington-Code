@@ -1,0 +1,20 @@
+CREATE proc [dbo].[cw_GetServiceRecordEmailList] 
+
+	@DsipatchScheduleKey int
+
+as
+
+
+
+
+
+	select ContactNm as [Name], Email as Email, 'Supplier' as [Type], dbo.GetContactRoleList([CT_ID]) as [Contact Role]
+
+	from Contact 
+
+	inner join ServiceRecord on ServiceRecord.Account = Contact.cpid
+
+	where ServiceRecord.DispatchScheduleKey = @DsipatchScheduleKey and isnull(Email,'') <> ''
+
+
+

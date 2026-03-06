@@ -1,0 +1,30 @@
+CREATE PROC [dbo].[cw_GetPublicPriceListForPos]
+
+As
+
+--11/21/2018 MN: Create
+
+ 
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+		SELECT
+
+			PLID AS [-Hidden-PLID],
+
+			PublicPriceListName AS [Price Level],
+
+			RTRIM(ISNULL(WarehouseID,'')) AS [Warehouse ID]
+
+			--'ARLINGTON' AS [WarehouseID]
+
+
+
+		FROM PublicPriceList
+
+
+

@@ -1,0 +1,64 @@
+CREATE proc [dbo].[cw_GetEmailListByCp] @CPID varchar(15) = '', @BuySellNo varchar(12) = '' as
+
+
+
+--cw_GetEmailListByCp '1127'
+
+
+
+-- 03/16/2017 MEC: Added Warehouse Emails for Inventory Receiving and Shipping 
+
+-- 04/19/2018 MEC: Altered to support new Contact module
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	If @BuySellNo <> '' Begin
+
+
+
+		declare @CustID varchar(12)
+
+		select @Custid = custid from buysell where buysellno = @Buysellno
+
+
+
+		select ContactNm as [Contact], Email as Email, 'Customer' as [Type]
+
+			From Contact
+
+			where cpid=@CustID 
+
+			and isnull(Email,'') <> '' and CpID <> '(INV)'
+
+		Order By [type]
+
+
+
+	End
+
+
+
+	Else Begin
+
+
+
+		Select ContactNm As Contact, email, RoleNm AS [Type]
+
+		FROM Contact INNER JOIN ContactRoleAssignment ON Contact.CT_ID = ContactRoleAssignment.CT_ID
+
+		Where ((@CPID = '' AND RoleNm = 'Primary') OR cpid=@CPID)
+
+		and isnull(email,'') <> '' --and CpID <> '(INV)'
+
+		Order By [type]
+
+
+
+	End
+

@@ -1,0 +1,49 @@
+
+
+CREATE PROC [dbo].[cw_GetNewCOID] AS
+
+--08/17/2015 MCM: Created
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	DECLARE @i int, @COID char(2)
+
+
+
+	SELECT @COID = '00', @i = 0
+
+	WHILE (EXISTS(SELECT * FROM CompanyInfo WHERE COID = @COID) OR @COID = '') AND @i < 100
+
+	BEGIN
+
+		SET @COID = RIGHT('00' + RTRIM((CONVERT(INT,@COID) + 1)),2)
+
+		SET @i = @i + 1
+
+	END
+
+
+
+	IF @COID = '99' AND EXISTS(SELECT * FROM CompanyInfo WHERE COID = '99')
+
+	BEGIN
+
+		RAISERROR (N'No Organization IDs available, contact cieTrade.', -- Message text.
+
+				15, -- Severity,
+
+				1); -- State,
+
+		RETURN
+
+	END
+
+
+
+	SELECT @COID AS COID

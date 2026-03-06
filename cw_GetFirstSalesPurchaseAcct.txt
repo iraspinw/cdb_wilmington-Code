@@ -1,0 +1,26 @@
+CREATE   PROCEDURE [dbo].[cw_GetFirstSalesPurchaseAcct] @PSales varchar(50) = '', @PPurchase varchar(50) = ''
+
+AS
+
+BEGIN
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		(SELECT Top 1 GLAcct FROM GLAccount WHERE Cat = 'SALES' ORDER BY GLAcct) AS [SACCOUNT],
+
+		(SELECT Top 1 GLAcct FROM GLAccount WHERE Cat = 'PURCHASES' ORDER BY GLAcct) AS [PACCOUNT]
+
+--	
+
+
+
+END
+
+
+

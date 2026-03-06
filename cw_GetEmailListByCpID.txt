@@ -1,0 +1,120 @@
+CREATE proc [dbo].[cw_GetEmailListByCpID] @CPID varchar(15),  @CPID2 varchar(15)=''
+
+
+
+as
+
+
+
+--cw_GetEmailListByCpID '1127'
+
+
+
+-- 04/19/2018 MEC: Altered to support new Contact module
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+		SELECT  
+
+			ContactNm As Contact, 
+
+			email, 
+
+			IsNull(RoleNm,'Other') AS [Type]
+
+		FROM Contact 
+
+		LEFT JOIN ContactRoleAssignment ON Contact.CT_ID = ContactRoleAssignment.CT_ID
+
+		WHERE cpid=@CPID
+
+			  and isnull(email,'') <> '' --and CpID <> '(INV)'
+
+    UNION
+
+		SELECT  
+
+			ContactNm As Contact, 
+
+			email, 
+
+			IsNull(RoleNm,'Other') AS [Type]
+
+		FROM Contact 
+
+		LEFT JOIN ContactRoleAssignment ON Contact.CT_ID = ContactRoleAssignment.CT_ID
+
+		WHERE cpid=@CPID2
+
+		      AND @CPID2<>''
+
+			  AND isnull(email,'') <> '' --and CpID <> '(INV)'
+
+
+
+	--select 'Billing Contact' as [Name], billingemail as Email, 'Supplier' as [Type]
+
+	--	from [Address] 
+
+	--	Inner Join Counterparty On Counterparty.CpID = [Address].CpID
+
+	--	where Counterparty.CpID=@CpID 
+
+	--	and isnull(billingemail,'') <> ''
+
+	--UNION
+
+	--select Contact, [Address].email, 'Supplier'
+
+	--	from [Address] 
+
+	--	Inner Join Counterparty On Counterparty.CpID = [Address].CpID
+
+	--	where Counterparty.CpID=@CpID 
+
+	--	and isnull([Address].email,'') <> ''
+
+	--UNION
+
+	--select Contact, [Address].email, 'Supplier'
+
+	--	from [Address] 
+
+	--	Inner Join Counterparty On Counterparty.CpID = [Address].CpID
+
+	--	where Counterparty.CpID=@CpID and InvoiceAddr = 'Y'
+
+	--	and isnull([Address].email,'') <> ''
+
+	--UNION
+
+	--select 'Billing Contact' as [Name], billingemail as Email, 'Supplier' as [Type]
+
+	--	from [Address] 
+
+	--	Inner Join Counterparty On Counterparty.CpID = [Address].CpID
+
+	--	where Counterparty.CpID=@CpID and InvoiceAddr = 'Y'
+
+	--	and isnull(billingemail,'') <> ''
+
+
+
+
+
+
+
+
+
+
+
+	order by [type]
+
+
+

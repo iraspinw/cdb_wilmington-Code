@@ -1,0 +1,160 @@
+CREATE   PROCEDURE [dbo].[cw_GetCompanyInfo] @COID char(2) = '' AS
+
+--08/18/2008 MCM: Added Country join to obtain UseAltAddrFormat information
+
+--08/27/2008 MCM: ISNULL around UseAltAddrFormat
+
+--03/19/2010 RS: WITH(NOLOCK) added
+
+--01/31/2011 PG: Added Alias for .net project
+
+--02/23/2011 MCM: Added RemitID
+
+--05/02/2011 BF: added isnull to logosize
+
+--06/22/2012 EMR: added VatNo
+
+--01/16/2012 DSH Added IsPeriodLocked
+
+--12/02/2013 DSH Added field for Vendor class
+
+--08/12/2014 RS: Added PublicTradeDisclaimer
+
+--07/28/2015 MCM: Added @COID 
+
+--02/14/2023 MEC: Added RequiresAccounting Flag
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	SELECT 
+
+
+
+		[COID],
+
+		[CompanyNm] AS [Company Name],
+
+		[CompanyDesc],
+
+		[CompanyAddr1],
+
+		[CompanyAddr2],
+
+		[CompanyCity],
+
+		[CompanyRegion],
+
+		[CompanyPostalCd],
+
+		[CompanyCtry],
+
+		[CompanyPhone],
+
+		[CompanyFax],
+
+		[CompanyEmail],
+
+		[ShippingDisclaimer],
+
+		[OrderInstruction],
+
+		c.[InvoiceDisclaimer],
+
+		[LogoPath],
+
+		[LogoWidth],
+
+		[LogoHeight],
+
+		[BankName],
+
+		[AcctNo],
+
+		[ABANo],
+
+		[RemitInfo],
+
+		[AcctingCompanyID],
+
+		[PurchInstruction],
+
+		[LogoImage],
+
+		isnull([LogoSize], 0) as LogoSize,
+
+		[ReleaseNotes],
+
+		[INTTRA_ID],
+
+		[InvoicePrefix],
+
+		[PrintCompanyNm],
+
+		[CountryID],
+
+		[Name],
+
+		[GlobalRegion],
+
+		[IsEU],
+
+		ISNULL([UseAltAddrFormat],0) as UseAltAddrFormat, 
+
+		[RemitID], 
+
+		[VatNo], 
+
+		IsDeptLocked,
+
+        VendClassID,
+
+        PublicTradeDisclaimer,
+
+		s.CurrCode,
+
+		s.ExpDt,
+
+		s.ShortDateFormat,
+
+		s.NumberFormat,
+
+		dbo.xDoc_GetCompanyAddress(COID) As DeptAddress,
+
+		s.ScaleWtUOM,
+
+		TimeZoneNm,
+
+		EnableAR,
+
+		licCnt,
+
+		CashGLAcct,
+
+		CheckGLAcct,
+
+		isnull(QBOAPAcctID,'') QBOAPAcctID,
+
+		isnull(QBOAPAccrualID,'') QBOAPAccrualID,
+
+		isnull(QBOisMultiCurrency,0) QBOisMultiCurrency,
+
+		isnull(RequiresAccounting,0) RequiresAccounting
+
+	FROM CompanyInfo c 
+
+	LEFT JOIN Country ON Country.CountryID = c.CompanyCtry
+
+	INNER JOIN SystemInfo s ON 1=1
+
+	WHERE (RTRIM(@COID) = '' OR COID = @COID)
+
+	ORDER BY CompanyDesc
+
+
+

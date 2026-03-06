@@ -1,0 +1,100 @@
+CREATE   PROCEDURE [dbo].[cw_GetPublicTradeCustomerInquiry]	 @LastName varchar(50) = '', @Active varchar(10), @SearchString VARCHAR(100) ='', @EngOrSp char(5) = 'en-US' AS
+
+--03/16/2011 MEC: Created for Public Trade Customer Inquiry
+
+--08/22/2017 DSH POS-Update
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+IF(@EngOrSp = 'en-US')
+
+	BEGIN
+
+		SELECT
+
+				[PTCustID] As [-Hidden-PTCustID]
+
+			  ,[FileAs] As [Customer Lookup]
+
+			INTO #REPORT
+
+			FROM PublicTradeCustomer  LEFT JOIN Country ON Country.CountryID = PublicTradeCustomer.CountryID 
+
+		WHERE
+
+			(@LastName = '' OR LastName Like @LastName + '%')
+
+			AND (
+
+				@Active = '' OR 
+
+				((@Active = 'Active' AND IsActive = 1) OR @Active = 'Inactive' AND IsActive = 0)
+
+			)
+
+			AND (
+
+				@SearchString  = '' OR 
+
+				(FirstName LIKE '%'+@SearchString+'%' OR  LastName LIKE '%'+@SearchString+'%' )
+
+			)
+
+		ORDER BY FileAs
+
+		SELECT * FROM #REPORT --WHERE Row# > @RowNum 
+
+		SELECT COUNT(*) FROM #REPORT
+
+	END
+
+	IF(@EngOrSp = 'es')
+
+	BEGIN
+
+		SELECT
+
+				[PTCustID] As [-Hidden-PTCustID]
+
+			  ,[FileAs] As [Búsqueda de clientes]
+
+			,'' AS [chk1]
+
+			INTO #REPORT2
+
+			FROM PublicTradeCustomer  LEFT JOIN Country ON Country.CountryID = PublicTradeCustomer.CountryID 
+
+		WHERE
+
+			(@LastName = '' OR LastName Like @LastName + '%')
+
+			AND (
+
+				@Active = '' OR 
+
+				((@Active = 'Active' AND IsActive = 1) OR @Active = 'Inactive' AND IsActive = 0)
+
+			)
+
+			AND (
+
+				@SearchString  = '' OR 
+
+				(FirstName LIKE '%'+@SearchString+'%' OR  LastName LIKE '%'+@SearchString+'%' )
+
+			)
+
+		ORDER BY FileAs
+
+		SELECT * FROM #REPORT2 --WHERE Row# > @RowNum 
+
+		SELECT COUNT(*) FROM #REPORT2
+
+	END
+
+
+

@@ -1,0 +1,76 @@
+CREATE proc [dbo].[cw_GetDefaultEmail] @ObjectID varchar(25), @ObjectSource char(1) as
+
+
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+-- 4/6/2016 MEC: Added Counterparty default email lookup
+
+-- 4/23/2018 MEC: Added Support for Contacts
+
+-- 7/11/2022 MEC: Excluded ENPOL For Default Emails for SO/PO
+
+
+
+-- cw_GetDefaultEmail '1030', 'C'
+
+
+
+if @ObjectSource = 'O' AND DB_NAME() <> 'cdb_ENPOL' begin
+
+
+
+	select top 1 email 
+
+	from [contact]
+
+	inner join po  with(nolock) on po.cpid = contact.cpid
+
+	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	where po.PONumber = @objectid and RoleNm In ('Billing', 'Primary')
+
+	Order By RoleNm
+
+end
+
+
+
+if @ObjectSource = 'C' begin
+
+
+
+	select top 1 email 
+
+	from [contact]
+
+	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	where [contact].cpid = @objectid 
+
+	and RoleNm In ('Billing', 'Primary')
+
+end
+
+
+
+if @ObjectSource = 'W' begin
+
+
+
+	select top 1 email 
+
+	from [contact]
+
+	inner join BuySell on BuySell.CustID = [contact].cpid
+
+	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	where BuySellNo = @objectid 
+
+	 and RoleNm In ('Billing', 'Primary')
+
+end
+

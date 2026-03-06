@@ -1,0 +1,106 @@
+
+
+--06/02/2020 MEC: Created for retaining Contract Grades from Multiple SO's on a shipping worksheet.
+
+--12/13/2022 MEC: Converted PO_ID to allow "C" prefix for contract grades
+
+
+
+CREATE proc [dbo].[cw_GetAdditionalContractGrade] 
+
+	@PO_ID int
+
+
+
+as
+
+
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+	SET NOCOUNT ON
+
+
+
+			SELECT 
+
+				Grade.Description, 
+
+				PODetail.GradeID,
+
+				UnitType,
+
+				Specifications,
+
+				Price,
+
+				PriceUOM, 
+
+				CurrencyCd, 
+
+				100 As Factor, 
+
+				PODesc, 
+
+				CONVERT(varchar(100), PO_ID) PO_ID,
+
+				po.Terms,
+
+				po.PriceBasis,
+
+				Grade.InventoryType,
+
+
+
+				BasisWt,
+
+				BasisWtUOM, 
+
+				Caliper,
+
+				RollWd,
+
+		        RollWdUOM,
+
+				Color,
+
+				Diameter, 
+
+                DiameterUOM, 		        
+
+				CoreSize,
+
+				CoresizeUOM,
+
+			    PODetail.LinearLen,
+
+				PODetail.LengthUOM,
+
+				SheetSize, 
+
+				SheetSizeUOM,
+
+				SheetGrain,
+
+				PODetail.MWeight,
+
+			    NoSheets,
+
+		        IsNull(PODetail.PlasticMelt,'') PlasticMelt,
+
+		        IsNull(PODetail.PlasticType,'') PlasticType,
+
+		        IsNull(PODetail.PlasticForm,'') PlasticForm
+
+		    
+
+			FROM PO WITH(NOLOCK) 
+
+			inner join podetail on po.PONumber = podetail.PONumber
+
+			left JOIN Grade WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID			
+
+			WHERE PODetail.PO_ID = @PO_ID
+
+
+

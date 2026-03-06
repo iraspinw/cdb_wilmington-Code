@@ -1,0 +1,15 @@
+
+
+CREATE proc [dbo].[cw_GetLastEdit] @ObjectID varchar(30), @Object VARCHAR(15) as
+
+
+
+SELECT TOP 1 
+
+RTRIM(@Object) + ' ' + RTRIM(@ObjectID) + ' was edited by ' + RTRIM(userDef.UserNm) + ' on ' + RTRIM(CAST(Datestamp As Varchar(30))) + '.'
+
+FROM SystemLog INNER JOIN UserDef ON SystemLog.userID = UserDef.UserID
+
+WHERE Object = @Object AND ObjectID = @ObjectID 
+
+ORDER BY Datestamp DESC

@@ -1,0 +1,58 @@
+CREATE PROC [dbo].[cw_GetAvailableAllocationGrades] @WhseCPID char(12) = '', @Format int = 0, @DoClosing bit = 0, @DoDeptLock bit = 0, @UpdateCOGSOnly bit = 0, @AsofCurrent bit = 0, 
+
+@Errormessage varchar(150) = '' OUTPUT, @LedgerGradeID CHAR(12)= ''   AS
+
+--08/22/2019	BF: created for .net
+
+--cw_GetAvailableAllocationGrades
+
+declare @FromDt datetime
+
+select @FromDt= OpenMonth from systeminfo
+
+declare @ToDt datetime
+
+select @ToDt = DATEADD(Month,1,@FromDt )-1
+
+
+
+declare @AvgValue float
+
+declare @AvgCost float
+
+declare @TotalSWeight decimal(18,5)
+
+declare @totalValue float
+
+
+
+select @totalValue = sum(samount) ,@TotalSWeight = sum(sweight)
+
+	from wksdetail 
+
+	inner join buysell on buysell.BuySellNo = WKSDetail.BuySellNo
+
+	where (buysell.shippingdt >= @fromDt and buysell.ShippingDt <= @ToDt)
+
+
+
+select @AvgCost = @totalValue / @TotalSWeight
+
+
+
+
+
+select [description] Product, sum(sweight) [Total Weight], sum(samount) [Total Amount], isnull(sum(samount) / (nullif(sum(sweight),0)),0) [Unit Cost], grade.gradeid [-Hidden-GradeID]
+
+from wksdetail 
+
+	inner join buysell on buysell.BuySellNo = WKSDetail.BuySellNo
+
+	inner join grade on grade.GradeID = wksdetail.GradeID
+
+	where (buysell.shippingdt >= @fromDt and buysell.ShippingDt <= @ToDt)
+
+	
+
+	group by [Description], grade.Gradeid
+

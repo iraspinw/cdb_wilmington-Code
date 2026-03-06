@@ -1,0 +1,316 @@
+--04/08/2022 ZT: Created
+
+--12/21/2022 ZT: Added logic for Received date and Mill/Receiver when Type = SUP
+
+--02/16/2023 DN: Shows UserName instead of UserID
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetReleaseMgt] 
+
+	@Type		CHAR(4),
+
+	@FromDt		DATE = NULL, 
+
+	@ToDt		DATE = NULL,
+
+	@Assigned	BIT = NULL,
+
+	@Warehouse	CHAR(45) = NULL,
+
+	@Cust		CHAR(12) = NULL,
+
+	@Sup		CHAR(12) = NULL,
+
+	@GradeID	CHAR(15) = NULL,
+
+	@User		VARCHAR(25) = NULL,
+
+	@COID CHAR(20) = NULL
+
+AS
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+IF @Type = 'SUP' BEGIN
+
+	SELECT
+
+		''								As [Select],
+
+		ReleaseID						As [ReleaseID],
+
+		ReleaseNo						As [Release No],
+
+		Release.BuySellNo				As [Wks No],
+
+		Release.BuySellNo				As [Load #],
+
+		--ShipDt							As [Ship Date],
+
+		ISNULL(Cust.CompanyNm, '')		As [Customer],
+
+		--ISNULL(Cust.CompanyNm, '')		As [Mill/Receiver],
+
+		ISNULL(ShipTo, '')				As [Ship To],
+
+		ISNULL(ShipTo, '')				As [Warehouse],
+
+		ISNULL(sup.CompanyNm, '')		As [Supplier],
+
+		ISNULL(ShipFrom, '')			As [Ship From],
+
+		Description						As [Product],
+
+		Description						As [Grade],
+
+		userdef.UserNm					As [User],
+
+		Dept.CompanyDesc				AS [Dept],
+
+		Dept.CompanyDesc				AS [Department],
+
+		ISNULL(Release.TradeType, '')	As [Trade Type],
+
+		ISNULL(Release.PriceBasis, '')	As [Price Basis],
+
+		ISNULL(Release.PriceBasis, '')	As [Delivery Terms],
+
+		ISNULL(UnitType.UnitType, '')	As [Unit Type],
+
+		ISNULL(UnitType.UnitType, '')	As [Packaging],
+
+		SPrice							As [Price],
+
+		SCurrencyCd						As [Currency],
+
+		Release.BookingNo				As [Booking No],
+
+		ISNULL(Comment, '')				As [Comment],
+
+		Cust.CpID						AS [CustCpID],
+
+		Sup.CpID						As [SupCpID],
+
+		Grade.GradeID					As [GradeID],
+
+		SPriceUOM						As [UOM_ID],
+
+		Dept.COID						As [COID],
+
+		ISNULL(Release.UnitType, '')	As [TypeID],
+
+		dbo.CnvUOM_Names(SPriceUOM)		As [UOM],
+
+		(CASE WHEN SONo <> '' THEN SONo WHEN PONo <> '' THEN PONo ELSE '' END) AS [Order No],
+
+		CONCAT(cast(round(SPrice,2) as numeric(36,2)), ' ' +SCurrencyCd + '/'+	dbo.CnvUOM_Names(SPriceUOM))	As [Sales Price/UOM],
+
+		ISNULL((SELECT TOP 1 CONCAT(cast(round(PPrice,2) as numeric(36,2)), ' ' +SCurrencyCd + '/'+	dbo.CnvUOM_Names(PUOM)) FROM WksDetail WHERE WksDetail.BuYSellNo = Release.BuySellNo), '')	As [Purch Price/UOM],
+
+		ShipDt as [Release Date]
+
+	FROM Release
+
+	LEFT JOIN CounterParty As Cust	ON Release.CustID = Cust.CpID
+
+	LEFT JOIN CounterParty As Sup	ON Release.VendorID = Sup.CpID
+
+	LEFT JOIN Grade					ON Release.GradeID = Grade.GradeID	
+
+	LEFT JOIN CompanyInfo  As Dept	ON Release.COID = Dept.COID
+
+	LEFT JOIN UnitType				ON Release.UnitType = UnitType.TypeID
+
+	LEFT JOIN BuySell				ON BuYSell.BuySellNo = Release.BuySellNo
+
+	LEFT JOIN UserDef               ON Release.UserID = userdef.UserID
+
+	WHERE 
+
+	ReleaseType = @Type 
+
+	AND
+
+	(
+
+		(@FromDt IS NULL and @ToDt IS NULL)
+
+		OR
+
+		(@FromDt <= ShipDt AND ShipDt <= @ToDt)
+
+	)
+
+	AND
+
+	(
+
+		(@Assigned IS NULL)
+
+		OR
+
+		(@Assigned = 1 AND (Release.BuySellNo <> '' and Release.BuYSellNo IS NOT NULL))
+
+		OR
+
+		(@Assigned = 0 AND (Release.BuySellNo = '' or Release.BuYSellNo IS NULL))
+
+	)
+
+	AND ((@Warehouse IS NULL)	OR (ShipTo = @Warehouse))
+
+	AND ((@Cust IS NULL)		OR (Release.CustID = @Cust))
+
+	AND ((@Sup IS NULL)			OR (Release.VendorID = @Sup))
+
+	AND ((@GradeID IS NULL)		OR (Release.GradeID = @GradeID))
+
+	AND ((@User IS NULL)		OR (Release.UserID = @User))
+
+	AND (@COID IS NULL OR @COID = Release.COID)
+
+END ELSE BEGIN
+
+	SELECT
+
+		''								As [Select],
+
+		ReleaseID						As [ReleaseID],
+
+		ReleaseNo						As [Release No],
+
+		Release.BuySellNo				As [Wks No],
+
+		Release.BuySellNo				As [Load #],
+
+		ShipDt							As [Ship Date],
+
+		ISNULL(Cust.CompanyNm, '')		As [Customer],
+
+		ISNULL(Cust.CompanyNm, '')		As [Mill/Receiver],
+
+		ISNULL(ShipTo, '')				As [Ship To],
+
+		ISNULL(ShipTo, '')				As [Warehouse],
+
+		ISNULL(sup.CompanyNm, '')		As [Supplier],
+
+		ISNULL(ShipFrom, '')			As [Ship From],
+
+		Description						As [Product],
+
+		Description						As [Grade],
+
+		UserDef.UserNm					As [User],
+
+		Dept.CompanyDesc				AS [Dept],
+
+		Dept.CompanyDesc				AS [Department],
+
+		ISNULL(Release.TradeType, '')	As [Trade Type],
+
+		ISNULL(Release.PriceBasis, '')	As [Price Basis],
+
+		ISNULL(Release.PriceBasis, '')	As [Delivery Terms],
+
+		ISNULL(UnitType.UnitType, '')	As [Unit Type],
+
+		ISNULL(UnitType.UnitType, '')	As [Packaging],
+
+		SPrice							As [Price],
+
+		SCurrencyCd						As [Currency],
+
+		Release.BookingNo				As [Booking No],
+
+		ISNULL(Comment, '')				As [Comment],
+
+		Cust.CpID						AS [CustCpID],
+
+		Sup.CpID						As [SupCpID],
+
+		Grade.GradeID					As [GradeID],
+
+		SPriceUOM						As [UOM_ID],
+
+		Dept.COID						As [COID],
+
+		ISNULL(Release.UnitType, '')	As [TypeID],
+
+		dbo.CnvUOM_Names(SPriceUOM)		As [UOM],
+
+		(CASE WHEN SONo <> '' THEN SONo WHEN PONo <> '' THEN PONo ELSE '' END) AS [Order No],
+
+		CONCAT(cast(round(SPrice,2) as numeric(36,2)), ' ' +SCurrencyCd + '/'+	dbo.CnvUOM_Names(SPriceUOM))	As [Sales Price/UOM],
+
+		ISNULL((SELECT TOP 1 CONCAT(cast(round(PPrice,2) as numeric(36,2)), ' ' +SCurrencyCd + '/'+	dbo.CnvUOM_Names(PUOM)) FROM WksDetail WHERE WksDetail.BuYSellNo = Release.BuySellNo), '')	As [Purch Price/UOM],
+
+		buysell.ShippingDt  as [Release Date]
+
+	FROM Release
+
+	LEFT JOIN CounterParty As Cust	ON Release.CustID = Cust.CpID
+
+	LEFT JOIN CounterParty As Sup	ON Release.VendorID = Sup.CpID
+
+	LEFT JOIN Grade					ON Release.GradeID = Grade.GradeID	
+
+	LEFT JOIN CompanyInfo  As Dept	ON Release.COID = Dept.COID
+
+	LEFT JOIN UnitType				ON Release.UnitType = UnitType.TypeID
+
+	LEFT JOIN BuySell				ON BuYSell.BuySellNo = Release.BuySellNo
+
+	LEFT JOIN UserDef               ON Release.UserID = userdef.UserID
+
+	WHERE 
+
+	ReleaseType = @Type 
+
+	AND
+
+	(
+
+		(@FromDt IS NULL and @ToDt IS NULL)
+
+		OR
+
+		(@FromDt <= ShipDt AND ShipDt <= @ToDt)
+
+	)
+
+	AND
+
+	(
+
+		(@Assigned IS NULL)
+
+		OR
+
+		(@Assigned = 1 AND (Release.BuySellNo <> '' and Release.BuYSellNo IS NOT NULL))
+
+		OR
+
+		(@Assigned = 0 AND (Release.BuySellNo = '' or Release.BuYSellNo IS NULL))
+
+	)
+
+	AND ((@Warehouse IS NULL)	OR (ShipTo = @Warehouse))
+
+	AND ((@Cust IS NULL)		OR (Release.CustID = @Cust))
+
+	AND ((@Sup IS NULL)			OR (Release.VendorID = @Sup))
+
+	AND ((@GradeID IS NULL)		OR (Release.GradeID = @GradeID))
+
+	AND ((@User IS NULL)		OR (Release.UserID = @User))
+
+	AND (@COID IS NULL OR @COID = Release.COID)
+
+END
+
+
+

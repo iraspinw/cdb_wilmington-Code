@@ -1,0 +1,26 @@
+
+
+CREATE PROC [dbo].[cw_GetPriceFormula] @FormulaID int 
+
+AS
+
+--04/21/2011 MCM: Copied from [q_GetPriceFormulas]
+
+
+
+SET NOCOUNT ON
+
+
+
+	SELECT  FormulaID, PriceIndex.IndexID, PriceIndex.IndexNm,FormulaDesc, dbo.RemoveTrailingZeros(convert(decimal(18,5),PriceOffset)) as PriceOffset, 
+
+	dbo.removetrailingzeros(PriceDiscount) as PriceDiscount,dbo.removetrailingzeros(MinPrice) as MinPrice, FactorBeforeCharge, IsFixed, UOM
+
+		FROM PriceFormula LEFT JOIN PriceIndex ON PriceIndex.IndexID = PriceFormula.IndexID
+
+		WHERE FormulaID = @FormulaID
+
+		ORDER BY FormulaDesc
+
+
+

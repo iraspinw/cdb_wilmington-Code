@@ -1,0 +1,33 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetWarehouseGridview]
+
+AS
+
+BEGIN
+
+--01/28/2016 MCM: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+    SELECT [Type] [-Hidden-Type],[Type] [Name],--ISNULL(Addr1,'') [Long Name],
+
+		ISNULL(Addr1,'') As [Company Name],
+
+		--ISNULL(Addr2,'') + CASE WHEN RTRIM(ISNULL(Addr2,'')) <> '' AND RTRIM(ISNULL(Addr3,'')) <> '' THEN ', ' ELSE '' END + ISNULL(Addr3,'') [Address], OLD ADRESS
+
+		ISNULL(Addr2,'') + CASE WHEN RTRIM(ISNULL(Addr2,'')) <> '' AND RTRIM(ISNULL(Addr3,'')) <> '' THEN ', ' ELSE '' END + ISNULL(Addr3,'') + ' ' +  ISNULL(City,'') + ' ' + ISNULL(Region,'') +  CASE WHEN ISNULL(Region,'') <> '' THEN ', ' ELSE ' ' END + ISNULL
+(PostalCd,'') + ' ' + ISNULL(Country,'') AS [Address],
+
+		--ISNULL(City,'') City,ISNULL(Region,'') Region,ISNULL(PostalCd,'') [Postal Code],ISNULL(Country,'') Country,
+
+		CASE WHEN ISNULL(Inactive,0) = 0 THEN 'Active' ELSE 'Inactive' END [Status]
+
+		FROM [Address] WHERE CpID = '(INV)' AND [Address].[Type] <> '(CONTAINER)'
+
+END
+

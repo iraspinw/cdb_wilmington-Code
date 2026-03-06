@@ -1,0 +1,124 @@
+CREATE PROC [dbo].[cw_GetWarningEmailTemplete] 
+
+@ObjectID varchar(50)='', 
+
+@ObjectType varchar(50) = '',
+
+@openCreditTotal varchar(50) = '',
+
+@CustID varchar(50) = ''
+
+as
+
+
+
+DECLARE @EmailBody varchar(max)
+
+DECLARE @EmailSubject varchar(max)
+
+DECLARE @CounterpartyName varchar(100)
+
+DECLARE @CreditLimit varchar(100)
+
+Declare  @ReturnID varchar(15)
+
+select top 1 @EmailBody=EmailTemplates.EmailBody,@EmailSubject = EmailTemplates.EmailSubject from EmailTemplates where OriginType = 'CW'
+
+select  @CounterpartyName=Rtrim(CounterParty.CompanyNm),@CreditLimit=CounterParty.CreditLimit from CounterParty where CpID =@CustID
+
+
+
+
+
+ if rtrim(isnull(@ObjectID,''))=''
+
+  begin
+
+	  begin tran
+
+         exec cw_GetNextSystemIDXP @ObjectType,@ReturnID OUTPUT
+
+      rollback tran 
+
+	 set @ObjectID=@ReturnID-1;
+
+  end
+
+
+
+
+
+
+
+--if @ObjectType='PO'
+
+--  begin
+
+--	  select  @CounterpartyName=Rtrim(CounterParty.CompanyNm),@CreditLimit=CounterParty.CreditLimit from po inner join CounterParty on po.CpID = CounterParty.CpID where po.PONumber = @ObjectID	 
+
+--  end
+
+--else if  @ObjectType='WKS'
+
+--  begin
+
+--     select  @CounterpartyName=Rtrim(CounterParty.CompanyNm),@CreditLimit=CounterParty.CreditLimit from BuySell inner join CounterParty on BuySell.CustID = CounterParty.CpID where BuySell.BuySellNo = @ObjectID     
+
+--  end
+
+
+
+   SET @EmailBody = Replace(@EmailBody, '%WS/SONumber%', IsNull(@ObjectID,''))
+
+   SET @EmailBody = Replace(@EmailBody, '%CounterpartyName%', IsNull(@CounterpartyName,''))
+
+   SET @EmailBody = Replace(@EmailBody, '%CreditLimit%', IsNull(@CreditLimit,''))
+
+   SET @EmailBody = Replace(@EmailBody, '%TotalCredit%', IsNull(@openCreditTotal,''))
+
+   
+
+   SET @EmailSubject = Replace(@EmailSubject, '%WS/SONumber%', IsNull(@ObjectID,''))
+
+   SET @EmailSubject = Replace(@EmailSubject, '%CounterpartyName%', IsNull(@CounterpartyName,''))
+
+   SET @EmailSubject = Replace(@EmailSubject, '%CreditLimit%', IsNull(@CreditLimit,''))
+
+   SET @EmailSubject = Replace(@EmailSubject, '%TotalCredit%', IsNull(@openCreditTotal,''))
+
+   SELECT TOP 1 
+
+		   [TemplateID]
+
+		  ,[TemplateType]
+
+		  ,[TemplateName]
+
+		  ,[EmailCC]
+
+		  ,[EmailBCC]
+
+		  ,[EmailFrom]
+
+		  ,@EmailSubject as [EmailSubject]
+
+		  ,@EmailBody as [EmailBody]
+
+		  ,[AddSignature]
+
+		  ,[IsDefault]
+
+		  ,[OriginType]
+
+		  ,[EmailTO]
+
+     FROM  [EmailTemplates]
+
+	 where OriginType = 'CW'
+
+
+
+
+
+
+

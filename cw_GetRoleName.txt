@@ -1,0 +1,4 @@
+CREATE proc [dbo].[cw_GetRoleName] @RoleID  int as
+
+SELECT RoleNm From UserRole WHERE RoleID = @RoleID
+

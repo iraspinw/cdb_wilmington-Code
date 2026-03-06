@@ -1,0 +1,10 @@
+CREATE proc [dbo].[cw_GetEmailTemplateByOriginType] @origin varchar(50) as
+
+
+
+select TemplateName, EmailCC, EmailBCC, EmailFrom, EmailSubject, EmailBody, TemplateID,isnull(EmailTO,'') as EmailTO  from EmailTemplates 
+
+where OriginType = @origin
+
+order by IsNull(isdefault,0) desc
+

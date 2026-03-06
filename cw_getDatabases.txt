@@ -1,0 +1,14 @@
+CREATE proc [dbo].[cw_getDatabases] as
+
+SELECT Replace(dbnm, 'cdb_', '') as dbnm, [dbid]
+
+FROM [CIE-SQLPROD01].[cieXChange].[dbo].[database]
+
+where serverid=107
+
+
+
+order by dbnm
+
+
+

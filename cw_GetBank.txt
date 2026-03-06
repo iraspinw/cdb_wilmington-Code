@@ -1,0 +1,14 @@
+CREATE   PROCEDURE [dbo].[cw_GetBank] @BankID int AS
+
+--4/2/2019 MN: CREATED
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT BankID As [-Hidden-BankID], RTRIM(BankName) AS [Bank Name], RTRIM(IsNull(BankAddress,'')) AS [Bank Address], RTRIM(IsNull(CountryID,'')) AS [Country ID] FROM LCBank WHERE BankID = @BankID
+
+
+

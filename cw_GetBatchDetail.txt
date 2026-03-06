@@ -1,0 +1,32 @@
+CREATE proc [dbo].[cw_GetBatchDetail] @APBatchNo varchar(15), @PayableID int = 0, @IsAdj bit = 0 as
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	IF @PayableID = 0
+
+		select invoiceno from PayablesBatch where APBatchNo = @APBatchNo
+
+	ELSE
+
+	BEGIN
+
+		IF @IsAdj = 0
+
+			select invoiceno from Payables where PayableID = @PayableID
+
+		ELSE
+
+			select InvoiceNo from GPLedger g
+
+				INNER JOIN Payables p ON p.ItemID = g.LedgerID 
+
+				where LedgerID = @PayableID AND g.[Source] = 'A'
+
+	END
+
+
+

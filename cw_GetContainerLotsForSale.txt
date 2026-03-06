@@ -1,0 +1,136 @@
+CREATE proc [dbo].[cw_GetContainerLotsForSale]
+
+	@BookingNo varchar(25) = ''
+
+	
+
+	AS
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED	
+
+
+
+--08/29/2018 DSH Revised for cieTrade.net
+
+--09/05/2018 MEC Filter corrections and column list changes
+
+--4/15/2020 BF: Added worksheet invoiced status filter
+
+	SELECT
+
+		upper(container.containerno) [Container No],
+
+		container.sealno [Seal No],
+
+		BuySell.ShippingDt as [Receive Date],
+
+		container.bookingno [Booking No],
+
+		Case When Booking.CutOffDate = '01/01/1900' Then NULL Else Booking.CutOffDate End As [Cuttoff Date],
+
+		Booking.LoadPort AS [POL],
+
+		Booking.PortOfDischg AS [POD],
+
+		Booking.PlaceOfDeliv AS [PLDV],
+
+		Freight.CompanyNm AS [Carrier],
+
+		Vessel,
+
+		VoyageNo As [Voyage No],
+
+		Case When Booking.ETS = '01/01/1900' Then NULL Else Booking.ETS End [ETD],
+
+		Case When Booking.ETA = '01/01/1900' Then NULL Else Booking.ETA End [ETA],
+
+		case when isnull(Counterparty.CompanyNm,'') = '' then 'PACKED' else counterparty.companynm end AS [Supplier],
+
+		[Address].[Type] AS [Location],
+
+		Buysell.RefPONo As [PO No],
+
+		RcvBuysellno [Source PR],
+
+		container.NetWeight AS [Net Weight LBS],
+
+		dbo.CONVERT_TO_UOM(BuySell.TotalWeightLbs, 'L', 'M')  AS [Net Weight MT],
+
+		Customer.CompanyNm As [Customer],
+
+		COALESCE(SalesWks.RefSONo,'') As [SO No],
+
+		ISNULL(SaleBuySellNo, '') AS [Invoice Number],
+
+		COALESCE(SalesWks.RelNo,'') AS [Release No],
+
+		COALESCE(CompanyInfo.CompanyNm,'') AS [Dept],
+
+		Grade.[Description] AS [Product/Grade],
+
+		container.ContainerID as [-Hidden-ContainerID],
+
+		buysell.[status] as [-Hidden-Status],
+
+		Booking.BookSheetID as [-Hidden-BookID],
+
+		RcvBuysellno [-Hidden-SourceWks],
+
+		ISNULL(SaleBuySellNo, '') AS [-Hidden-InvoiceNo],
+
+		inventory.lotno [Item No],
+
+		inventory.[Weight],
+
+		inventory.InvValue [Amount],
+
+		dbo.CnvUnitName(inventory.UnitType) Packing,
+
+		container.units Units
+
+		
+
+	FROM Container
+
+		inner join ContainerContents on container.containerid = containercontents.containerid
+
+		inner join inventory on inventory.lotno = containercontents.LotNo
+
+		left JOIN Buysell on Buysell.buysellno = Container.RcvBuysellno
+
+		
+
+		left JOIN counterparty on counterparty.cpid = Buysell.VendorID
+
+		left JOIN [Address] ON [Address].CpID = buysell.VendorID AND [Address].InvoiceAddr = 'Y'
+
+		left JOIN GRADE ON Grade.GradeID = inventory.gradeid
+
+		left JOIN [Booksheet] Booking ON Booking.BookingNo = Container.BookingNo
+
+		LEFT JOIN BuySell SalesWks ON SalesWks.BuySellNo = Container.SaleBuySellNo
+
+		LEFT JOIN Counterparty Customer On SalesWks.CustID = Customer.CPID
+
+		LEFT JOIN Counterparty Freight On Freight.CPID = Booking.Carrier
+
+		LEFT JOIN CompanyInfo ON CompanyInfo.COID = BuySell.COID
+
+		
+
+	WHERE 
+
+		container.bookingno like '%' + @BookingNo + '%'
+
+		and isnull(container.SaleBuySellNo, '') = ''
+
+		and (buysell.[status] is null or buysell.[status] = 'I')
+
+	Order by [Container No], [Item No]		
+
+
+

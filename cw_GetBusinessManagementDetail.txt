@@ -1,0 +1,66 @@
+CREATE proc [dbo].[cw_GetBusinessManagementDetail]  @CpID char(50) as 
+
+
+
+--6/2/2021 Alex: Created
+
+--[dbo].[cw_GetBusinessManagementInquiry] '10014'
+
+
+
+select 
+
+BuySell.BuySellNo  as  [Worksheet No],
+
+BuySell.ShippingDt as [Shipping date],
+
+BuySell.InvoiceDt  as [Invoice date],
+
+[dbo].[FormatQty](WKSDetail.SWeight,WKSDetail.SWeightUOM)  as Weight,
+
+[dbo].[CnvUOM_Names](WKSDetail.SWeightUOM) as [Weight UOM],
+
+[dbo].[CnvUnitName](WKSDetail.UnitType) Packaging,
+
+case  when dbo.RemoveTrailingZeros(WKSDetail.BasisWt)='0' then '' else dbo.RemoveTrailingZeros(WKSDetail.BasisWt) end  as BW,
+
+case  when dbo.RemoveTrailingZeros(WKSDetail.Caliper) ='0' then '' else dbo.RemoveTrailingZeros(WKSDetail.Caliper) end  as Caliper,
+
+case  when dbo.RemoveTrailingZeros( WKSDetail.RollWd) ='0' then '' else dbo.RemoveTrailingZeros( WKSDetail.RollWd)  end as RW,
+
+case  when dbo.RemoveTrailingZeros(WKSDetail.Diameter) ='0' then '' else dbo.RemoveTrailingZeros(WKSDetail.Diameter) end as Diameter,
+
+WKSDetail.PlasticType as [Type-Grade],
+
+WKSDetail.PlasticForm as Form ,
+
+WKSDetail.PlasticMelt as Melt,
+
+WKSDetail.COLOR as Color,
+
+WKSDetail.SFxAmount as [{C}Amount],
+
+BuySell.CustID,
+
+BuySell.VendorID,
+
+WKSDetail.UserDefined1,
+
+WKSDetail.UserDefined2,
+
+WKSDetail.UserDefined3,
+
+WKSDetail.UserDefined4,
+
+WKSDetail.UserDefined5
+
+
+
+from BuySell 
+
+inner join WKSDetail on WKSDetail.BuySellNo= BuySell.BuySellNo
+
+where WKSDetail.GradeID= @CpID
+
+
+

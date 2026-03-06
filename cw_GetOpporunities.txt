@@ -1,0 +1,24 @@
+CREATE PROC [dbo].[cw_GetOpporunities] 
+
+As
+
+--3/27/17 MN: Create
+
+ 
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+		SELECT
+
+			OpportunityID AS [OpportunityID],
+
+			OpportunityNm As [OpportunityNm]
+
+		FROM CRMOpportunity
+
+
+

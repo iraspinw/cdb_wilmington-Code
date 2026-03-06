@@ -1,0 +1,130 @@
+CREATE   PROCEDURE [dbo].[cw_GetShippingVGMDocInfo] @BuySellNo char(12) AS
+
+--10/22/2015 RS: Created
+
+--11/10/2015 RS: Added ETS 
+
+--11/12/2015 RS: Added ContainerRef and PO.Terms
+
+--10/31/2016 RS: Added LC logic to CustAddr
+
+--11/7/2016 RS: Added GradeDesc
+
+--11/10/2016 RS: Added @BeneficiaryCOID
+
+
+
+-- cw_GetShippingVGMDocInfo 'ABD2465'
+
+
+
+DECLARE @LCNo varchar(25)
+
+DECLARE @LCID int
+
+DECLARE @PONo char(15)
+
+DECLARE @ConsigneeNm varchar(100)
+
+DECLARE @ConsigneeAddr varchar(255)
+
+--DECLARE @BeneficiaryNm varchar(100)
+
+--DECLARE @BeneficiaryAddr varchar(255)
+
+--SET @BeneficiaryNm = ''
+
+DECLARE @BeneficiaryCOID char(2)
+
+SET @ConsigneeAddr = ''
+
+SET @LCNo = ''
+
+SET @BeneficiaryCOID = ''
+
+
+
+	SELECT @PONo = RefPONo	FROM BuySell WITH(NOLOCK)	WHERE BuySellNo = @BuySellNo
+
+	IF ISNULL(@PONo,'')<>'' BEGIN
+
+		SELECT @LCID = IssuingLC_ID, @ConsigneeAddr = PO.BLConsignTo	FROM PO WITH(NOLOCK) WHERE PONumber = @PONo
+
+		
+
+		SELECT @LCNo = LCNo, @ConsigneeAddr = ConsigneeAddr,@ConsigneeNm = Counterparty.CompanyNm,
+
+		@BeneficiaryCOID = LC.COID
+
+		--@BeneficiaryAddr = Beneficiary, @BeneficiaryNm = CompanyInfo.CompanyNm
+
+		FROM LC WITH(NOLOCK)
+
+ 		LEFT JOIN Counterparty WITH(NOLOCK) ON Counterparty.CpID = LC.ConsigneeCPID
+
+		WHERE LC.ID = @LCID
+
+	END
+
+	
+
+
+
+	SELECT BookDate, BookSheet.LoadPort, BookSheet.PortOfDischg, SSLine.CompanyNm, Vessel, VoyageNo, CutOffDate, 
+
+		BookSheet.PONumber,Booksheet.PlaceOfDeliv,
+
+		BookSheet.BookingNo, PO.COID, PO.POReference,PO.Terms,
+
+		dbo.xDoc_GetAddress(PO.CPID,PO.AddrType,0,0) as CustAddr,
+
+		Cust.CompanyNm as CustNm, 
+
+		ETS, ContainerRef as BuysellNo,
+
+		PO.PriceBasis As ShipTerms,
+
+		BookSheet.GradeDesc,
+
+		BuySell.MillRcvNo
+
+		INTO #REPORT
+
+ 		FROM BuySell WITH(NOLOCK) 
+
+		LEFT JOIN BookSheet WITH(NOLOCK) ON BookSheet.BookingNo = BuySell.BookingNo
+
+ 		LEFT JOIN Counterparty SSLine WITH(NOLOCK) ON BookSheet.Carrier = SSLine.CpID
+
+		LEFT JOIN PO WITH(NOLOCK) on Booksheet.PONumber = PO.PONumber And PO.[Source] = 'SO'
+
+ 		LEFT JOIN Counterparty Cust WITH(NOLOCK) ON PO.CpID = Cust.CpID
+
+ 		WHERE BuySell.BuySellNo = @BuySellNo
+
+
+
+	IF IsNull(@ConsigneeAddr,'')<>''
+
+		UPDATE #REPORT SET CustAddr = @ConsigneeAddr
+
+		
+
+	IF IsNull(@ConsigneeNm,'')<>''
+
+		UPDATE #REPORT SET CustNm = @ConsigneeNm
+
+		
+
+ 	IF IsNull(@BeneficiaryCOID,'')<>''
+
+ 		UPDATE #REPORT SET COID = @BeneficiaryCOID
+
+
+
+ 	
+
+ 	SELECT * FROM #REPORT
+
+
+

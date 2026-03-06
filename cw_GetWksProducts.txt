@@ -1,0 +1,52 @@
+CREATE Proc [dbo].[cw_GetWksProducts] @BuySellNo char(12)  AS
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+-- 06/21/2016 RS: Created from xDoc_GetWksProducts
+
+
+
+	DECLARE @SWTUOM char(4)
+
+	SET @SWTUOM = dbo.CnvUOM_Names(ISNULL((SELECT TOP 1 SWeightUOM FROM WksDetail WITH (NOLOCK) WHERE BuySellNo = @BuySellNo),'L'))
+
+
+
+	SELECT WKSDetail.GradeID,Grade.[Description],InvoiceDesc,
+
+	SWeight,RTRIM(dbo.CnvUOM_Names(SWeightUOM)) as SWeightUOM,
+
+	WksDetail.Specifications,
+
+	WksDetail.Units,dbo.CnvUnitName(WksDetail.UnitType) As UnitType,
+
+	RTRIM(ISNULL(PODesc,'')) AS PODesc,ISNULL(PODetail.Specifications,'') as POSpec,
+
+	dbo.CONVERT_TO_UOM(SWeight,SWeightUOM,dbo.CnvUOM_ID(@SWTUOM)) as TotalWt,
+
+	RTRIM(@SWTUOM) as SWTUOM
+
+	FROM WksDetail WITH (NOLOCK) 
+
+	INNER JOIN Grade WITH(NOLOCK) ON WKSDetail.GradeID = Grade.GradeID 
+
+	LEFT JOIN PODetail WITH(NOLOCK) ON PODetail.PO_ID = WksDetail.PPO_ID
+
+	WHERE BuySellNo = @BuySellNo
+
+	ORDER BY WksDetail.DetailID
+
+		
+
+		
+
+		
+
+-- cw_GetWksProducts '230638'	
+
+
+

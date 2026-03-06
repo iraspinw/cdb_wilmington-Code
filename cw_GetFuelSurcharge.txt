@@ -1,0 +1,28 @@
+CREATE   PROCEDURE [dbo].[cw_GetFuelSurcharge] @cpid char(12), @Loc varchar(45) = '' AS
+
+
+
+--2/6/2020 Alex: CREATED
+
+
+
+	(select 
+
+	 dbo.RemoveTrailingZeros( isnull(Address.FuelSurChgSellRate,0)) as FuelSurChgSellRate,
+
+	 dbo.RemoveTrailingZeros( isnull(Address.FuelSurChgBuyRate,0)) as FuelSurChgBuyRate,
+
+	 dbo.RemoveTrailingZeros( isnull(Address.SharedSavPercent,0)) as SharedSavPercent
+
+	 from CounterParty
+
+	  inner JOIN Address on Address.CpID=CounterParty.CpID 
+
+	  where Address.Type=@Loc and CounterParty.CpID=@cpid) 
+
+
+
+
+
+
+

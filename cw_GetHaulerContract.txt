@@ -1,0 +1,64 @@
+CREATE   PROCEDURE [dbo].[cw_GetHaulerContract] @HaulerContractID int AS 
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+-- 05/24/2019 MN: CREATED
+
+
+
+	SELECT 
+
+		HaulerContractID,
+
+		HaulerCPID,
+
+		H.CompanyNm AS [Hauler],
+
+		CustCPID,
+
+		C.CompanyNm As [Customer],
+
+		Location,
+
+		ContractNo,
+
+		ContractDt,
+
+		ExpiryDt,
+
+		CancellationWindow,
+
+		ContractDesc, 
+
+		RenewalTerms
+
+	 FROM HaulerContract
+
+		LEFT JOIN CounterParty H WITH(NOLOCK) ON H.CpID = HaulerContract.HaulerCPID
+
+		LEFT JOIN CounterParty C WITH(NOLOCK) ON C.CpID = HaulerContract.CustCPID
+
+		--LEFT JOIN CounterParty R WITH(NOLOCK) ON R.CpID = DispatchJob.ReceiverID
+
+		--LEFT JOIN CounterParty CAR WITH(NOLOCK) ON CAR.CpID = DispatchJob.CarrierID
+
+		--LEFT JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.COID = DispatchJob.COID
+
+		--LEFT JOIN JobType JT WITH(NOLOCK) ON JT.JobID = DispatchJob.JobType
+
+		--LEFT JOIN Grade GR WITH(NOLOCK) ON GR.GradeID = DispatchJob.Commodity
+
+		--LEFT JOIN ServiceRecord SR WITH(NOLOCK) ON SR.DispatchScheduleKey = DispatchJob.ServiceID
+
+		--LEFT JOIN CurrencyRate on CurrencyRate.CurCode = A.CurrCode and exchdate <= GETDATE()
+
+	WHERE HaulerContractID = @HaulerContractID
+
+	
+
+	SELECT * FROM HaulerContractPriceEscalation WHERE HaulerContractID = @HaulerContractID ORDER BY DetailID
+

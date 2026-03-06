@@ -1,0 +1,408 @@
+CREATE   PROCEDURE [dbo].[cw_GetOrderMatchReport]  @GroupBy varchar(15), @FromDt datetime, @ToDt datetime, @CustID char(15),
+
+ @SONo char(15), @GradeID char(15),@CountryID varchar(3),@DateType bit, @PortNm varchar(50), @UOM char(1),@COID char(2),@TradeType varchar(25) 
+
+AS
+
+SET NOCOUNT ON	
+
+--1/13/2005: BM: Added CountryID and DateType filters
+
+--8/12/2005  JW: Modified LEFT JOIN to PODetail to ignore BW and RW difference between '0' and ''
+
+--02/07/2006 DSH: COMPLETE REWRITE: Based on old procedure q_GetOrderMatchEx -- 
+
+                --Returns a fully complete result set, cleans attribute up matching data, gets Last-Ship Dt
+
+                --From actual LC. 
+
+--02/08/2006 DSH: Further cleaned up Grade Attributes to avoid grouping problems.
+
+--11/10/2005 JW: added svc rep column
+
+--04/29/2008 RS: added COID
+
+--10/08/2008 RS: TradeType added
+
+
+
+
+
+    -- DEFINE REPORT TABLE.
+
+    CREATE TABLE #REPORT (
+
+    POID INT,
+
+    Product varchar(65),
+
+    DestPort varchar(50),
+
+    OrderNo char(15),
+
+    Source char(1),
+
+    CompanyNm varchar(65),
+
+    SOWeight decimal(18,5),
+
+    SOUnits int,
+
+    SOPrice Money,
+
+    SOPriceUom char(1),
+
+    POWeight  decimal(18,5),
+
+    POUnits INT,
+
+    GradeID char(15),
+
+    BasisWt varchar(10),
+
+    BasisWtUOM char(3),
+
+    RollWd varchar(10),
+
+    RollWdUOM char(3),
+
+    UnitType char(1),
+
+    OrderDate Datetime,
+
+    ShipDate Datetime,
+
+    AttachedLC INT,
+
+    UserID char(10),
+
+	UserNm varchar(30),
+
+	POType char(2)	
+
+	)
+
+
+
+
+
+    --A.) POPULATE REPORT WITH SALES ORDERS.
+
+    ----------------------------------------
+
+    INSERT #REPORT
+
+	SELECT PO.POID, 
+
+        Grade.Description, 
+
+        DestCountry, 
+
+        PO.PONumber,'1', upper(Counterparty.CompanyNm),        
+
+        dbo.CalcLbs(Weight,WeightUOM), Units,Price,PriceUOM,
+
+        0,0, PODetail.GradeID, BasisWt, BasisWtUOM, RollWd, RollWdUOM,
+
+        UnitType, PODate, SchShipDate,
+
+        (Select TOP 1 ID FROM LC WHERE PO.POID = LC.POID), PO.UserID, UserDef.UserNm,
+
+		PO.[Source]
+
+    FROM PODetail WITH(NOLOCK) INNER JOIN PO WITH (NOLOCK) ON PODetail.PONumber = PO.PONumber  
+
+	INNER JOIN Counterparty ON PO.CpID = Counterparty.CpID
+
+	INNER JOIN Grade ON PODetail.GradeID = Grade.GradeID              
+
+	LEFT JOIN UserDef on PO.UserID = UserDef.UserID
+
+	LEFT JOIN Ports ON DestCountry = Ports.PortNm
+
+	WHERE Status = 'OPEN' AND Source = 'SO'
+
+  	AND ((PODate >= @FromDt AND PODate <= @ToDt And @DateType = 0) 
+
+    	   OR (SchShipDate >= @FromDt AND SchShipDate <= @ToDt And @DateType = 1) OR (@ToDt= '' and @FromDt = '')) 
+
+	AND (@CustID = '' OR @CustID = PO.CpID)
+
+	AND (@SONo = '' OR @SONo = PO.PONumber)
+
+	AND (@GradeID = '' OR @GradeID = PODetail.GradeID)	
+
+	AND (Ports.CountryID = @CountryID or @CountryID = '')
+
+    AND (@PortNm = '' OR @PortNm = DestCountry)
+
+    AND (Weight <> 0)
+
+    AND (@COID = '' OR @COID = COID)
+
+    AND (@TradeType = '' OR @TradeType = TradeType)
+
+    UPDATE #REPORT SET BasisWtUOM='',BasisWt='' WHERE BasisWt = '0' OR BasisWt is NULL Or BasisWt = '' OR BasisWtUOM='' OR BasisWtUOM IS NULL   
+
+    UPDATE #REPORT SET RollWdUOM='',RollWd='' WHERE RollWd = '0' OR RollWd is NULL OR RollWd = '' OR RollWdUOM='' OR RollWdUOM IS NULL
+
+    UPDATE #REPORT SET SOUnits = 0 Where UnitType <> 'X'
+
+    UPDATE #REPORT SET ShipDate=LastShipDt FROM #REPORT INNER JOIN LC ON #REPORT.AttachedLC=LC.ID
+
+        WHERE LastShipDt > '1/1/2000' AND LastShipDt IS NOT NULL
+
+    
+
+
+
+
+
+    --B.) DETERMINE MATCHED PURCHASE ORDER FULFILLMENT.
+
+    ---------------------------------------------------
+
+	SELECT PODetail.SPO AS PONumber, PODetail.GradeID, 
+
+        PODetail.BasisWt, PODetail.BasisWtUOM, PODetail.RollWd, PODetail.RollWdUOM,
+
+        dbo.CalcLbs(Weight,WeightUOM) AS Weight, PODetail.Units, PODetail.UnitType, PONumber AS PONO 
+
+    INTO #PURCH_TEMP
+
+    FROM PODetail WITH(NOLOCK) INNER JOIN #REPORT ON PODETAIL.SPO = #REPORT.OrderNo
+
+
+
+    UPDATE #PURCH_TEMP SET BasisWtUOM='',BasisWt='' WHERE BasisWt = '0' OR BasisWt is NULL OR BasisWt = '' 
+
+    UPDATE #PURCH_TEMP SET RollWdUOM='',RollWd='' WHERE RollWd = '0' OR RollWd is NULL   
+
+    UPDATE #PURCH_TEMP SET Units = 0 Where UnitType <> 'X'
+
+    
+
+	SELECT PONumber, GradeID, BasisWt, BasisWtUOM, RollWd, RollWdUOM, SUM(Weight) AS WeightLbs, SUM(Units) AS Units
+
+        INTO #PURCH_UPDATE
+
+        FROM #PURCH_TEMP
+
+        GROUP BY PONumber, GradeID, BasisWt, BasisWtUOM, RollWd, RollWdUOM
+
+
+
+
+
+    --C. UPDATE SALES ORDERS WITH MATCHED PURCHASE ORDERS.
+
+    ------------------------------------------------------
+
+    UPDATE #REPORT SET POWeight=WeightLbs, POUnits=Units FROM #PURCH_UPDATE INNER JOIN #REPORT ON
+
+    #PURCH_UPDATE.PONumber = #REPORT.OrderNo AND #PURCH_UPDATE.GradeID = #REPORT.GradeID
+
+    AND #PURCH_UPDATE.BasisWt = #Report.BasisWt AND #PURCH_UPDATE.BasisWtUOM = #Report.BasisWtUOM
+
+    AND #PURCH_UPDATE.RollWd = #Report.RollWd AND #PURCH_UPDATE.RollWdUOM = #Report.RollWdUOM
+
+
+
+    
+
+	--D.) GET ALL PURCHASE ORDERS WITH NO SO LINK.
+
+    ----------------------------------------------
+
+
+
+    INSERT #REPORT
+
+	SELECT POID, Grade.Description,
+
+        DestCountry, 
+
+        PO.PONumber,'2',upper(Counterparty.CompanyNm),        
+
+        0, 0, Price, PriceUOM,
+
+        dbo.CalcLbs(Weight,WeightUOM),Units, PODetail.GradeID, BasisWt, BasisWtUOM, RollWd, RollWdUOM,
+
+        UnitType, PODate, SchShipDate,'' AS LCNo, PO.UserID, UserDef.UserNm,
+
+		PO.[Source]
+
+    FROM PODetail WITH(NOLOCK) INNER JOIN PO WITH (NOLOCK) ON PODetail.PONumber = PO.PONumber  
+
+	INNER JOIN Counterparty ON PO.CpID = Counterparty.CpID
+
+	INNER JOIN Grade ON PODetail.GradeID = Grade.GradeID              
+
+	LEFT JOIN UserDef on PO.UserID = UserDef.UserID
+
+	LEFT JOIN Ports ON DestCountry = Ports.PortNm
+
+	WHERE Status = 'OPEN' AND ((SPo = '' OR SPo IS NULL) AND PO.SOURCE <> 'SO')
+
+	AND ((PODate >= @FromDt AND PODate <= @ToDt And @DateType = 0) 
+
+    	   OR (SchShipDate >= @FromDt AND SchShipDate <= @ToDt And @DateType = 1) OR (@ToDt= '' and @FromDt = '')) 
+
+	AND (@CustID = '' OR @CustID = PO.CpID)
+
+	AND (@SONo = '' OR @SONo = PO.PONumber)
+
+	AND (@GradeID = '' OR @GradeID = PODetail.GradeID)	
+
+	AND (Ports.CountryID = @CountryID or @CountryID = '')
+
+    AND (@PortNm = '' OR @PortNm = DestCountry)
+
+    AND (Weight <> 0)
+
+	--AND @CustID = ''
+
+	--AND @SONo = ''
+
+    AND (@COID = '' OR @COID = COID)
+
+    AND (@TradeType = '' OR @TradeType = TradeType)
+
+
+
+    UPDATE #REPORT SET BasisWtUOM='',BasisWt='' WHERE BasisWt = '0' OR BasisWt is NULL Or BasisWt = '' OR BasisWtUOM='' OR BasisWtUOM IS NULL   
+
+    UPDATE #REPORT SET RollWdUOM='',RollWd='' WHERE RollWd = '0' OR RollWd is NULL OR RollWd = '' OR RollWdUOM='' OR RollWdUOM IS NULL
+
+    UPDATE #REPORT SET SOUnits = 0 Where UnitType <> 'X'
+
+    UPDATE #REPORT SET AttachedLC = 0 Where AttachedLC IS NULL
+
+
+
+
+
+    --E. CONVERT TO REPORTING WEIGHTS.
+
+    IF @UOM <> 'L'
+
+        UPDATE #REPORT SET SOWeight=Convert(decimal(14,4),dbo.ConvertFromLbs(SOWeight,@UOM))
+
+            ,POWeight=Convert(decimal(14,4),dbo.ConvertFromLbs(POWeight,@UOM)) 
+
+
+
+    --F. REPORT GROUPING/SORTING.
+
+    IF @Groupby = 'GRADE' 
+
+        BEGIN 
+
+        UPDATE #REPORT SET Product = '' WHERE Product IS NULL
+
+        SELECT 
+
+			Product,
+
+			BasisWt,
+
+			BasisWtUOM,
+
+			RollWd,
+
+			RollWdUOM,
+
+			DestPort AS [Destination Port],
+
+			OrderNo As [SO No/PO No],
+
+			CompanyNm As [Customer/Supplier],
+
+			FORMAT(OrderDate, 'dd MMM yyyy') As [Order Date],
+
+			FORMAT(ShipDate, 'dd MMM yyyy') As [Ship Date],
+
+			CONVERT(VARCHAR(15), Convert(DOUBLE PRECISION,SOPrice)) + '/'+ dbo.CnvUOM_Names(SOPriceUOM) AS [Price ],
+
+			dbo.FormatQty(SOWeight,@UOM) As [SO Order Qty],
+
+			dbo.FormatQty(POweight,@UOM) As [PO Order Qty],
+
+			dbo.FormatQty(SOWeight-POWeight,@UOM) As [Open Qty],
+
+			SOUnits-POUnits AS OpenUnits,
+
+			AttachedLC,SOURCE, 
+
+            Product + ' ' + BasisWt + BasisWtUOM + ' '+RollWd+RollWdUOM AS GRPKEY,
+
+			UserID,
+
+			UserNm AS [Sales Rep],
+
+			POType
+
+            FROM #REPORT 
+
+            ORDER BY Product, BasisWt, RollWd, SOURCE, OrderNo
+
+        END
+
+    ELSE
+
+        BEGIN
+
+        UPDATE #REPORT SET DestPort = '' WHERE DestPort IS NULL
+
+        SELECT 
+
+			Product,
+
+			BasisWt,
+
+			BasisWtUOM, 
+
+			RollWd, 
+
+			RollWdUOM,
+
+			DestPort AS [Destination Port],
+
+			OrderNo As [SO No/PO No],
+
+			CompanyNm As [Customer/Supplier],
+
+			FORMAT(OrderDate, 'dd MMM yyyy') As [Order Date],
+
+			FORMAT(ShipDate, 'dd MMM yyyy') As [Ship Date],
+
+			CONVERT(VARCHAR(15), Convert(DOUBLE PRECISION,SOPrice)) + '/'+ dbo.CnvUOM_Names(SOPriceUOM) AS [Price ],
+
+			dbo.FormatQty(SOWeight,@UOM) As [SO Order Qty],
+
+			dbo.FormatQty(POweight,@UOM) As [PO Order Qty],
+
+			dbo.FormatQty(SOWeight-POWeight,@UOM) As [Open Qty],
+
+			SOUnits-POUnits AS OpenUnits, 
+
+			AttachedLC,
+
+			SOURCE, 
+
+			DestPort AS GRPKEY, 
+
+			UserID,
+
+			UserNm AS [Sales Rep],
+
+			POType
+
+            FROM #REPORT 
+
+            ORDER BY DestPort, SOURCE, OrderNo
+
+        END
+
+
+

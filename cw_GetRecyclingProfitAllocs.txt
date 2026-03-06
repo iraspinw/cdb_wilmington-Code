@@ -1,0 +1,176 @@
+CREATE proc [dbo].[cw_GetRecyclingProfitAllocs]
+
+		@ACCOUNTID char(12) = '', 
+
+		@WhseCPID CHAR(12) = '',
+
+		@ApplyModelTo varchar(20) = '',
+
+		@ItemID char(12) = ''
+
+AS
+
+SET NOCOUNT ON
+
+--09/02/2010 DSH Created for Recycling Profit Analysis.
+
+--11/29/2010 DSH Corrected Table SoldAsGrade Length
+
+--12/12/2011 DSH Added Warehouse Column.
+
+--01/29/2015 DSH Added option to filter by warehouse.
+
+--03/06/2015 RS: Added @ApplyModelTo
+
+--11/8/2022 DN: Copied over from Dev01
+
+
+
+Declare @sqlstmt varchar(2000)		
+
+Declare @x tinyint, @Ord varchar(2), @item varchar(2)
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	Create Table #RecyProfitList(
+
+		ItemID int, 
+
+		WarehouseNm varchar(65),
+
+		WarehouseID char(12),
+
+		AccountNm varchar(65),
+
+		AccountID char(12), 
+
+		ShipFromID char(45),
+
+		GradeID char(15),
+
+		GradeNm varchar(65),
+
+		UnitType char(1),		
+
+		ID_01 char(15) default '',IDAlloc_01 smallint default 0, Nm_01 varchar(65) default '',
+
+		ID_02 char(15) default '',IDAlloc_02 smallint default 0, Nm_02 varchar(65) default '',	
+
+		ID_03 char(15) default '',IDAlloc_03 smallint default 0, Nm_03 varchar(65) default '',
+
+		ID_04 char(15) default '',IDAlloc_04 smallint default 0, Nm_04 varchar(65) default '',	
+
+		ID_05 char(15) default '',IDAlloc_05 smallint default 0, Nm_05 varchar(65) default '',
+
+		ID_06 char(15) default '',IDAlloc_06 smallint default 0, Nm_06 varchar(65) default '',		
+
+		ID_07 char(15) default '',IDAlloc_07 smallint default 0, Nm_07 varchar(65) default '',
+
+		ID_08 char(15) default '',IDAlloc_08 smallint default 0, Nm_08 varchar(65) default '',		
+
+		ID_09 char(15) default '',IDAlloc_09 smallint default 0, Nm_09 varchar(65) default '',
+
+		ID_10 char(15) default '',IDAlloc_10 smallint default 0, Nm_10 varchar(65) default '',		
+
+		ID_11 char(15) default '',IDAlloc_11 smallint default 0, Nm_11 varchar(65) default '',
+
+		ID_12 char(15) default '',IDAlloc_12 smallint default 0, Nm_12 varchar(65) default '',
+
+		ApplyModelTo varchar(20)
+
+	)
+
+	
+
+	
+
+	INSERT #RecyProfitList(ItemID,WarehouseNm,WarehouseID,AccountNm,AccountID,ShipFromID,GradeID,GradeNm,UnitType,ApplyModelTo)
+
+		SELECT	
+
+			ItemID,
+
+			ISNULL(WAREHOUSE.CompanyNm,'(Any)'),
+
+			isnull(WarehouseNm,'(Any)'),
+
+			ISNULL(ACCOUNT.CompanyNm,'(Any)'),
+
+			RecyProfitDef.CPID,
+
+			ISNULL(ShipFromID,'(Any)'),
+
+			RecyProfitDef.GradeID,
+
+			Grade.[Description],
+
+			UnitType,
+
+			ApplyModelTo
+
+	FROM RecyProfitDef LEFT JOIN COUNTERPARTY ACCOUNT WITH (NOLOCK) ON RecyProfitDef.CPID = ACCOUNT.CPID
+
+		LEFT JOIN GRADE WITH (NOLOCK) ON RecyProfitDef.GradeID = GRADE.GradeID
+
+		LEFT JOIN COUNTERPARTY WAREHOUSE ON RecyProfitDef.WarehouseNm = WAREHOUSE.CPID
+
+	WHERE	
+
+		(@ACCOUNTID = '' OR @ACCOUNTID = RecyProfitDef.CPID)
+
+		AND 
+
+		(@WhseCPID = '' OR @WhseCPID = RecyProfitDef.WarehouseNm)
+
+		AND ((@ApplyModelTo = '' OR @ApplyModelTo = 'All') OR @ApplyModelTo = RecyProfitDef.ApplyModelTo)
+
+		and (@ItemID = '' or RecyProfitDef.ItemID = @ItemID)
+
+	ORDER BY ACCOUNT.CompanyNm, WAREHOUSE.CompanyNm
+
+
+
+
+
+	--select * from #RecyProfitList
+
+	
+
+	Set @x = 1
+
+	WHILE @x <= 12 BEGIN
+
+		SET @Ord = convert(varchar(2),@x)
+
+		SET @item = rtrim(convert(varchar(2),@x))
+
+		IF Len(@item) = 1 SET @item = '0' + @item
+
+		SET @sqlstmt = '
+
+			UPDATE #RecyProfitList SET	
+
+			ID_' + @item + ' = isnull(SoldAsGradeID,''''),
+
+			IDAlloc_' + @item + ' = isnull(SoldAsGradeIDAlloc,''''), 
+
+			Nm_' + @item + ' = isnull(Grade.[Description],'''')
+
+			FROM RecyProfitDef_SoldAs INNER JOIN #RecyProfitList ON	RecyProfitDef_SoldAs.ItemID = #RecyProfitList.ItemID 
+
+				INNER JOIN GRADE ON SoldAsGradeID = Grade.GradeID 
+
+			WHERE Ord = ' + @Ord 	
+
+		print(@sqlstmt)
+
+		EXECUTE(@sqlstmt)
+
+		SET @x = @x + 1
+
+	END	
+
+    SELECT '' as 'chk',* FROM #RecyProfitList order by ItemID desc
+

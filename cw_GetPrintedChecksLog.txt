@@ -1,0 +1,60 @@
+CREATE   PROCEDURE [dbo].[cw_GetPrintedChecksLog] 
+
+	@FromDt datetime, 
+
+	@ToDt Datetime,
+
+	@CustID varchar(30) = ''
+
+AS
+
+	
+
+--12/17/2020 MN: Created
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	SELECT  
+
+		CheckID,
+
+		BatchNo AS [Batch No],
+
+		CompanyInfo.CompanyNm AS [Department],
+
+		GLAccount.Name AS [GLAccount],
+
+		CASE WHEN PTC.PTCustID is null Then A.CompanyNm Else PTC.FileAs End AS [Account Name],
+
+		PostingDt As [Posting Date],
+
+		PaymentAmt As [Payment Amount],
+
+		[Source],
+
+		PrintFailed As [Print Failed],
+
+		PTC.FirstName + ' ' + PTC.LastName AS [Cust Name]
+
+	FROM  Checks
+
+		left join GLAccount  on GLAccount.GLAcct = Checks.GLAcct
+
+		LEFT JOIN CompanyInfo ON CompanyInfo.COID = Checks.COID
+
+		LEFT JOIN PublicTradeCustomer PTC ON PTC.PTCustID = Checks.PTCustID
+
+		LEFT JOIN CounterParty A ON A.CPID = Checks.CPID
+
+	WHERE 
+
+		((@FromDt = '' OR PostingDt >= @FromDt) AND (@ToDt = '' OR PostingDt <= @ToDt))
+
+		AND ((@CustID = '') OR (@CustID Like 'PT-%' AND REPLACE(@CustID, 'PT-', '') = PTC.PTCustID) OR (Checks.CPID = @CustID))
+

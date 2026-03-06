@@ -1,0 +1,52 @@
+CREATE   PROCEDURE [dbo].[cw_GetTaxCodes] @SalesTaxCodeID integer = 0 AS
+
+--12/06/2009 MCM: Added @SalesTaxCodeID filter
+
+--12/07/2009 MCM: Added CreateTaxAdjust column
+
+
+
+SET NOCOUNT ON
+
+
+
+SELECT
+
+	SalesTaxCodeID As [-Hidden- ID], 
+
+	SalesTaxCode As [Tax Code], 
+
+	SalesTaxCodeDescription As [Description], 
+
+	T01.TaxDescription As [Associated Tax 1], 
+
+	T02.TaxDescription As [Associated Tax 2],
+
+	T03.TaxDescription As [Associated Tax 3],
+
+	T01.taxrate as [SalesTax01Rate],
+
+	t02.TaxRate as [SalesTax02Rate],
+
+	t03.TaxRate as [SalesTax03Rate],
+
+	SalesTax01,
+
+	SalesTax02,
+
+	SalesTax03
+
+FROM SalesTaxCode 
+
+left JOIN SalesTax T01 ON SalesTax01 = T01.SalesTaxID
+
+left JOIN SalesTax T02 ON SalesTax02 = T02.SalesTaxID
+
+left JOIN SalesTax T03 ON SalesTax03 = T03.SalesTaxID
+
+WHERE (@SalesTaxCodeID = 0 OR SalesTaxCodeID = @SalesTaxCodeID)
+
+ORDER BY SalesTaxCode
+
+
+

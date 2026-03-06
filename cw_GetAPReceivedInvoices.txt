@@ -1,0 +1,254 @@
+CREATE   PROCEDURE [dbo].[cw_GetAPReceivedInvoices]
+
+	@VendorID varchar(12), 
+
+	@ReportOn varchar(8), 
+
+	@FromDt date, 
+
+	@ToDt date, 
+
+	@Include varchar(3), 
+
+	@InvIncl varchar(6), 
+
+	@COID varchar(2), 
+
+	@SortBy int, 
+
+	@IncludeReversed BIT,
+
+	@InvoiceNo varchar(20) = ''
+
+	AS
+
+--01/05/05 (JW) - Removed code for dual domicile
+
+--10/06/2009 DSH Excluded adjustments from uninvoiced worksheets 'EXI' option.
+
+--11/14/2014 DSH Corrected problem with Department filter -- rewrote to use temp table.
+
+--03/09/2016 MEC Changed final select to dynamic sql to show home currency
+
+--07/25/2017 BF: Changed buysell join to LEFT join to accomodate converting jobs
+
+--05/20/2022 DSH: Added Columns for FX Amount and Cureency
+
+--08/16/2023 Nick: Added GLAcct
+
+--08/17/2023 DN: adjusted the output of FX column for custom columns
+
+
+
+--cw_GetAPReceivedInvoices '','RCVIN','4/20/2022','5/20/2022','INV','','',1,0
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+
+
+	CREATE TABLE #REPORT(
+
+		RcvDt datetime,
+
+		InvoiceDt datetime,
+
+		InvoiceNo VARCHAR(20),
+
+		CompanyNm VARCHAR(100),
+
+		BuySellNo CHAR(12),
+
+		BSInvoiceDt datetime,
+
+		BSShippingDt datetime,
+
+		HCAmount MONEY,
+
+		FxAmount MONEY,
+
+		CurrencyCd CHAR(3),
+
+		PayableID INT,
+
+		Reversed INT,
+
+		Terms varchar(65),
+
+		DueDate datetime,
+
+		APBatchNo VARCHAR(20),
+
+		WksType char(1),
+
+		GLAcct char(12)
+
+	)
+
+
+
+
+
+
+
+	INSERT #REPORT
+
+		SELECT	
+
+				RcvDt,
+
+				Payables.InvoiceDt,
+
+				Payables.InvoiceNo, 
+
+				CompanyNm, 
+
+				Payables.BuySellNo, 
+
+				BuySell.InvoiceDt,
+
+				BuySell.ShippingDt,
+
+				Payables.Amount, 
+
+				Payables.FxAmount, 
+
+				Payables.CurrencyCd,
+
+				Payables.PayableID,
+
+				Payables.Reversed,
+
+				PB.APTerms,
+
+				PB.DueDate,
+
+				PB.APBatchNo,
+
+				CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END As WksType,
+
+				Payables.GLAcct
+
+   		FROM Payables WITH(NOLOCK) left JOIN BuySell WITH(NOLOCK) ON Payables.BuySellNo = BuySell.BuySellNo 
+
+			INNER JOIN Counterparty WITH(NOLOCK) ON Payables.CpID = CounterParty.CpID
+
+			LEFT JOIN GpLedger WITH(NOLOCK) ON Payables.ItemID = GpLedger.LedgerID
+
+			LEFT JOIN PayablesBatch PB WITH(NOLOCK) ON Payables.APBatchNo = PB.APBatchNo
+
+		WHERE Payables.Posted = 1 
+
+		AND (
+
+			(@COID = '') 
+
+			OR (ItemIDSource = 'D' AND BuySell.COID = @COID) 
+
+			OR (ItemIDSource = 'A' AND GPLedger.ADJCOID = @COID) 
+
+			OR (ItemIDSource = 'S' AND BuySell.COID_DueTo = @COID )  
+
+			OR (ItemIDSource = 'S' AND BuySell.COID = @COID AND ISNULL(BuySell.COID_DueTo,'') = '')
+
+		)  
+
+		AND (@VendorID = '' OR Payables.CpID = @VendorID)   
+
+		AND (
+
+				(@ReportOn = 'INVASOF' AND Payables.InvoiceDt <= @FromDt) 
+
+				OR 
+
+				(@ReportOn = 'WRKINVIN' AND (BuySell.InvoiceDt >= @FromDt AND BuySell.InvoiceDt <= @ToDt AND Payables.InvoiceDt <= @ToDt)) 
+
+				OR 
+
+				(@ReportOn = 'RCVIN' AND (Payables.RcvDt >= @FromDt AND Payables.RcvDt <= @ToDt))
+
+			)
+
+   		AND (@Include = '' OR (@Include = 'INV' AND BuySell.[Status] = 'I') OR (@Include = 'EXI' AND BuySell.[Status] <> 'I'))
+
+		AND (@InvIncl = '' OR (@InvIncl = 'INV' AND (BuySell.CustID = '(INV)' And ItemIDSource <> 'A')) OR (@InvIncl = 'NONINV' AND ((BuySell.CustID <> '(INV)' 
+
+				AND BuySell.CustID = '{C}' AND BuySell.CustID <> '(PLANT)')  OR Payables.ItemIDSource = 'A')))
+
+		AND (@COID = '' OR BuySell.COID = @COID)
+
+		AND (@InvoiceNo = '' OR Payables.InvoiceNo = @InvoiceNo)
+
+		AND ((Payables.Reversed = 0 OR Payables.Reversed is null) OR @IncludeReversed = 1 )
+
+
+
+
+
+
+
+
+
+
+
+-- FINAL LIST
+
+
+
+declare @SYSCURRENCY varchar(5)
+
+select @SYSCURRENCY = CurrCode from SystemInfo
+
+declare @SQLTXT varchar(1000)
+
+
+
+
+
+set @SQLTXT  = 
+
+    'SELECT 
+
+		InvoiceDt As [Invoice Date],
+
+		RcvDt As [Posted Date],
+
+		APBatchNo [AP Batch No],
+
+		InvoiceNo As [Invoice No],
+
+		CompanyNm As [Vendor],
+
+		BuySellNo As [Wks No],
+
+		BSInvoiceDt As [Wks Invoice Date],
+
+		BSShippingDt As [Wks Shipping Date],
+
+		Terms As [Payment Terms],
+
+		DueDate as [Due Date],
+
+		CONVERT(DECIMAL(18,2),FxAmount ) As [Amount],
+
+		CurrencyCd AS Currency,
+
+		CONVERT(DECIMAL(18,2),HCAmount ) As [{HC} Amount],
+
+		WksType As [-Hidden-WksType],
+
+		GLAcct as [GL Account]
+
+	FROM #REPORT ORDER BY InvoiceDt'
+
+
+
+
+
+	exec(@SQLTXT)
+
+
+

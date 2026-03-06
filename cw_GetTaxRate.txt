@@ -1,0 +1,44 @@
+CREATE proc [dbo].[cw_GetTaxRate] @taxid int as
+
+
+
+set transaction isolation level read uncommitted
+
+
+
+declare @TaxRate1 float, @TaxRate2 float, @TaxRate3 float
+
+	
+
+	select @TaxRate1 = isnull(taxrate ,0)
+
+	from salestax 
+
+	inner join salestaxcode on salestaxcode.SalesTax01 = salestax.SalesTaxID
+
+	where salestaxcodeid=@taxid
+
+
+
+	select @TaxRate2 = isnull(taxrate,0) 
+
+	from salestax 
+
+	inner join salestaxcode on salestaxcode.SalesTax02 = salestax.SalesTaxID
+
+	where salestaxcodeid=@taxid
+
+
+
+	select @TaxRate3 = isnull(taxrate,0) 
+
+	from salestax 
+
+	inner join salestaxcode on salestaxcode.SalesTax03 = salestax.SalesTaxID
+
+	where salestaxcodeid=@taxid
+
+
+
+	select isnull(@Taxrate1,0) + isnull(@taxrate2,0) + isnull(@taxrate3,0)
+

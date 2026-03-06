@@ -1,0 +1,58 @@
+CREATE   PROCEDURE [dbo].[cw_GetReverseBillingBatchList] 
+
+	@ReverseBatchNo int = 0, 
+
+	@COID char(2) = '', 
+
+	@Status char(1) = '' AS
+
+--07/24/2019 MN: copied from  [q_GetReverseBillingBatchList]
+
+
+
+SELECT 
+
+	CONVERT(varchar(100), ReverseBatchNo) AS [Reverse Batch No],
+
+	BatchDescription AS [Batch Description],
+
+	FromDt [From Date],
+
+	ToDt [To Date],
+
+	InvoiceNo [Invoice No],
+
+	InvoiceDt [Invoice Date],
+
+	PostingDt [Posting Date],
+
+	--ReportType [Report Type],
+
+	CO.COID,
+
+	Case When IsNull(CO.CompanyDesc,'') = '' Then 'All Departments' Else CO.CompanyDesc End As [Department],
+
+		dbo.CnvUOM_Names(UOM),
+
+	BillingCycle As [Billing Cycle],
+
+	SalesRep [Sales Rep],
+
+	Case When IsNull(IsPosted,0) = 1 Then 'POSTED' Else 'OPEN' End [Status]
+
+	--,AllAdjustments [All Adjustments]
+
+FROM ReverseBillingBatch WITH (NOLOCK) 
+
+LEFT JOIN [CompanyInfo] CO WITH(NOLOCK) ON CO.COID = ReverseBillingBatch.COID
+
+WHERE (@ReverseBatchNo = 0 OR ReverseBatchNo = @ReverseBatchNo)
+
+AND (@COID = '' OR CO.COID = @COID)
+
+AND (@Status = '' OR IsNull(IsPosted,0) = @Status)
+
+
+
+
+

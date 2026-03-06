@@ -1,0 +1,140 @@
+CREATE   PROCEDURE [dbo].[cw_GetPOTransactions] (@POID int, @Source varchar(2), @UOM char(1) = 'L') As
+
+--12/01/2015 MEC: Created for cieTrade.net (Order Management Transactions Drilldown)
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+declare @Filler char(30)
+
+set @Filler = ''
+
+--FORCES SPACE OF 30 IN BLANK TEMP TABLE FIELDS THAT ARE LATER UPDATED:
+
+
+
+    SELECT 
+
+		wksDetail.BuySellNo, BuySell.ShippingDt, BuySell.CustID, 
+
+		CounterParty.CompanyNm, BuySell.ShipToID as AddrType, 
+
+		WksDetail.GradeID, Grade.[Description], WksDetail.UnitType,
+
+		BuySell.[Status], BuySell.ShippingOk, BuySell.PickupNo,
+
+		dbo.CONVERT_TO_UOM_XP(PWeight, PWeightUOM, @UOM) as DisplayWt,
+
+		dbo.CnvUOM_Names(@UOM) as DisplayUOM,
+
+		@Filler as trailerno,@Filler as freighttype
+
+	INTO #temp
+
+        FROM WksDetail WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK)  ON WksDetail.BuySellNo = BuySell.BuySellNo 
+
+	    INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.VendorID = CounterParty.CpID
+
+        INNER JOIN Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+        WHERE wksDetail.SPO_ID = @POID
+
+	and @Source = 'SO'
+
+	
+
+	UNION ALL
+
+	
+
+	SELECT 
+
+		wksDetail.BuySellNo, BuySell.ShippingDt, BuySell.CustID, 
+
+		CounterParty.CompanyNm, BuySell.ShipFromID as AddrType, 
+
+		WksDetail.GradeID, Grade.[Description], WksDetail.UnitType,
+
+		BuySell.[Status], BuySell.ShippingOk, BuySell.PickupNo,
+
+		dbo.CONVERT_TO_UOM_XP(PWeight, PWeightUOM, @UOM) as DisplayWt,
+
+		dbo.CnvUOM_Names(@UOM) as DisplayUOM,
+
+		@Filler as trailerno,@Filler as freighttype
+
+    FROM WksDetail WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK)  ON WksDetail.BuySellNo = BuySell.BuySellNo  	
+
+    INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID
+
+    INNER JOIN Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+    WHERE wksDetail.PPO_ID = @POID 
+
+	and @Source = 'PO'
+
+	ORDER BY  BuySell.ShippingDt Desc
+
+
+
+--INSERT TOP 1 WKSDELIVERY RECORDS:
+
+	UPDATE #temp set trailerno = WksDelivery.trailerno,freighttype = carrier.freighttype 
+
+	from #temp
+
+	left JOIN WksDelivery WITH(NOLOCK)  ON #temp.BuySellNo = WksDelivery.BuySellNo and (WksDelivery.TrailerNo is not null and WksDelivery.TrailerNo <> '')
+
+	left JOIN Counterparty Carrier WITH(NOLOCK) ON WksDelivery.VendorID = Carrier.CpID and (Carrier.FreightType is not null and Carrier.FreightType  <> '')
+
+
+
+	
+
+		--FINAL REPORT
+
+	Select 
+
+	BuySellNo As [Wks No],
+
+	ShippingDt As [Date],
+
+	--CustID,
+
+	CompanyNm As [Account],
+
+	AddrType As [Location],
+
+	--GradeID,
+
+	[Description] As Product,
+
+	IsNull(dbo.CnvUnitName(UnitType), '') As [Packaging],
+
+	--convert(varchar,dbo.RemoveTrailingZeros(DisplayWt)) + '/' + DisplayUOM As [Shipped Weight],
+
+	convert(varchar,dbo.RemoveTrailingZeros(DisplayWt)) As [Shipped Weight],
+
+	[dbo].[CnvWksStatus_Name](ISNULL([Status],''), '') As [Wks Status],
+
+	upper([dbo].[CnvShipStatus_Name](ShippingOK)) As [Shipping Status],
+
+	PickupNo As [Pick Up],
+
+	TrailerNo as [Equipment No],
+
+	dbo.RemoveTrailingZeros(DisplayWt) As [-Hidden- Weight]
+
+	from #temp ORDER BY ShippingDt
+
+
+
+Return
+
+
+

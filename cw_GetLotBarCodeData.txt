@@ -1,0 +1,86 @@
+CREATE   PROCEDURE [dbo].[cw_GetLotBarCodeData] 
+
+
+
+	@BuySellNo char(12),
+
+	@LotNo varchar(25)
+
+
+
+AS
+
+
+
+--cw_GetLotBarCodeData 'PR-1044', '10735'
+
+
+
+--11/09/2016 MEC: Created
+
+--03/10/2020 Alex: I changed the inventory relationship
+
+
+
+	SET NOCOUNT ON
+
+	SELECT 
+
+	D.CompanyNm As Dept,
+
+	case when DB_NAME() = 'cdb_Circulus' then  (select Top 1 F.Item from PO T CROSS APPLY dbo.fnSplit(T.ShipTo, CHAR(13)) F where T.PONumber = PO.PONumber) else C.CompanyNm end as CompanyNm, 
+
+	ShippingDt As RcvDt, 
+
+	[PWeight] As NetWt, 
+
+	dbo.CnvUOM_Names(PWeightUOM) As WtUOM, 
+
+	IsNull(Inventory.GrossWt, WksDetail.GrossWt) GrossWt, 
+
+	IsNull(Inventory.TareWt, WksDetail.TareWt) TareWt,
+
+	IsNull(Inventory.LotNo, WksDetail.LotNo) As LotNo, 
+
+	IsNull(InvGrade.[Description], Grade.[Description]) As Grade,
+
+	dbo.xDoc_GetCompanyAddress(D.COID) As DeptAddress,
+
+	ShippingNotes,
+
+	dbo.RemoveTrailingZeros(cast(IsNull(Inventory.RollWd, WksDetail.RollWd) as varchar)) + ' ' + IsNull(Inventory.RollWdUOM, WksDetail.RollWdUOM) As RollWidth,
+
+	dbo.RemoveTrailingZeros(cast(IsNull(Inventory.BasisWt, WksDetail.BasisWt) as varchar)) + ' ' + IsNull(Inventory.BasisWtUOM, WksDetail.BasisWtUOM) As BasisWeight,
+
+	dbo.RemoveTrailingZeros(IsNull(Inventory.Caliper, WksDetail.Caliper)) As Caliper,
+
+	dbo.RemoveTrailingZeros(IsNull(Inventory.LinearLen, WksDetail.LinearLen)) As LinearFeet,
+
+	WKSDetail.SerialNo,
+
+	WKSDetail.Specifications,
+
+	WKSDetail.Comment As Comments
+
+FROM 
+
+	BuySell WITH(NOLOCK)
+
+	INNER JOIN WksDetail WITH(NOLOCK) ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+	INNER JOIN Counterparty C WITH(NOLOCK) ON C.CpID = BuySell.VendorID
+
+	INNER JOIN CompanyInfo D WITH(NOLOCK) ON D.COID = BuySell.COID
+
+	INNER JOIN Grade WITH (NOLOCK) ON Grade.GradeID = WksDetail.GradeID
+
+	LEFT JOIN Inventory WITH(NOLOCK) ON Inventory.LotNo=WksDetail.LotNo
+
+   --LEFT JOIN Inventory WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo
+
+	LEFT JOIN Grade InvGrade WITH(NOLOCK) ON InvGrade.GradeID = Inventory.GradeID
+
+	left JOIN PO on PO.PONumber =BuySell.RefPONo
+
+WHERE BuySell.BuySellNo = @BuySellNo And WksDetail.LotNo = @LotNo And IsNull(WksDetail.LotNo,'') <> '' And IsNull(Grade.InventoryType,'') = 'SERIAL'
+

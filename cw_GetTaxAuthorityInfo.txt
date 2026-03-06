@@ -1,0 +1,40 @@
+CREATE   PROCEDURE [dbo].[cw_GetTaxAuthorityInfo] @ID varchar(10)
+
+AS
+
+BEGIN
+
+
+
+-- 10/02/2015 MEC: Created for cieTrade.net 
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT
+
+		ID,
+
+		AuthorityName
+
+	FROM
+
+		TaxAuthority With (NoLock)
+
+	WHERE
+
+		ID = @ID
+
+END
+
+
+
+
+
+
+

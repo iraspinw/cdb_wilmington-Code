@@ -1,0 +1,116 @@
+CREATE PROC [dbo].[cw_GetCashDisbursementsCheck] 
+
+	
+
+	@CDBatchNo char(15)
+
+
+
+AS
+
+
+
+--cw_GetReverseBillingStatement 88
+
+
+
+--11/18/2020 MEC: Created for Cash Disbursements Checks in cieTrade.net
+
+	
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET ANSI_NULLS ON 
+
+SET NOCOUNT ON
+
+	
+
+
+
+		SELECT 
+
+			dbo.xDoc_GetCompanyAddress('00') As CompanyAddr,
+
+			CASE WHEN PublicTradeCustomer.PTCustID is null Then CounterParty.CompanyNm Else PublicTradeCustomer.FirstName + ' ' + PublicTradeCustomer.LastName End SupplierName,
+
+			CASE WHEN PublicTradeCustomer.PTCustID is null Then dbo.xDoc_GetAddress(Checks.CPID, '', 0, 0) Else dbo.xDoc_GetPTAddress(PublicTradeCustomer.PTCustID, 0) End As SupplierAddr,
+
+			IsNull(PaymentAmt,0) As [Amount],
+
+			dbo.Currency_ToWords_Check(IsNull(PaymentAmt,0)) As [AmountText],
+
+			GETDATE() As TodaysDate,
+
+			CheckNo
+
+		FROM
+
+			Checks WITH(NOLOCK) 
+
+			LEFT JOIN CounterParty WITH(NOLOCK) ON CounterParty.CpID = Checks.CPID
+
+			LEFT JOIN PublicTradeCustomer WITH(NOLOCK) ON PublicTradeCustomer.PTCustID = Checks.PTCustID
+
+		WHERE Checks.BatchNo = @CDBatchNo
+
+		
+
+		SELECT TOP 30
+
+			BuySellNo,
+
+			PostingDt ShippingDt,
+
+			'' as GradeDesc,
+
+			'' as [Weight],
+
+			'' as WtUOM,
+
+			'' as [-Hidden-NetWeight],
+
+
+
+			--Case When dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, @WtUOM) <> 0 Then 
+
+			--	Cast(dbo.cw_RemoveTrailingZeros(dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, @WtUOM), @WtPrecision) as varchar) 
+
+			--Else '' End as [Weight],
+
+			--Case When dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, @WtUOM) <> 0 Then 
+
+			--	dbo.CnvUOM_Names(@WtUOM)
+
+			--Else '' End as WtUOM,
+
+			
+
+			--dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, @WtUOM) [-Hidden-NetWeight],
+
+			CD.Amount As [Amount],
+
+			Payables.CurrencyCd as [Currency]
+
+		FROM 
+
+			CashDisbursementDetails CD WITH(NOLOCK)
+
+			LEFT JOIN Payables WITH(NOLOCK) On Payables.PayableID = CD.PayableID
+
+		WHERE CD.BatchNo = @CDBatchNo
+
+
+
+
+
+
+
+
+
+SET QUOTED_IDENTIFIER OFF
+
+
+
+
+

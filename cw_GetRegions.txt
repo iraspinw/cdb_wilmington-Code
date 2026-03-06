@@ -1,0 +1,22 @@
+CREATE PROC [dbo].[cw_GetRegions] as
+
+--07/29/2015 MCM: Created
+
+--2/4/2020 Alex: Returned  IsEU
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT RegionAbbr, Region.[Name], Region.CountryID, Country.Name as [CountryNm],Country.IsEU
+
+		 FROM Region
+
+		 LEFT JOIN Country ON Country.CountryID = Region.CountryID
+
+	Order By Region.[Name]
+
+
+

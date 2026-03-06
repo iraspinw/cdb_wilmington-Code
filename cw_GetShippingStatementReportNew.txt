@@ -1,0 +1,1668 @@
+CREATE PROC [dbo].[cw_GetShippingStatementReportNew] 
+
+	@FromDate DateTime, 
+
+	@ToDate DateTime, 
+
+	@CoID char(2) = '', 
+
+	@SupplierID char(12), 
+
+	@InvoiceNo varchar(20), 
+
+	@ByDate int, 
+
+	@ByProduct int = 3, 
+
+	@IncludeWaste bit = 0, 
+
+	@SupplierType char(45) = '', 
+
+	@ReverseOnly bit = 0, 
+
+	@Invoiced bit = 0,
+
+	@ReverseBatchNo int = 0, 
+
+	@ExcludeZeroAmounts bit = 0, 
+
+	@Debug bit = 0 , 
+
+	@IsDotNet bit = 0, 
+
+	@IncExpenses bit = 0,
+
+	@WtUOM char(1) = 'S',
+
+	@SalesRep char(10) = '',
+
+	@ShipFromID char(45) = ''
+
+
+
+AS
+
+
+
+--cw_GetShippingStatementReportNew '', '', '', '', '', 1, 3, 0, '', 1, 0, 45, 0, 1
+
+
+
+--10/05/2015 MEC: Copied for cieTrade.net
+
+	
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET ANSI_NULLS ON 
+
+SET NOCOUNT ON
+
+	
+
+	DECLARE @Query nvarchar(4000)
+
+	DECLARE @ParmDefinition nvarchar(4000)
+
+	DECLARE @WtPrecision int
+
+	SET @WtPrecision = 0
+
+	
+
+	SET @ParmDefinition = '@FromDate DateTime, @ToDate DateTime, @CoID char(2), @SupplierID char(12), @InvoiceNo varchar(20), 
+
+                @ByProduct int, @ByDate int, @IncludeWaste bit, @SupplierType char(45), @ReverseOnly bit, @Invoiced bit,
+
+                @ReverseBatchNo int, @ExcludeZeroAmounts bit, @SalesRep char(10),  @ShipFromID char(45)'
+
+
+
+    CREATE TABLE #TempReport(        
+
+		BuySellNo char(12),
+
+        Jobno char(10),
+
+        RelNo varchar(20),
+
+        FShippingDt datetime,
+
+        DetailDescription varchar(185),
+
+        TareWt decimal(18,5),
+
+        GrossWt decimal(18,5),
+
+        PWeight decimal(18,5),
+
+        PweightUOM char(10),
+
+        PPrice decimal(25,14),
+
+        PUOM char(1),
+
+        Amt money,
+
+        PFxAmount money,
+
+        [Type] char(1),
+
+        PickupNo varchar(25),
+
+        TrailerNo varchar(30),
+
+        ShippingDt datetime,
+
+        ContainerNo varchar(30),
+
+        RecordID int,
+
+        TruckNo varchar(25),
+
+        ShippingNotes text ,
+
+        Location char(45),
+
+        Units int,
+
+		UnitType varchar(30),  
+
+        IsTrash int,   
+
+        AltGradeName varchar(185),
+
+        GradeID char(15),
+
+        CustID char(12),
+
+		PoCallNumber char(25),
+
+		CurrencyCd char(3),
+
+        SupplierNm varchar(65),
+
+        SupplierCPID char(12),
+
+        POUnitType varchar(30),
+
+        WksAltGradeName varchar(185),
+
+        IsPerEachCnv bit,
+
+        PerEachCnvPrice money,
+
+		ItemSeq INT,
+
+		RowID INT Identity(1,1)
+
+        )
+
+        
+
+	CREATE TABLE #TempSumReport(
+
+		SupplierNM VARCHAR(65),
+
+		SupplierCPID CHAR(12),
+
+		Location VARCHAR(45),
+
+		GradeID CHAR(15),
+
+		GradeNm VARCHAR(85),		
+
+		CurrencyCd CHAR(3),
+
+		PWeightUOM CHAR(1),
+
+		AvgPrice Decimal(22,12),		
+
+		[Weight] Decimal(22,2),
+
+		Rebate MONEY,
+
+		AllocAmt MONEY,
+
+		Category VARCHAR(30),
+
+		NumOfItems INT,
+
+		ISTrash INT,
+
+		[Type] CHAR(1),
+
+		IsStaticPrice INT
+
+	)        
+
+
+
+	CREATE TABLE #TempGradeCons(
+
+		BuySellNo CHAR(12),
+
+		GradeID CHAR(15),
+
+		UnitType CHAR(30),
+
+		AltGradeName varchar(185),
+
+		WksAltGradeName varchar(185),
+
+		RowID INT,
+
+		ItemCnt INT, 
+
+		HCAmount MONEY, 
+
+		FXAmount MONEY, 
+
+		TareWt DECIMAL(22,5),
+
+		GrossWt DECIMAL(22,5),
+
+		Quantity DECIMAL(22,5), 
+
+		Units INT,
+
+		OrigPrice MONEY
+
+		)
+
+
+
+	CREATE TABLE #_PreserveOrigPrice(
+
+		BuySellNo CHAR(12),
+
+		GradeID CHAR(15),
+
+		UnitType CHAR(30),
+
+		--AltGradeName varchar(185),
+
+		--WksAltGradeName varchar(185),
+
+		PPrice MONEY, 
+
+		ItemCnt INT
+
+		)
+
+	
+
+
+
+
+
+	-- A.) GET PURCHASE DETAILS.
+
+   ----------------------------
+
+    SET @Query = 'INSERT #TempReport
+
+	SELECT 
+
+        WksDetail.BuySellNo, 
+
+        cast(Receiving.ScaleTicketNo AS varchar(10)) as Job, 
+
+        BuySell.RelNo, 
+
+		BuySell.ShippingDt AS fShippingDt, 
+
+		Grade.[Description] as DetailDescription, 
+
+        wksDetail.TareWt, wksDetail.GrossWt, 
+
+        wksDetail.PWeight, wksDetail.PWeightUOM, 
+
+        wksDetail.PPrice, 
+
+        wksDetail.PUOM, 
+
+        wksDetail.PAmount as Amt, wksDetail.PFxAmount, 
+
+		''S'' as [Type], 
+
+		BuySell.PickupNo, 
+
+		Receiving.EquipmentNo,       		
+
+		BuySell.ShippingDt, 
+
+		WksDetail.ContainerNo, 
+
+		wksDetail.DetailID, 
+
+		Receiving.TruckNo AS TruckNo,
+
+		BuySell.ShippingNotes,
+
+		BuySell.ShipFromID AS Location,
+
+		WksDetail.Units,
+
+        ISNULL(UnitType.UnitType,'''') AS UnitType,        
+
+        ISNULL(Grade.IsWaste,0) as IsTrash, 		
+
+		COALESCE(PODesc,'''') AS AltGradeName,
+
+		WksDetail.GradeID, 
+
+		BuySell.CustID, 
+
+		Receiving.RefNo,
+
+        WksDetail.PcurrencyCd,
+
+        Counterparty.Companynm,
+
+        Counterparty.CPID,
+
+        ISNULL(u.UnitType,'''') AS UnitType,
+
+        COALESCE(InvoiceDesc,'''') AS WksAltGradeName,
+
+        WksDetail.IsPerEachCnv,
+
+        WksDetail.PerEachCnvPrice,
+
+		ROW_NUMBER() OVER(PARTITION BY wksDetail.buysellno, wksDetail.GradeID, wksDetail.UnitType, InvoiceDesc, COALESCE(PODesc,'''') 
+
+			ORDER BY  wksDetail.buysellno, wksDetail.GradeID, wksDetail.UnitType, InvoiceDesc, COALESCE(PODesc,'''') ) AS ItemSeq
+
+	FROM dbo.WksDetail     
+
+    INNER JOIN dbo.BuySell WITH(NOLOCK) ON dbo.wksDetail.BuySellNo = dbo.BuySell.BuySellNo    
+
+	INNER JOIN dbo.Grade WITH(NOLOCK) ON dbo.Grade.GradeID = dbo.wksDetail.GradeID
+
+    INNER JOIN dbo.Counterparty ON dbo.BuySell.VendorID = dbo.Counterparty.CPID
+
+	INNER JOIN dbo.Payables ON WKSDetail.DetailID = Payables.ItemID
+
+	LEFT JOIN dbo.UnitType WITH(NOLOCK) ON dbo.WksDetail.UnitType = dbo.UnitType.TypeID
+
+	LEFT JOIN dbo.Receiving WITH(NOLOCK) ON dbo.Receiving.ScaleTicketNo = dbo.BuySell.DispatchID
+
+	LEFT JOIN dbo.PODetail  WITH (NOLOCK) ON dbo.PODetail.PO_ID = dbo.WksDetail.PPO_ID 
+
+	LEFT JOIN dbo.UnitType u WITH(NOLOCK) ON dbo.PODetail.UnitType = u.TypeID
+
+	WHERE ISNULL(BUYSELL.[status],'''')<>''X'' 
+
+	AND BUYSELL.VendorID <> ''(INV)'''
+
+	IF NOT @ByDate = 0 AND @ReverseBatchNo = 0
+
+	BEGIN
+
+		IF @ByDate = 1 
+
+			SET @Query = @Query + 'AND (BuySell.InvoiceDt >= @FromDate AND BuySell.InvoiceDt <= @ToDate) '
+
+		IF @ByDate = 2
+
+			SET @Query = @Query + 'AND (BuySell.ShippingDt >= @FromDate AND BuySell.ShippingDt <= @ToDate) '
+
+     END               
+
+    IF NOT @COID = ''
+
+        SET @Query = @Query + 'AND (@COID = BuySell.COID) '
+
+	IF NOT @SupplierID = ''
+
+		SET @Query = @Query + 'AND (@SupplierID = BuySell.VendorID) '
+
+	IF NOT @ShipFromID = ''
+
+		SET @Query = @Query + 'AND (@ShipFromID = BuySell.ShipFromID) '
+
+	IF NOT @SupplierType = ''
+
+		SET @Query = @Query + 'AND (BuySell.ShipFromID = @SupplierType) '
+
+    IF NOT @InvoiceNo = ''
+
+		SET @Query = @Query + 'AND EXISTS(SELECT PayableID FROM Payables WITH(NOLOCK) WHERE Payables.BuySellNo = BuySell.BuySellNo AND Payables.ItemIDSource = ''S'' AND (reversed=0 OR Reversed IS NULL) AND Payables.InvoiceNo = @InvoiceNo) '
+
+	IF NOT @Invoiced = 0
+
+		SET @Query = @Query + 'AND BuySell.Status = ''I'' '
+
+	IF NOT @SalesRep = ''
+
+		SET @Query = @Query + 'AND (BuySell.ReferrerNo2 = @SalesRep) '
+
+
+
+
+
+	/* When ReverseOnly=1 -- INCLUDE ONLY UNPOSTED PAYABLES. */
+
+    IF @ReverseOnly = 1 
+
+		SET @Query = @Query + 'AND NOT EXISTS(SELECT PayableID FROM Payables WITH(NOLOCK) WHERE Payables.BuySellNo = BuySell.BuySellNo 
+
+		AND Payables.ItemIDSource = ''S'' 
+
+		AND	Posted = 1 AND (reversed=0 OR Reversed IS NULL) ) 		
+
+		AND (Counterparty.ReverseBilling = 1) '
+
+/*	
+
+	-- Need to look at adding ReverseBatch Number to BuySell Table and removing it from Payables.
+
+	-- Should be changed to filter on a new ReverseBatch field on Worksheet.
+
+	IF NOT @ReverseBatchNo = 0
+
+		SET @Query = @Query + 'AND EXISTS(SELECT PayableID FROM Payables WITH(NOLOCK) WHERE Payables.ReverseBatchNo = @ReverseBatchNo AND Payables.BuySellNo = BuySell.BuySellNo) '	
+
+*/	
+
+
+
+	/* Only Include Payables for ReverseBatch */	
+
+	IF NOT @ReverseBatchNo = 0
+
+   		SET @Query = @Query + 'AND Payables.ReverseBatchNo = @ReverseBatchNo '
+
+		
+
+		
+
+
+
+
+
+
+
+	
+
+		
+
+
+
+	IF @Debug = 1 
+
+		PRINT @Query
+
+	ELSE
+
+		EXEC sp_executesql @Query,@ParmDefinition,@FromDate=@FromDate,@ToDate=@ToDate,@CoID=@CoID,@SupplierID=@SupplierID,@InvoiceNo=@InvoiceNo, 
+
+			@ByProduct=@ByProduct,@ByDate=@ByDate,@IncludeWaste=@IncludeWaste,@SupplierType=@SupplierType,@ReverseOnly=@ReverseOnly,
+
+			@Invoiced=@Invoiced,@ReverseBatchNo=@ReverseBatchNo,@ExcludeZeroAmounts=@ExcludeZeroAmounts,@SalesRep=@SalesRep,@ShipFromID=@ShipFromID
+
+
+
+
+
+	-- B.) GET DELIVERY PAYABLES
+
+    -----------------------------
+
+    SET @Query = 'INSERT #TempReport
+
+	SELECT Payables.BuySellNo, 
+
+    '''', 
+
+    BuySell.RelNo,  
+
+    BuySell.ShippingDt AS fShippingDt, 
+
+	''Expense '' + isnull(InvoiceDesc, '''') as detailDescription, 
+
+    0,0,0, 
+
+    '''', 
+
+    0, 
+
+    '''', 
+
+    Payables.Amount, 
+
+    Payables.FxAmount, 
+
+    ''D'', 
+
+    BuySell.PickupNo, 
+
+    Wksdelivery.TrailerNo, 
+
+    BuySell.ShippingDt, 
+
+    '''' AS ContainerNo, 
+
+    Payables.PayableID, 
+
+    '''',
+
+	BuySell.ShippingNotes,
+
+    BuySell.ShipFromID,
+
+    0 AS Units,
+
+    '''' AS UnitType,
+
+    0 as IsTrash, 
+
+    '''' AS AltGradeName,  
+
+    '''' AS GradeID, 
+
+    BuySell.CustID,
+
+    '''',
+
+    Payables.CurrencyCd,
+
+    Counterparty.Companynm,
+
+    Counterparty.CPID,
+
+    '''' AS POUnitType,
+
+     '''' AS WksAltGradeName,
+
+     0,0
+
+	 ,0
+
+	FROM dbo.Payables WITH(NOLOCK) 
+
+	INNER JOIN dbo.WksDelivery WITH(NOLOCK)  ON dbo.wksDelivery.BuySellNo = dbo.Payables.BuySellNo AND dbo.wksDelivery.ItemID = dbo.Payables.ItemID 
+
+	INNER JOIN  dbo.BuySell ON dbo.BuySell.BuySellNo = dbo.Payables.BuySellNo	
+
+    INNER JOIN dbo.Counterparty ON dbo.WksDelivery.VendorID = dbo.Counterparty.CPID
+
+	WHERE ISNULL(BUYSELL.[status],'''')<>''X'' 
+
+	AND Payables.ItemIDSource = ''D'' 
+
+	AND (Reversed=0 OR Reversed IS NULL) 
+
+	AND NOT EXISTS(SELECT PayableID FROM Payables WHERE ChgBackWks = BuySell.BuySellNo) '
+
+	IF NOT @ByDate = 0 AND @ReverseBatchNo = 0 
+
+	BEGIN
+
+		IF @ByDate = 1 
+
+			SET @Query = @Query + 'AND (BuySell.InvoiceDt >= @FromDate AND BuySell.InvoiceDt <= @ToDate) '
+
+		IF @ByDate = 2
+
+			SET @Query = @Query + 'AND (BuySell.ShippingDt >= @FromDate AND BuySell.ShippingDt <= @ToDate) '
+
+    END
+
+    IF NOT @COID = ''
+
+		SET @Query = @Query + 'AND (@COID = BuySell.COID) '
+
+	IF NOT @SupplierID = ''
+
+		SET @Query = @Query + 'AND (@SupplierID = Payables.CpID) '
+
+	IF NOT @ShipFromID = ''
+
+		SET @Query = @Query + 'AND (@ShipFromID = BuySell.ShipFromID) '
+
+	IF NOT @SupplierType = ''
+
+		SET @Query = @Query + 'AND (BuySell.ShipFromID = @SupplierType) '
+
+	IF NOT @InvoiceNo = ''
+
+		SET @Query = @Query + 'AND (Payables.InvoiceNo = @InvoiceNo) '
+
+	IF NOT @ReverseOnly = 0
+
+		SET @Query = @Query + 'AND 
+
+			(
+
+				EXISTS(SELECT * FROM Payables WITH(NOLOCK) WHERE (Posted = 0 OR Posted IS NULL) AND Payables.BuySellNo = BuySell.BuySellNo AND (reversed=0 OR Reversed IS NULL)) AND
+
+				 EXISTS(SELECT ReverseBilling FROM Counterparty WHERE CpID = Payables.CpID AND ReverseBilling = 1)
+
+			) '
+
+	IF NOT @Invoiced = 0
+
+		SET @Query = @Query + 'AND (BuySell.Status = ''1'') '
+
+	IF NOT @ReverseBatchNo = 0
+
+		SET @Query = @Query + 'AND (Payables.ReverseBatchNo = @ReverseBatchNo)	'	
+
+	IF NOT @SalesRep = ''
+
+		SET @Query = @Query + 'AND (BuySell.ReferrerNo2 = @SalesRep) '	
+
+	
+
+	IF @Debug = 1 
+
+		PRINT @Query
+
+	ELSE
+
+		EXEC sp_executesql @Query,@ParmDefinition,@FromDate=@FromDate,@ToDate=@ToDate,@CoID=@CoID,@SupplierID=@SupplierID,@InvoiceNo=@InvoiceNo, 
+
+			@ByProduct=@ByProduct,@ByDate=@ByDate,@IncludeWaste=@IncludeWaste,@SupplierType=@SupplierType,@ReverseOnly=@ReverseOnly,
+
+			@Invoiced=@Invoiced,@ReverseBatchNo=@ReverseBatchNo,@ExcludeZeroAmounts=@ExcludeZeroAmounts,@SalesRep=@SalesRep,@ShipFromID=@ShipFromID
+
+
+
+
+
+	-- B.) GET EXPENSE ALLOCATION PAYABLES
+
+    -----------------------------
+
+    SET @Query = 'INSERT #TempReport
+
+	SELECT Payables.BuySellNo, 
+
+    '''', 
+
+    '''',  
+
+    ExpenseAllocation.TransDate AS fShippingDt, 
+
+	''Expense Allocation'' as detailDescription, 
+
+    0,0,0, 
+
+    '''', 
+
+    0, 
+
+    '''', 
+
+    Payables.Amount, 
+
+    Payables.FxAmount, 
+
+    ''E'', 
+
+    '''', 
+
+    '''', 
+
+    ExpenseAllocation.TransDate, 
+
+    '''' AS ContainerNo, 
+
+    Payables.PayableID, 
+
+    '''',
+
+	'''',
+
+    '''',
+
+    0 AS Units,
+
+    '''' AS UnitType,
+
+    0 as IsTrash, 
+
+    '''' AS AltGradeName,  
+
+    '''' AS GradeID, 
+
+    Payables.CpID,
+
+    '''',
+
+    Payables.CurrencyCd,
+
+    Counterparty.Companynm,
+
+    Counterparty.CPID,
+
+    '''' AS POUnitType,
+
+     '''' AS WksAltGradeName,
+
+     0,0
+
+	 ,0
+
+	FROM dbo.Payables WITH(NOLOCK) 
+
+	INNER JOIN  dbo.ExpenseAllocation ON dbo.ExpenseAllocation.BuySellNo = dbo.Payables.BuySellNo	
+
+	LEFT JOIN dbo.Counterparty ON Payables.CpID = dbo.Counterparty.CPID
+
+	WHERE Payables.ItemIDSource = ''E'' 
+
+	AND Payables.Posted = 1 
+
+	AND (Reversed=0 OR Reversed IS NULL)  '
+
+	IF NOT @ByDate = 0 AND @ReverseBatchNo = 0 
+
+	BEGIN
+
+		IF @ByDate = 1 
+
+			SET @Query = @Query + 'AND (ExpenseAllocation.PostingDt >= @FromDate AND ExpenseAllocation.PostingDt <= @ToDate) '
+
+		IF @ByDate = 2
+
+			SET @Query = @Query + 'AND (ExpenseAllocation.TransDate >= @FromDate AND ExpenseAllocation.TransDate <= @ToDate) '
+
+    END
+
+    IF NOT @COID = ''
+
+		SET @Query = @Query + 'AND (@COID = ExpenseAllocation.COID) '
+
+	IF NOT @SupplierID = ''
+
+		SET @Query = @Query + 'AND (@SupplierID = Payables.CpID) '
+
+	--IF NOT @ShipFromID = ''
+
+	--	SET @Query = @Query + 'AND (@ShipFromID = BuySell.ShipFromID) '
+
+	--IF NOT @SupplierType = ''
+
+	--	SET @Query = @Query + 'AND (BuySell.ShipFromID = @SupplierType) '
+
+	IF NOT @InvoiceNo = ''
+
+		SET @Query = @Query + 'AND (Payables.InvoiceNo = @InvoiceNo) '
+
+	--IF NOT @ReverseOnly = 0
+
+	--	SET @Query = @Query + 'AND 
+
+	--		(
+
+	--			EXISTS(SELECT * FROM Payables WITH(NOLOCK) WHERE (Posted = 0 OR Posted IS NULL) AND Payables.BuySellNo = BuySell.BuySellNo AND (reversed=0 OR Reversed IS NULL)) AND
+
+	--			 EXISTS(SELECT ReverseBilling FROM Counterparty WHERE CpID = Payables.CpID AND ReverseBilling = 1)
+
+	--		) '
+
+	--IF NOT @Invoiced = 0
+
+	--	SET @Query = @Query + 'AND (BuySell.Status = ''1'') '
+
+	IF NOT @ReverseBatchNo = 0
+
+		SET @Query = @Query + 'AND (Payables.ReverseBatchNo = @ReverseBatchNo)	'	
+
+	--IF NOT @SalesRep = ''
+
+	--	SET @Query = @Query + 'AND (BuySell.ReferrerNo2 = @SalesRep) '	
+
+	
+
+	IF @Debug = 1 
+
+		PRINT @Query
+
+	ELSE
+
+		EXEC sp_executesql @Query,@ParmDefinition,@FromDate=@FromDate,@ToDate=@ToDate,@CoID=@CoID,@SupplierID=@SupplierID,@InvoiceNo=@InvoiceNo, 
+
+			@ByProduct=@ByProduct,@ByDate=@ByDate,@IncludeWaste=@IncludeWaste,@SupplierType=@SupplierType,@ReverseOnly=@ReverseOnly,
+
+			@Invoiced=@Invoiced,@ReverseBatchNo=@ReverseBatchNo,@ExcludeZeroAmounts=@ExcludeZeroAmounts,@SalesRep=@SalesRep,@ShipFromID=@ShipFromID
+
+
+
+
+
+	-- B.) GET CONVERTING EXPENSE PAYABLES
+
+    -----------------------------
+
+    SET @Query = 'INSERT #TempReport
+
+	SELECT Payables.BuySellNo, 
+
+    '''', 
+
+    '''',  
+
+    ConvertingJob.JobDate AS fShippingDt, 
+
+	''Converting Allocation'' as detailDescription, 
+
+    0,0,0, 
+
+    '''', 
+
+    0, 
+
+    '''', 
+
+    Payables.Amount, 
+
+    Payables.FxAmount, 
+
+    ''C'', 
+
+    '''', 
+
+    '''', 
+
+    ConvertingJob.PostDt, 
+
+    '''' AS ContainerNo, 
+
+    Payables.PayableID, 
+
+    '''',
+
+	'''',
+
+    '''',
+
+    0 AS Units,
+
+    '''' AS UnitType,
+
+    0 as IsTrash, 
+
+    '''' AS AltGradeName,  
+
+    '''' AS GradeID, 
+
+    Payables.CpID,
+
+    '''',
+
+    Payables.CurrencyCd,
+
+    Counterparty.Companynm,
+
+    Counterparty.CPID,
+
+    '''' AS POUnitType,
+
+     '''' AS WksAltGradeName,
+
+     0,0
+
+	 ,0
+
+	FROM dbo.Payables WITH(NOLOCK) 
+
+	INNER JOIN dbo.ConvertingJob ON dbo.ConvertingJob.BuySellNo = dbo.Payables.BuySellNo	
+
+	LEFT JOIN dbo.Counterparty ON Payables.CpID = dbo.Counterparty.CPID
+
+	WHERE Payables.ItemIDSource = ''C'' 
+
+	AND Payables.Posted = 1 
+
+	AND (Reversed=0 OR Reversed IS NULL)  '
+
+	IF NOT @ByDate = 0 AND @ReverseBatchNo = 0 
+
+	BEGIN
+
+		IF @ByDate = 1 
+
+			SET @Query = @Query + ' AND (ConvertingJob.PostDt >= @FromDate AND ConvertingJob.PostDt <= @ToDate) '
+
+		IF @ByDate = 2
+
+			SET @Query = @Query + ' AND (ConvertingJob.JobDate >= @FromDate AND ConvertingJob.JobDate <= @ToDate) '
+
+    END
+
+	IF NOT @SupplierID = ''
+
+		SET @Query = @Query + 'AND (@SupplierID = Payables.CpID) '
+
+	--IF NOT @ShipFromID = ''
+
+	--	SET @Query = @Query + ' AND (@ShipFromID = BuySell.ShipFromID) '
+
+	--IF NOT @SupplierType = ''
+
+	--	SET @Query = @Query + ' AND (BuySell.ShipFromID = @SupplierType) '
+
+	IF NOT @InvoiceNo = ''
+
+		SET @Query = @Query + ' AND (Payables.InvoiceNo = @InvoiceNo) '
+
+	--IF NOT @ReverseOnly = 0
+
+	--	SET @Query = @Query + ' AND 
+
+	--		(
+
+	--			EXISTS(SELECT * FROM Payables WITH(NOLOCK) WHERE (Posted = 0 OR Posted IS NULL) AND Payables.BuySellNo = BuySell.BuySellNo AND (reversed=0 OR Reversed IS NULL)) AND
+
+	--			 EXISTS(SELECT ReverseBilling FROM Counterparty WHERE CpID = Payables.CpID AND ReverseBilling = 1)
+
+	--		) '
+
+	--IF NOT @Invoiced = 0
+
+	--	SET @Query = @Query + ' AND (BuySell.Status = ''1'') '
+
+	IF NOT @ReverseBatchNo = 0
+
+		SET @Query = @Query + ' AND (Payables.ReverseBatchNo = @ReverseBatchNo)	'	
+
+	--IF NOT @SalesRep = ''
+
+	--	SET @Query = @Query + ' AND (BuySell.ReferrerNo2 = @SalesRep) '	
+
+	
+
+	IF @Debug = 1 
+
+		PRINT @Query
+
+	ELSE
+
+		EXEC sp_executesql @Query,@ParmDefinition,@FromDate=@FromDate,@ToDate=@ToDate,@CoID=@CoID,@SupplierID=@SupplierID,@InvoiceNo=@InvoiceNo, 
+
+			@ByProduct=@ByProduct,@ByDate=@ByDate,@IncludeWaste=@IncludeWaste,@SupplierType=@SupplierType,@ReverseOnly=@ReverseOnly,
+
+			@Invoiced=@Invoiced,@ReverseBatchNo=@ReverseBatchNo,@ExcludeZeroAmounts=@ExcludeZeroAmounts,@SalesRep=@SalesRep,@ShipFromID=@ShipFromID
+
+
+
+
+
+
+
+
+
+	-- C.) GET ADJUSTMENTS (By Reporting Date).
+
+    ------------------------------------------------
+
+
+
+    SET @Query = 'INSERT #TempReport 
+
+	SELECT 
+
+        BuySell.BuySellNo, 
+
+        cast(Receiving.ScaleTicketNo AS varchar(10)) as Job,
+
+        '''', 
+
+        GPLedger.AdjReportDt AS fShippingDt, 
+
+	    GLAccount.[Name] as DetailDescription, 
+
+	    0,0, ' -- TareWt, GrossWt
+
+        + 'GPLedger.AdjWeight, GPLedger.AdjWeightUOM, 
+
+		0, '''', 
+
+        GPLedger.Cost,  
+
+        GPLedger.AdjFxAmount, 
+
+        ''A'', 
+
+        BuySell.PickupNo, 
+
+        '''', 
+
+        BuySell.ShippingDt, 
+
+        '''' AS ContainerNo, 
+
+        GPLedger.LedgerID, 
+
+        '''',
+
+	    rtrim(dbo.getfield(GPLedger.AdjNotes,27,char(9))),   '--+' '+convert(varchar(200),BuySell.ShippingNotes), ''''COMMENTED OUT BF DONT NEED THIS ON ADJUSTMENT
+
+        + 'BuySell.ShipFromID,
+
+        0 AS Units,
+
+        '''' AS UnitType,
+
+        0 as IsTrash,
+
+        GLAccount.Name AS AltGradeName, 
+
+        '''' AS GradeID, 
+
+        BuySell.CustID, 
+
+        Receiving.RefNo,
+
+        AdjCurrencyCd,
+
+        Counterparty.Companynm,
+
+        Counterparty.CPID,
+
+        '''' AS POUnitType,
+
+        '''' AS WksAltGradeName,
+
+        0,0
+
+		,0
+
+    FROM dbo.GPLedger WITH(NOLOCK) INNER JOIN  dbo.BuySell WITH(NOLOCK) ON dbo.BuySell.BuySellNo = dbo.GPLEDGER.BuySellNo	
+
+    INNER JOIN dbo.Counterparty ON dbo.GPLedger.AdjCPID = dbo.Counterparty.CPID
+
+	LEFT JOIN dbo.GLAccount WITH(NOLOCK) ON dbo.GPLedger.GLAcct = dbo.GLAccount.GLAcct
+
+	LEFT JOIN dbo.Receiving WITH(NOLOCK) ON dbo.Receiving.ScaleTicketNo = dbo.BuySell.DispatchID
+
+	WHERE GPLedger.AdjType = ''P'' 
+
+		AND GPLedger.Source = ''A'' 			
+
+		AND GPLedger.AdjPosted = ''Y'' 
+
+		AND ISNULL(BUYSELL.[status],'''')<>''X'' '
+
+		
+
+		IF NOT @COID = ''
+
+			SET @Query = @Query + 'AND (@COID = BuySell.COID) '
+
+		IF NOT @SupplierID = ''
+
+			SET @Query = @Query + 'AND (@SupplierID = GPledger.AdjCPID) '
+
+		IF NOT @ShipFromID = ''
+
+			SET @Query = @Query + 'AND (@ShipFromID = BuySell.ShipFromID) '
+
+		IF NOT @SupplierType = ''
+
+			SET @Query = @Query + 'AND (BuySell.ShipFromID = @SupplierType) '
+
+		IF NOT @InvoiceNo = ''
+
+			SET @Query = @Query + 'AND EXISTS(SELECT PayableID FROM Payables WITH(NOLOCK) WHERE Payables.ItemID = GPLedger.LedgerID AND Payables.BuySellNo = BuySell.BuySellNo AND Payables.InvoiceNo = @InvoiceNo) '
+
+		IF NOT @ReverseOnly = 0
+
+			SET @Query = @Query + 'AND 
+
+				(
+
+					 EXISTS(SELECT * FROM Payables WITH(NOLOCK) WHERE (Posted = 0 OR Posted IS NULL) AND Payables.BuySellNo = BuySell.BuySellNo AND (reversed=0 OR Reversed IS NULL)) AND
+
+					 EXISTS(SELECT ReverseBilling FROM Counterparty WHERE CpID = GPLedger.AdjCpID AND ReverseBilling = 1)
+
+				) '
+
+		IF NOT @Invoiced = 0 
+
+			SET @Query = @Query + 'AND (BuySell.Status = ''I'') '
+
+		IF NOT @ReverseBatchNo = 0
+
+			SET @Query = @Query + 'AND (GPLedger.ReverseBatchNo = @ReverseBatchNo) '	
+
+		IF @ReverseBatchNo = 0 AND @InvoiceNo = ''
+
+			SET @Query = @Query + 'AND (GPLedger.AdjReportDt >= @FromDate AND GPLedger.AdjReportDt <= @ToDate) '
+
+		IF NOT @SalesRep = ''
+
+			SET @Query = @Query + 'AND (BuySell.ReferrerNo2 = @SalesRep) '
+
+		
+
+	IF @Debug = 1 
+
+		PRINT @Query
+
+	ELSE
+
+		EXEC sp_executesql @Query,@ParmDefinition,@FromDate=@FromDate,@ToDate=@ToDate,@CoID=@CoID,@SupplierID=@SupplierID,@InvoiceNo=@InvoiceNo, 
+
+			@ByProduct=@ByProduct,@ByDate=@ByDate,@IncludeWaste=@IncludeWaste,@SupplierType=@SupplierType,@ReverseOnly=@ReverseOnly,
+
+			@Invoiced=@Invoiced,@ReverseBatchNo=@ReverseBatchNo,@ExcludeZeroAmounts=@ExcludeZeroAmounts,@SalesRep=@SalesRep,@ShipFromID=@ShipFromID
+
+
+
+
+
+
+
+	-- D.) GET UN-POSTED ADJUSTMENTS (By Worksheet Shipping Date).
+
+    --------------------------------------------------------------
+
+    IF @InvoiceNo = '' 
+
+    BEGIN
+
+		SET @Query = 'INSERT #TempReport 
+
+		SELECT 
+
+			BuySell.BuySellNo, 
+
+			cast(Receiving.ScaleTicketNo AS varchar(10)) as Job,
+
+			'''', 
+
+			BuySell.ShippingDt AS fShippingDt, 
+
+			GLAccount.[Name] as DetailDescription, 
+
+			0,0,0, 
+
+			'''', 0, '''', 
+
+			GPLedger.Cost,   
+
+			GPLedger.AdjFxAmount, 
+
+			''A'', 
+
+			BuySell.PickupNo, 
+
+			'''', 
+
+			BuySell.ShippingDt, 
+
+			'''' AS ContainerNo, 
+
+			GPLedger.LedgerID, 
+
+			'''',
+
+			rtrim(dbo.getfield(GPLedger.AdjNotes,27,char(9))), '--+' '+convert(varchar(200),BuySell.ShippingNotes),''''COMMENTED OUT BF DONT NEED THIS ON ADJUSTMENT
+
+			+ 'BuySell.ShipFromID,
+
+			0 AS Units,
+
+			'''' AS UnitType,
+
+			0 as IsTrash,
+
+			GLAccount.Name AS AltGradeName,  
+
+			'''' AS GradeID, 
+
+			BuySell.CustID, 
+
+			Receiving.RefNo,
+
+			AdjCurrencyCd,
+
+			Counterparty.Companynm,
+
+			Counterparty.CPID,
+
+			'''' AS POUnitType,
+
+			'''' AS WksAltGradeName,
+
+			0,0
+
+			,0
+
+		FROM dbo.GPLedger WITH(NOLOCK) INNER JOIN  dbo.BuySell WITH(NOLOCK) ON dbo.BuySell.BuySellNo = dbo.GPLEDGER.BuySellNo	
+
+		INNER JOIN dbo.Counterparty ON dbo.GPLedger.AdjCPID = dbo.Counterparty.CPID
+
+		LEFT JOIN dbo.GLAccount WITH(NOLOCK) ON dbo.GPLedger.GLAcct = dbo.GLAccount.GLAcct
+
+		LEFT JOIN dbo.Receiving WITH(NOLOCK) ON dbo.Receiving.ScaleTicketNo = dbo.BuySell.DispatchID
+
+		WHERE 
+
+			GPLedger.AdjType = ''P'' 
+
+			AND GPLedger.Source = ''A'' 
+
+			AND (BuySell.ShippingDt  >= @FromDate  AND BuySell.ShippingDt <=  @ToDate 
+
+			AND GPLedger.AdjPosted = ''N'' OR @ReverseBatchNo <> 0) 
+
+			AND (GPLedger.AdjReportDt IS NULL OR (GPLedger.AdjReportDt >= @FromDate AND GPLedger.AdjReportDt <= @ToDate)) 
+
+			AND ISNULL(BUYSELL.[status],'''')<>''X'' '
+
+		IF NOT @COID = ''
+
+			SET @Query = @Query + 'AND (@COID = BuySell.COID) '
+
+		IF NOT @SupplierID = ''
+
+			SET @Query = @Query + 'AND (@SupplierID = GPledger.AdjCPID) '
+
+		IF NOT @ShipFromID = ''
+
+			SET @Query = @Query + 'AND (@ShipFromID = BuySell.ShipFromID) '
+
+		IF NOT @SupplierType = ''
+
+			SET @Query = @Query + 'AND (BuySell.ShipFromID = @SupplierType) '
+
+		IF NOT @Invoiced = 0 
+
+			SET @Query = @Query + 'AND (BuySell.Status = ''I'') '
+
+		IF NOT @ReverseBatchNo = 0
+
+			SET @Query = @Query + 'AND (GPLedger.ReverseBatchNo = @ReverseBatchNo) '	
+
+		IF NOT @SalesRep = ''
+
+			SET @Query = @Query + 'AND (BuySell.ReferrerNo2 = @SalesRep) '	
+
+		
+
+		IF @Debug = 1 
+
+			PRINT @Query
+
+		ELSE
+
+			EXEC sp_executesql @Query,@ParmDefinition,@FromDate=@FromDate,@ToDate=@ToDate,@CoID=@CoID,@SupplierID=@SupplierID,@InvoiceNo=@InvoiceNo, 
+
+				@ByProduct=@ByProduct,@ByDate=@ByDate,@IncludeWaste=@IncludeWaste,@SupplierType=@SupplierType,@ReverseOnly=@ReverseOnly,
+
+				@Invoiced=@Invoiced,@ReverseBatchNo=@ReverseBatchNo,@ExcludeZeroAmounts=@ExcludeZeroAmounts,@SalesRep=@SalesRep,@ShipFromID=@ShipFromID
+
+	END
+
+
+
+
+
+
+
+	IF @Debug = 1
+
+		RETURN
+
+
+
+
+
+	--DEBUGING CODE
+
+	----------------
+
+	--delete from #TempReport where jobno <> 21225 --or gradeid <> '5241'
+
+	--select GradeId, UnitType, altgradename, wksaltgradename, ItemSeq, PPrice, Amt, '--' '--', * from #TempReport --order by  GradeId, UnitType
+
+	----------------
+
+
+
+
+
+
+
+
+
+
+
+	--CONSOLIDATE IDENTICAL COMMODITIES-PACKAGING FROM THE SAME TICKET
+
+	---------------------------------------------------------------------------
+
+	INSERT #TempGradeCons		
+
+		select buysellno, GradeID, ISNULL(UnitType,''), ISNULL(AltGradeName,''), ISNULL(WksAltGradeName,''), 0, COunt(*), Sum(Amt), Sum(PFXAmount), 
+
+		Sum(IsNull(TareWt,0)), Sum(IsNull(GrossWt,0)),
+
+		Sum(PWeight), SUM(Units), 0 from  #TempReport
+
+		group by buysellno, GradeID, UnitType, AltGradeName, WksAltGradeName
+
+
+
+	DELETE FROM #TempGradeCons WHERE ItemCnt <= 1
+
+
+
+
+
+	UPDATE #TempGradeCons		
+
+	SET #TempGradeCons.RowID = B.RowID
+
+	FROM #TempGradeCons A INNER JOIN #TempReport B ON
+
+		A.Buysellno = B.BuysellNo AND A.GradeID = B.GradeID AND A.UnitType = B.UnitType AND A.AltGradeName = B.AltGradeName
+
+		AND A.WksAltGradeName = B.WksAltGradeName
+
+		WHERE ItemSeq = 1
+
+
+
+
+
+
+
+	--Preserve Original Price with consolidated data.  DSH Jan 2015
+
+	-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  
+
+	INSERT #_PreserveOrigPrice
+
+	SELECT #TempReport.buysellno, #TempReport.GradeID, ISNULL(#TempReport.UnitType,''), #TempReport.PPrice, COunt(*) ItemCnt	 --ISNULL(#TempReport.AltGradeName,''), ISNULL(#TempReport.WksAltGradeName,'')
+
+		FROM  #TempGradeCons INNER JOIN  #TempReport  ON #TempGradeCons.BuysellNo = #TempReport.BuySellNo AND #TempGradeCons.GradeID= #TempReport.GradeID  AND #TempGradeCons.UnitType= #TempReport.UnitType 
+
+		GROUP BY #TempReport.BuySellNo, #TempReport.GradeID, #TempReport.UnitType, #TempReport.PPrice
+
+	UPDATE #TempGradeCons SET OrigPrice = #_PreserveOrigPrice.PPrice 
+
+		from #TempGradeCons INNER JOIN #_PreserveOrigPrice ON #TempGradeCons.BuySellNo = #_PreserveOrigPrice.BuySellNo AND #TempGradeCons.ItemCnt = #_PreserveOrigPrice.ItemCnt
+
+			AND #TempGradeCons.GradeID = #_PreserveOrigPrice.GradeID AND #TempGradeCons.UnitType = #_PreserveOrigPrice.UnitType
+
+	-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+
+
+
+
+	
+
+	UPDATE #TempReport SET
+
+		Amt = #TempGradeCons.HcAmount,
+
+		PFXAmount = #TempGradeCons.FxAmount,
+
+		TareWt = #TempGradeCons.TareWt,
+
+		GrossWt = #TempGradeCons.GrossWt,
+
+		PWeight = #TempGradeCons.Quantity,
+
+		Units = #TempGradeCons.Units,
+
+		--Apply Original price if available or recalculate.
+
+		PPrice = CASE WHEN #TempGradeCons.OrigPrice <> 0 THEN #TempGradeCons.OrigPrice ELSE dbo.CalcPrice(#TempGradeCons.FxAmount, #TempGradeCons.Quantity, #TempReport.PweightUOM, #TempReport.PUOM) END
+
+		FROM #TempReport INNER JOIN #TempGradeCons ON #TempReport.RowID = #TempGradeCons.RowID 
+
+		WHERE ISNULL(#TempGradeCons.Quantity,0) <> 0
+
+
+
+	UPDATE #TempReport SET
+
+		Amt = #TempGradeCons.HcAmount,
+
+		PFXAmount = #TempGradeCons.FxAmount,
+
+		TareWt = #TempGradeCons.TareWt,
+
+		GrossWt = #TempGradeCons.GrossWt,
+
+		PWeight = #TempGradeCons.Quantity,
+
+		Units = #TempGradeCons.Units,
+
+		--Apply Original price if available or recalculate.
+
+		PPrice = CASE WHEN #TempGradeCons.OrigPrice <> 0 THEN #TempGradeCons.OrigPrice ELSE 0 END
+
+		FROM #TempReport INNER JOIN #TempGradeCons ON #TempReport.RowID = #TempGradeCons.RowID 
+
+		WHERE ISNULL(#TempGradeCons.Quantity,0) = 0
+
+
+
+	DELETE FROM #TempReport WHERE ItemSeq > 1
+
+	---------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+	-- CONVERT FROm WEIGHT TO PER EACH PRICES AND UOM.
+
+	UPDATE #TempReport SET PPrice = PerEachCnvPrice, PUOM = 'E' WHERE IsPerEachCnv = 1
+
+
+
+
+
+
+
+    -- UPDATE SUPPLIER PAYABLES WHEN RUN BY INVOICE NUMBER.
+
+    --DSH: This section will help correct supplier payables that are split and partially paid 
+
+        --but will only work if there is one item on the worksheet. (may require further revision)
+
+    IF @InvoiceNo <> '' BEGIN
+
+
+
+        --1. Get Payable Amounts to allocate.
+
+        SELECT BuySellNo, SUM(Amount) Amount, SUM(FxAmount) FxAmount  INTO #PayablesList 
+
+			from Payables where Invoiceno = @InvoiceNo AND CPID = @SupplierID  AND ItemIDSource = 'S' AND Reversed <> 1
+
+            GROUP BY BuySellNo 
+
+        
+
+        --2. Get List of report details with only one grade.
+
+        SELECT #PayablesList.BuySellNo, #PayablesList.Amount, #PayablesList.FxAmount, Count(*) as cnt INTO #UpdateList 
+
+            FROM #PayablesList inner join #TempReport ON #PayablesList.BuySellno = #TempReport.BuySellNo
+
+            GROUP BY #PayablesList.Buysellno, Amount, FxAmount HAVING COUNT(*) = 1
+
+
+
+
+
+        --2. Remove payables that match existing report.
+
+        Delete #PayablesList  from #PayablesList INNER JOIN #TempReport ON #PayablesList.BuySellno = #TempReport.BuySellNo AND #TempReport.Type = 'S' and #TempReport.Amt = #PayablesList.Amount
+
+
+
+        --3. Update Payables 
+
+        UPDATE #TempReport SET Amt=Amount, PFxAmount= FXAmount from #UpdateList INNER JOIN #TempReport ON #UpdateList.BuySellno = #TempReport.BuySellNo AND #TempReport.Type = 'S' 
+
+
+
+    END
+
+
+
+	--11/20/2013 RS: Added for Traylor Group
+
+	-- APPLY EquipNo FROM WKS IF BLANK
+
+	UPDATE #TempReport SET #TempReport.TrailerNo = BuySell.RefEquipNo 
+
+	FROM #TempReport
+
+	INNER JOIN BuySell WITH (NOLOCK) ON BuySell.BuySellNo = #TempReport.BuySellNo
+
+	WHERE ISNULL(#TempReport.TrailerNo,'')='' AND #TempReport.[Type]<>'A'
+
+	--
+
+
+
+	-- APPLY ALTERNATE DESCRIPTIONS	FROM PO.	
+
+	UPDATE #TempReport SET DetailDescription = AltGradeName where Type = 'S' and AltGradeName <> ''  
+
+	
+
+	--01/08/2014 RS: Changed per Continental - Update only for NON BROKERAGE
+
+	-- APPLY ALTERNATE DESCRIPTION FROM WKS 
+
+	IF @ByProduct<>3 AND @ByProduct<>4
+
+		UPDATE #TempReport SET DetailDescription = WksAltGradeName 
+
+			WHERE [Type] = 'S' AND WksAltGradeName <> '' AND AltGradeName = '' 
+
+
+
+
+
+		
+
+--BROKERAGE (GRADE) MODE:
+
+
+
+	IF @ByProduct = 3
+
+
+
+
+
+	IF @WtUOM = 'S' OR @WtUOM = 'M' OR @WtUOM = 'G' Begin
+
+		Set @WtPrecision = 3
+
+	End
+
+	
+
+
+
+	--BY GRADE, SHIP DATE
+
+		SELECT
+
+			SupplierCPID as [-Hidden-SupplierCpID], 
+
+			SupplierNm as [Account], 
+
+			Location as [Location], 
+
+			BuySellNo as [Trade#],
+
+			ShippingDt as [Ship Date],
+
+			RelNo as [Release#],
+
+			PickupNo as [Pickup#],
+
+			TrailerNo as [Equipment#],
+
+			detailDescription as [Grade/Product], 
+
+			Case When dbo.CONVERT_TO_UOM(GrossWt, PWeightUOM, @WtUOM) <> 0 Then 
+
+				Cast(dbo.cw_RemoveTrailingZeros(dbo.CONVERT_TO_UOM(GrossWt, PWeightUOM, @WtUOM), @WtPrecision) as varchar) + ' ' + dbo.CnvUOM_Names(@WtUOM)
+
+			Else '' End as [Gross],
+
+			Case When dbo.CONVERT_TO_UOM(TareWt, PWeightUOM, @WtUOM) <> 0 Then 
+
+				Cast(dbo.cw_RemoveTrailingZeros(dbo.CONVERT_TO_UOM(TareWt, PWeightUOM, @WtUOM), @WtPrecision) as varchar) + ' ' + dbo.CnvUOM_Names(@WtUOM)
+
+			Else '' End as [Tare],
+
+			Case When dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, @WtUOM) <> 0 Then 
+
+				Cast(dbo.cw_RemoveTrailingZeros(dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, @WtUOM), @WtPrecision) as varchar) 
+
+			Else '' End as [Net Weight],
+
+
+
+			Case When dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, @WtUOM) <> 0 Then 
+
+				dbo.CnvUOM_Names(@WtUOM)
+
+			Else '' End as [Wt UOM],
+
+			
+
+			dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, @WtUOM) [-Hidden-NetWeight],
+
+			Case When Units <> 0 Then Cast(Units as varchar(100)) + ' ' + UnitType Else '' End As [Units],
+
+			Case When PPrice <> 0 Then Cast(dbo.cw_RemoveTrailingZeros(PPrice, 2) as varchar) + '/' + dbo.CnvUOM_Names(PUOM) Else '' End as [Price],
+
+			PFxAmount As [{C}Amount],
+
+			CurrencyCd as [Currency],
+
+			CustID as [-Hidden-CustID]
+
+		FROM #TempReport
+
+		WHERE ((@IncludeWaste = 1 OR (@IncludeWaste =0 AND IsTrash<>1)) OR Amt <> 0)  
+
+		AND NOT (PWeight = 0 AND Type = 'S')
+
+		AND (@ExcludeZeroAmounts=0 OR PFxAmount<>0)
+
+		ORDER BY SupplierNm, Location, FShippingDt, BuySellNo,detailDescription 
+
+
+
+----BROKERAGE (LOCATION) MODE:
+
+--	IF @ByProduct = 4
+
+--	--BY LOCATION, WORKSHEET#, GRADE
+
+--		SELECT 
+
+--			SupplierNm as [-Hidden- SupplierName], 
+
+--			SupplierCPID as [-Hidden- SupplierCpID], 
+
+--			Location as [-Hidden- Group], 
+
+--			BuySellNo as [Trade No],
+
+--			ShippingDt as [Ship Date],
+
+--			RelNo as [Rel No],
+
+--			PickupNo as [Pickup No],
+
+--			TrailerNo as [Equip No],
+
+--			detailDescription As [{wildcard}],
+
+--			dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, @WtUOM) as [Weight],
+
+--			Case When Units > 0 Then Cast(Units as varchar(100)) + ' ' + UnitType Else '' End As [Units],
+
+--			Cast(CONVERT(DECIMAL(10,2),PPrice) as varchar) + dbo.CnvUOM_Names(PUOM) as [Price],
+
+--			Amt As Amount
+
+--		FROM #TempReport
+
+--		WHERE ((@IncludeWaste = 1 OR (@IncludeWaste =0 AND IsTrash<>1)) OR Amt <> 0)
+
+--		AND NOT (PWeight = 0 AND [Type] = 'S')
+
+--		AND (@ExcludeZeroAmounts=0 OR PFxAmount<>0)
+
+--		ORDER BY Location, FShippingDt, BuySellNo, detailDescription 
+
+
+
+
+
+
+
+SET QUOTED_IDENTIFIER OFF
+
+
+
+
+

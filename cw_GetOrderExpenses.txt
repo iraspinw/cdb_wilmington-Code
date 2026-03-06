@@ -1,0 +1,9 @@
+			create proc cw_GetOrderExpenses @OrderNo varchar(15) as
+
+			select cpid, glacct, [description], charge, currencycd, priceuom, fxrate
+
+			from budget 
+
+			where ponumber = @OrderNo and 
+
+					ItemType='[EXPENSE]'

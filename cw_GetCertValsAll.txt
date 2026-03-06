@@ -1,0 +1,26 @@
+Create proc [dbo].[cw_GetCertValsAll]
+
+ as
+
+	
+
+--2/19/2021 Alex: Created
+
+
+
+
+
+
+
+	SELECT 
+
+		Certification.CertificationID, Rtrim(Certification.Organization)+' - '+ CertificationType AS [CertType] 
+
+	FROM Certification 
+
+
+
+
+
+
+

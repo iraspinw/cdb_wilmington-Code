@@ -1,0 +1,18 @@
+CREATE proc [dbo].[cw_GetPOBookings] @OrderNo varchar(15) as
+
+
+
+select Bookingno, convert(varchar(10), CutOffDate, 101) as Cutoffdate, booksheet.BookSheetID, POBooking.ID,POBooking.ContainerQty
+
+from BookSheet
+
+inner join POBooking on POBooking.BookSheetID = BookSheet.BookSheetID
+
+inner join po on po.poid = POBooking.POID
+
+where po.PONumber = @OrderNo
+
+order by BookSheet.CutOffDate Desc
+
+
+

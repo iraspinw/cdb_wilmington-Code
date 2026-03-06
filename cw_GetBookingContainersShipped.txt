@@ -1,0 +1,436 @@
+CREATE   PROCEDURE [dbo].[cw_GetBookingContainersShipped] 
+
+	@BookingNo char(25),
+
+	@UOM varchar(3) = 'L'
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+--07/18/2013 MCM: Added Grade.Description for Product column on booksheet
+
+--10/28/2015 MEC: Completed for cieTrade.net
+
+--11/16/2021 DSH  Code Rewrittenm to run from "Container" table
+
+--12/06/2021 DSH: Updated to include brokerage worksheets.
+
+--12/15/2021 DSH: Added back support to report "pending" containers
+
+--12/15/2021 DSH: Corrected issue with pending containers bneig duped with brokerage ones.
+
+--06/10/2022 DSH: Added weight conversion supporr (never coded)
+
+--09/13/2022 Nick: Container No can now accept up to 30 chars
+
+--12/15/2022: DN: shipment count now only includes invoiced shipments.
+
+--01/12/2023 Nick: Receiving Containers now look at the Receiving Worksheet's Status instead of the connected Shipping
+
+--04/19/2023 DSH: Include approved countainers in ship count
+
+--04/24/2023 DSH: Avoid INV-Shipment worksheet in container count.
+
+--04/24/2023 DSH: Add Sales Invoice-Worksheet column and correct shipping list to be just containers
+
+
+
+	CREATE TABLE #Containers(
+
+		[Wks No] CHAR(12),
+
+		Supplier VARCHAR(100),
+
+		[Location] VARCHAR(100),
+
+		[Ship Date] DATE,
+
+		[PO No] VARCHAR(15),
+
+		[Container No] VARCHAR(30),
+
+		[Seal No] VARCHAR(25),
+
+		[Release No] VARCHAR(25),
+
+		Product VARCHAR(100),
+
+		Packaging  VARCHAR(100),
+
+		[Net Weight] FLOAT,
+
+		[NetWeightUOM] CHAR(1),
+
+		[Status] CHAR(12),
+
+		[-Hidden-CustID]  CHAR(12),
+
+		[-Hidden-VendorID]  CHAR(12),
+
+		[RefLotNo] CHAR(15),
+
+		[RefDetail] INT,
+
+		[Src] CHAR(3),
+
+		[Invoice-Wks] CHAR(12),
+
+		[-Hidden-InvWks]  CHAR(12),
+
+	)
+
+
+
+
+
+	-- GET "BROKER" CONTAINERS 
+
+	INSERT #Containers
+
+	SELECT 
+
+		BuySellNo, 
+
+		Supplier.CompanyNm,
+
+		Buysell.ShipFromID,
+
+		BuySell.ShippingDt,
+
+		BuySell.RefPONO,
+
+		Buysell.RefEquipNo,
+
+		BuySell.RefSealNo,
+
+		ISNULL(BuySell.RelNo,'') ReleaseNo,		
+
+		Grade.[Description], 
+
+		'', 
+
+		BuySell.TotalWeightLbs NetWeight,
+
+		'L',
+
+		dbo.CnvWksStatus_Name(Buysell.[Status], '') Status,
+
+		buysell.CustID,
+
+		BuySell.VendorID,
+
+		'',
+
+		(SELECT TOP 1 DetailID FROM WksDetail WHERE WksDetail.BuYSellNo = BuYSell.BuysellNo) DetailID,
+
+		'B',
+
+		BuySellNo,BuySellNo
+
+	FROM Buysell 
+
+		INNER JOIN Counterparty Supplier ON BuySell.VendorID = Supplier.CpID				
+
+		LEFT JOIN Grade ON Buysell.RefGradeID = Grade.GradeID
+
+	WHERE BuySell.BookingNo = @BookingNo 
+
+		AND buysell.CustID <> '(INV)'
+
+		AND buysell.VendorID <> '(INV)'
+
+		AND ISNULL(BuySell.BookingNo,'') <> ''
+
+		AND BuySell.[Status] <> 'X'
+
+
+
+	IF EXISTS(SELECT * FROM #Containers) 
+
+		UPDATE #Containers SET Packaging = Case When WksDetail.Units > 0 Then Convert(varchar, WksDetail.Units) + ' ' Else '' End + IsNull(dbo.CnvUnitName(WksDetail.UnitType), '')
+
+			FROM #Containers INNER JOIN WksDetail ON #Containers.RefDetail = WksDetail.DetailID 		
+
+
+
+
+
+
+
+
+
+	-- GET RECEIVING CONTAINERS (P)	
+
+	INSERT #Containers
+
+	SELECT 
+
+		Container.RcvBuySellNo, 
+
+		Supplier.CompanyNm,
+
+		Buysell.ShipFromID,
+
+		Container.ShipDate,
+
+		BuySell.RefPONO,
+
+		Container.ContainerNo,
+
+		Container.SealNo,
+
+		ISNULL(BuySell.RelNo,''),		
+
+		Grade.[Description],
+
+		Case When Container.Units > 0 Then Convert(varchar, Container.Units) + ' ' Else '' End + IsNull(dbo.CnvUnitName(Container.UnitType), ''),
+
+		Container.NetWeight,
+
+		Container.UOM,
+
+		dbo.CnvWksStatus_Name(Buysell.[Status], ''), -- changed from ShipBOL.Status to Buysell.Status Nick 1/12/23
+
+		BuySell.CustID,
+
+		BuySell.VendorID,'',0,'P',
+
+		SaleBuySellNo,SaleBuySellNo
+
+	FROM Container 
+
+		INNER JOIN Buysell ON Container.RcvBuySellNo = Buysell.BuysellNo
+
+		INNER JOIN Counterparty Supplier ON BuySell.VendorID = Supplier.CpID		
+
+		LEFT JOIN Buysell ShipBOL ON ShipBOL.BuySellNo = Container.SaleBuySellNo		
+
+		LEFT JOIN Grade ON ShipBOL.RefGradeID = Grade.GradeID
+
+	WHERE BuySell.BookingNo = @BookingNo 
+
+		AND ContainerType = 'P'
+
+		AND BuySell.[Status] <> 'X'
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-- GET PENDING CONTANERS (P) --Added Dec 15 2021		
+
+	INSERT #Containers
+
+	SELECT 
+
+		Buysell.BuySellNo, 
+
+		Supplier.CompanyNm,
+
+		Buysell.ShipFromID,
+
+		Buysell.ShippingDt,
+
+		BuySell.RefPONO,
+
+		BuySell.RefEquipNo ContainerNo,
+
+		BuySell.RefSealNo,
+
+		ISNULL(BuySell.RelNo,''),		
+
+		Grade.[Description],
+
+		'', --Case When Container.Units > 0 Then Convert(varchar, Container.Units) + ' ' Else '' End + IsNull(dbo.CnvUnitName(Container.UnitType), ''),
+
+		BuySell.TotalWeightLbs,
+
+		'L',
+
+		'', -- dbo.CnvWksStatus_Name(ShipBOL.[Status], ''),
+
+		'' CustID,
+
+		BuySell.VendorID,'',0,'W',
+
+		'',''
+
+	FROM Buysell 
+
+		INNER JOIN Counterparty Supplier ON BuySell.VendorID = Supplier.CpID	
+
+		LEFT JOIN Grade ON BuySell.RefGradeID = Grade.GradeID					
+
+	WHERE BuySell.BookingNo = @BookingNo 		
+
+		AND BuySell.[Status] = 'W' 
+
+		AND buysell.CustID = '(INV)'
+
+
+
+
+
+
+
+	-- GET "CONTAINERIZED" CONTAINERS (C)	
+
+	INSERT #Containers
+
+	SELECT 
+
+		Container.SaleBuySellNo, 
+
+		'(Warehouse)',	--Supplier.CompanyNm,
+
+		'',				--Buysell.ShipFromID,
+
+		BuySell.ShippingDt,
+
+		'',				--BuySell.RefPONO,
+
+		Container.ContainerNo,
+
+		Container.SealNo,
+
+		ISNULL(BuySell.RelNo,''),		
+
+		Product = Grade.[Description],
+
+		Case When Container.Units > 0 Then Convert(varchar, Container.Units) + ' ' Else '' End + IsNull(dbo.CnvUnitName(Container.UnitType), ''),
+
+		Container.NetWeight,
+
+		Container.UOM,
+
+		dbo.CnvWksStatus_Name(BuySell.[Status], ''),
+
+		Buysell.CustID,
+
+		'', --BuySell.VendorID
+
+		(SELECT TOP 1 LOTNO FROM ContainerContents WHERE ContainerContents.ContainerID = Container.ContainerID) RefLotNo,
+
+		0,'C',
+
+		Container.SaleBuySellNo,Container.SaleBuySellNo
+
+	FROM Container 
+
+		INNER JOIN Buysell ON Container.SaleBuySellNo = Buysell.BuysellNo
+
+		LEFT JOIN Grade ON Buysell.RefGradeID = Grade.GradeID
+
+	WHERE Container.BookingNo = @BookingNo 
+
+		AND ContainerType = 'C'
+
+		AND BuySell.[Status] <> 'X'
+
+
+
+
+
+	UPDATE #Containers SET		
+
+		Location = I.WarehouseNm,		
+
+		[PO No] = ISNULL(B.RefPONO,''),		
+
+		[-Hidden-VendorID] = I.VendorID
+
+	FROM #Containers C 
+
+		INNER JOIN Inventory I ON I.Lotno = C.RefLotNo
+
+		INNER JOIN Counterparty Supplier ON I.VendorID = Supplier.CpID
+
+		LEFT JOIN Buysell B ON B.BuysellNo = I.LotNo		
+
+		
+
+
+
+	UPDATE #Containers  SET [Net Weight] = CONVERT(FLOAT, dbo.COnvert_to_uom([Net Weight],[NetWeightUOM],@UOM)) 
+
+	
+
+
+
+	-- OUTPUT 	
+
+	SELECT 
+
+		[Wks No],
+
+		Supplier,
+
+		[Location],
+
+		[Ship Date],
+
+		[PO No],
+
+		[Container No],
+
+		[Seal No],
+
+		[Release No],
+
+		Product,
+
+		Packaging,		
+
+		[Net Weight],	
+
+		(CASE WHEN [Status] = 'INVOICED' THEN 'POSTED' ELSE [Status] END) [Status],
+
+		[Invoice-Wks],
+
+		[-Hidden-CustID],
+
+		[-Hidden-VendorID],
+
+		[-Hidden-InvWks]
+
+	FROM #Containers
+
+	Order By [Ship Date], [Container No]
+
+
+
+
+
+	--SHIPMENT COUNT
+
+	SELECT Count(*) ShippedCount From #Containers WHERE [Net Weight] <> 0 and Status IN('INVOICED','APPROVED') AND Location <> '(CONTAINER)'   --Add <> '(CONTAINER)'  to avoid double counting shipmnt worksheet.
+
+
+
+	--TOTAL WEIGHT 
+
+	SELECT SUM([Net Weight]) TotalWeight From #Containers WHERE Status IN('INVOICED','APPROVED') AND Location <> '(CONTAINER)'  ----Add <> '(CONTAINER)'  to avoid double counting weight
+
+
+
+
+
+
+
+--GO
+
+--cw_GetBookingContainersShipped 'EBKG03001077', 'L'
+
+
+

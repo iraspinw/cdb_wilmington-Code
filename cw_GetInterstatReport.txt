@@ -1,0 +1,550 @@
+CREATE   PROCEDURE [dbo].[cw_GetInterstatReport] @FromDt datetime, @ToDt datetime, 
+
+											 @HomeCountry varchar(100), @Rate Decimal(22,5), 
+
+											 @COID char(2),@DestCountry varchar(100) = '' , @Type varchar(25)='SALES'
+
+
+
+										 AS 
+
+ --old	
+
+--12/02/2014 EMR: Created
+
+--03/03/2017 EMR: Fixed for Korab for inventory without inventory receiving worksheets
+
+--04/04/2017 RS:  Added support for Purchases
+
+--04/07/2017 RS: Temporary - Removed @DestCountry filter
+
+
+
+--New
+
+--02/4/2020 alex: created as  copied from q_GetInterstatReport
+
+--02/4/2020 alex: Added again @DestCountry filter
+
+
+
+-- cw_GetInterstatReport '','','','1','',''
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	CREATE TABLE #Report(
+
+		InvoiceNo VARCHAR(12),
+
+		InvoiceDt datetime,
+
+		ToMarket VARCHAR(100),
+
+		TransType char(1),
+
+		ProductName VARCHAR(100),
+
+		StatCode varchar(30),
+
+		QuantityMT DECIMAL(22,5),
+
+		InvoiceAmt MONEY,
+
+		CurrencyCd CHAR(3),
+
+		CurAmt MONEY,
+
+		FromMarket VARCHAR(100),
+
+		CostAmt MONEY,
+
+		CurrCostAmt MONEY,
+
+		PurchWtMT DECIMAL(22,5)
+
+		
+
+
+
+	) 
+
+
+
+
+
+	CREATE TABLE #Report2(
+
+		InvoiceNo VARCHAR(12),
+
+		InvoiceDt datetime,
+
+		ToMarket VARCHAR(100),
+
+		TransType char(1),
+
+		ProductName VARCHAR(100),
+
+		StatCode varchar(30),
+
+		QuantityMT DECIMAL(22,5),
+
+		InvoiceAmt MONEY,
+
+		CurrencyCd CHAR(3),
+
+		CurAmt MONEY,
+
+		FromMarket VARCHAR(100),
+
+		CostAmt MONEY,
+
+		CurrCostAmt MONEY,
+
+		PurchWtMT DECIMAL(22,5)
+
+	
+
+	) 
+
+
+
+
+
+	CREATE TABLE #Report3(
+
+		InvoiceNo VARCHAR(12),
+
+		InvoiceDt datetime,
+
+		ToMarket VARCHAR(100),
+
+		TransType char(1),
+
+		ProductName VARCHAR(100),
+
+		StatCode varchar(30),
+
+		QuantityMT DECIMAL(22,5),
+
+		InvoiceAmt MONEY,
+
+		CurrencyCd CHAR(3),
+
+		CurAmt MONEY,
+
+		FromMarket VARCHAR(100),
+
+		CostAmt MONEY,
+
+		CurrCostAmt MONEY,
+
+		PurchWtMT DECIMAL(22,5)
+
+		
+
+	) 
+
+
+
+
+
+	CREATE TABLE #Temp(
+
+		BuySellNo CHAr(12),
+
+		LotNo CHAR(25)
+
+	)
+
+
+
+
+
+	CREATE TABLE #Temp2(
+
+		BuySellNo CHAr(12),
+
+		LotNo CHAR(25),
+
+		OrigBsNo CHAR(12)
+
+	)
+
+
+
+		CREATE TABLE #Temp3(
+
+		BuySellNo CHAr(12),
+
+		LotNo CHAR(25)
+
+	)
+
+
+
+
+
+
+
+	INSERT #Report
+
+	SELECT 		
+
+		B.BuySellNo,
+
+		B.InvoiceDt,
+
+		ToCtry.CountryID As ToMarket,
+
+		1,
+
+		Grade.[Description] AS [ProductName],
+
+		Grade.ProductCode,
+
+		--(Select top 1 Grade.Description FROM WksDetail INNER JOIN  Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID WHERE WksDetail.BuySellno = B.BuysellNo  ) AS ProductName, 
+
+		--(Select top 1 Grade.ProductCode FROM WksDetail INNER JOIN  Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID WHERE WksDetail.BuySellno = B.BuysellNo  ) ,
+
+		dbo.convert_to_uom(TotalWeightLbs,'L','M'), 
+
+		FxInvoiceAmt AS TotAmount, 			
+
+		B.CurrencyCd AS Currency,
+
+		SalesAmt/@Rate,
+
+		FromCtry.CountryID As FromMarket,
+
+		B.FxSupplierCost,
+
+		B.PSupplierCost/@Rate,
+
+		ISNULL(dbo.convert_to_uom(PWeight,PWeightUOM,'M'),0) As PurchWtMT 
+
+	FROM BuySell B WITH (NOLOCK) 
+
+		INNER JOIN Counterparty C WITH (NOLOCK) ON C.CpID = B.CustID 
+
+		INNER JOIN [Address] A WITH (NOLOCK) ON A.Type = B.ShipToID AND A.CpID = B.CustID
+
+		INNER JOIN Country ToCtry WITH (NOLOCK) ON ToCtry.CountryID = A.Country
+
+		INNER JOIN Counterparty C2 WITH (NOLOCK) ON C2.CpID = B.CustID 
+
+		INNER JOIN [Address] A2 WITH (NOLOCK) ON A2.Type = B.ShipFromID AND A2.CpID = B.VendorID
+
+		INNER JOIN Country FromCtry WITH (NOLOCK) ON FromCtry.CountryID = A2.Country
+
+	
+
+		LEFT JOIN WksDetail WITH(NOLOCK) ON WksDetail.BuySellNo = B.BuySellNo
+
+		INNER JOIN  Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+	WHERE 
+
+		(@FromDt = '' OR B.InvoiceDt >= @FromDt) AND (@ToDt = '' OR B.InvoiceDt <= @ToDt)
+
+		AND (B.CustID <> '(INV)' AND B.CustID <> '(OTHER)' AND B.CustID <> '(CONVERTING)') AND (B.VendorID <> '(INV)' AND B.VendorID <> '(PLANT)')
+
+		AND (@HomeCountry = '' OR @HomeCountry = FromCtry.CountryID)
+
+		AND (@COID = '' OR B.COID = @COID)
+
+		AND ISNULL(ToCtry.isEU,0) = 1 AND ISNULL(FromCtry.isEU,0) = 1
+
+		AND (@DestCountry = '' OR @DestCountry = ToCtry.CountryID)
+
+		--AND (@Currency = '' OR @Currency = B.CurrencyCd)
+
+	
+
+
+
+	INSERT #Temp
+
+	SELECT 
+
+		Buysell.BuysellNo, 
+
+		LotNo	
+
+	FROM WksInventory  
+
+		Inner JOIN  Buysell ON  Buysell.BuysellNo = WksInventory.BuysellNo
+
+		AND WksInventory.LotNo = ( SELECT TOP 1
+
+                 LotNo
+
+            FROM  WksInventory
+
+           WHERE Buysell.BuySellNo =  WksInventory.BuySellNo
+
+       )
+
+	WHERE LotNo is not Null And Buysell.BuysellNo is Not Null
+
+		AND Buysell.VendorID = '(INV)'
+
+		AND (@COID = '' OR Buysell.COID = @COID)
+
+		AND (@FromDt = '' OR Buysell.InvoiceDt >= @FromDt) AND (@ToDt = '' OR Buysell.InvoiceDt <= @ToDt)
+
+
+
+
+
+	INSERT #Temp2		
+
+	  select Inventory.BuySellNo, Inventory.LotNo, #Temp.BuySellNo 
+
+	  from #Temp inner join inventory on #Temp.LotNo = Inventory.LotNo
+
+	  Where Inventory.BuysellNo is not Null and Inventory.BuySellNo <> ''
+
+	
+
+
+
+	INSERT #Report2
+
+	SELECT 
+
+		OBS.BuySellNo,
+
+		OBS.InvoiceDt,
+
+		ToCtry.CountryID As ToMarket,
+
+		1,
+
+		Grade.[Description] AS [ProductName],
+
+		Grade.ProductCode,
+
+		--(Select top 1 Grade.Description FROM WksDetail INNER JOIN  Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID WHERE WksDetail.BuySellno = B.BuysellNo  ) AS ProductName, 
+
+		--(Select top 1 Grade.ProductCode FROM WksDetail INNER JOIN  Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID WHERE WksDetail.BuySellno = B.BuysellNo  ) ,
+
+		dbo.convert_to_uom(OBS.TotalWeightLbs,'L','M'), 
+
+		OBS.FxInvoiceAmt AS TotAmount, 		
+
+		OBS.CurrencyCd AS Currency,
+
+		OBS.SalesAmt/@Rate,
+
+		FromCtry.CountryID As FromMarket,
+
+		OBS.FxSupplierCost,
+
+		OBS.PSupplierCost/@Rate,
+
+		ISNULL(dbo.convert_to_uom(PWeight,PWeightUOM,'M'),0) As PurchWtMT  
+
+	FROM 
+
+		#Temp2 Inner Join  Buysell B  WITH (NOLOCK) ON #temp2.BuysellNo = B.BuysellNo
+
+		INNER JOIN Buysell OBS WITH(NOLOCK) ON #temp2.OrigBsNo = OBS.BuySellNo
+
+
+
+		INNER JOIN Counterparty C WITH (NOLOCK) ON C.CpID = B.CustID 
+
+		INNER JOIN [Address] A WITH (NOLOCK) ON A.Type = OBS.ShipToID AND A.CpID = OBS.CustID
+
+		INNER JOIN Country ToCtry WITH (NOLOCK) ON ToCtry.CountryID = A.Country
+
+
+
+		INNER JOIN Counterparty C2 WITH (NOLOCK) ON C2.CpID = B.CustID 
+
+		INNER JOIN [Address] A2 WITH (NOLOCK) ON A2.Type = B.ShipFromID AND A2.CpID = B.VendorID
+
+		INNER JOIN Country FromCtry WITH (NOLOCK) ON FromCtry.CountryID = A2.Country
+
+
+
+		LEFT JOIN WksDetail WITH(NOLOCK) ON WksDetail.BuySellNo = B.BuySellNo
+
+		INNER JOIN  Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+	WHERE  
+
+	    ISNULL(ToCtry.isEU,0) = 1 AND ISNULL(FromCtry.isEU,0) = 1
+
+		AND (@HomeCountry = '' OR @HomeCountry = FromCtry.CountryID)
+
+		AND (@DestCountry = '' OR @DestCountry = ToCtry.CountryID)
+
+		--AND (@Currency = '' OR @Currency = OBS.CurrencyCd)
+
+
+
+
+
+
+
+
+
+	INSERT #Temp3		
+
+	  select #Temp.BuySellNo, Inventory.LotNo 
+
+	  from #Temp inner join inventory on #Temp.LotNo = Inventory.LotNo 
+
+	  Inner join Address on Inventory.VendorID = Address.CPID
+
+	  Inner Join Country  WITH (NOLOCK) ON Country.CountryID = Address.Country
+
+	  Where (Inventory.BuysellNo is Null Or Inventory.BuySellNo = '') And
+
+	  InvoiceAddr = 'Y'
+
+	  AND (@HomeCountry = '' OR @HomeCountry = Country.Name)
+
+
+
+
+
+
+
+	Insert #Report3
+
+	  SELECT 		
+
+		B.BuySellNo,
+
+		B.InvoiceDt,
+
+		ToCtry.CountryID As ToMarket,
+
+		1,
+
+		Grade.[Description] AS [ProductName],
+
+		Grade.ProductCode,
+
+		--(Select top 1 Grade.Description FROM WksDetail INNER JOIN  Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID WHERE WksDetail.BuySellno = B.BuysellNo  ) AS ProductName, 
+
+		--(Select top 1 Grade.ProductCode FROM WksDetail INNER JOIN  Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID WHERE WksDetail.BuySellno = B.BuysellNo  ) ,
+
+		dbo.convert_to_uom(TotalWeightLbs,'L','M'), 
+
+		FxInvoiceAmt AS TotAmount, 			
+
+		B.CurrencyCd AS Currency,
+
+		SalesAmt/@Rate,
+
+		FromCtry.CountryID As FromMarket,
+
+		B.FxSupplierCost,
+
+		B.PSupplierCost/@Rate,
+
+		ISNULL(dbo.convert_to_uom(PWeight,PWeightUOM,'M'),0) As PurchWtMT  
+
+	FROM BuySell B WITH (NOLOCK) 
+
+		INNER JOIN Counterparty C WITH (NOLOCK) ON C.CpID = B.CustID 
+
+		INNER JOIN [Address] A WITH (NOLOCK) ON A.Type = B.ShipToID AND A.CpID = B.CustID
+
+		INNER JOIN Country ToCtry WITH (NOLOCK) ON ToCtry.CountryID = A.Country
+
+		INNER JOIN Counterparty C2 WITH (NOLOCK) ON C2.CpID = B.CustID 
+
+		INNER JOIN #Temp3 WITH (NOLOCK) ON B.BuysellNo = #Temp3.BuysellNo
+
+		INNER JOIN [Address] A2 WITH (NOLOCK) ON A2.Type = B.ShipFromID AND A2.CpID = B.VendorID
+
+		INNER JOIN Country FromCtry WITH (NOLOCK) ON FromCtry.CountryID = A2.Country
+
+		LEFT JOIN WksDetail WITH(NOLOCK) ON WksDetail.BuySellNo = B.BuySellNo
+
+		INNER JOIN  Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+	WHERE 
+
+		(@FromDt = '' OR B.InvoiceDt >= @FromDt) AND (@ToDt = '' OR B.InvoiceDt <= @ToDt)
+
+		AND (@COID = '' OR B.COID = @COID)
+
+		And ISNULL(ToCtry.isEU,0) = 1 AND ISNULL(FromCtry.isEU,0) = 1
+
+		AND (@HomeCountry = '' OR @HomeCountry = FromCtry.CountryID)
+
+		AND (@DestCountry = '' OR @DestCountry = ToCtry.CountryID)
+
+		--AND (@Currency = '' OR @Currency = B.CurrencyCd)
+
+
+
+
+
+	select * Into #Final From #Report
+
+	UNION ALL
+
+	select * from #Report2
+
+	UNION ALL 
+
+	Select * from #Report3
+
+	
+
+	
+
+	--FINAL REPORT
+
+	Select 
+
+	InvoiceNo as [Invoice No],
+
+		#Final.InvoiceDt as  [Invoice Dt],
+
+		ToMarket as  [Dest. Country],
+
+		TransType as  [Trans Type],
+
+		ProductName as  [Product],
+
+		StatCode as  [Statistical],
+
+		[dbo].[FormatQty](isnull(QuantityMT,0),'M') as  [Weight MT],
+
+		case when @Type = 'SALES' then isnull(InvoiceAmt,0) else  isnull(CostAmt,0) end as  [{C}Invoice Value],
+
+		#Final.CurrencyCd  as  [Currency],
+
+			case when @Type = 'SALES' then  isnull(CurAmt,0) else  isnull(CurrCostAmt,0) end as [{C}USD Amount],
+
+		FromMarket [Home Country],
+
+		CustID [-hidden-CustID],
+
+		VendorID [-hidden-VendorID]
+
+		--CostAmt as  [-hidden-Amount],
+
+        --CurrCostAmt  as [-hidden-CurrCostAmt]
+
+	   -- PurchWtMT as [-hidden-PurchWtMTas]
+
+	 from #Final
+
+	 INNER JOIN BuySell ON #Final.InvoiceNo = BuySell.BuySellNo
+
+
+

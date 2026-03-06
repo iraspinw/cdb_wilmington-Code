@@ -1,0 +1,91 @@
+	CREATE PROC [dbo].[cw_GetBulkQuantityValue] @Warehouse varchar(50), @GradeID varchar(15), @InvClass varchar(10), @Location varchar(25), @Supplier varchar(12), @AvailQuantity decimal(22,5) output, @AvailValue money output, @AsOfDate datetime = '1/1/1900'
+
+
+	as
+
+	SET NOCOUNT ON
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+	-- 5/12/2022 BF: CREATED
+
+	declare @BegDate datetime
+
+	declare @BegQuantity decimal(22,5)
+
+	declare @BegValue money
+
+	declare @CurrentQuantity decimal(22,5)
+
+	declare @CurrentValue money
+
+	declare @OpenMonth datetime
+
+
+
+
+
+	select @BegDate = '1/1/1900', @BegQuantity = 0, @BegValue = 0
+
+	select @OpenMonth = dateadd(d, -1, dateadd(M, 1, openmonth))  from SystemInfo
+
+
+
+	if @AsOfDate = '1/1/1900' 
+
+		set @AsOfDate = @OpenMonth
+
+
+
+	set @AsOfDate = getdate()
+
+
+
+	select @BegDate = isnull(valuedt, '1/1/1900'), @BegQuantity = isnull(quantity, 0), @BegValue = isnull(ValueAmt ,0)
+
+	from InventoryValue
+
+	where	WarehouseNm = @Warehouse 
+
+	and		GradeID = @GradeID
+
+	and		InvClass = @InvClass
+
+	and		[Location] = @Location
+
+	and		Supplier = @Supplier
+
+
+
+	
+
+
+
+	select @CurrentQuantity = sum(isnull(quantity,0)), @CurrentValue = sum(isnull(Amount,0))
+
+	from InventoryLedger
+
+	where	WarehouseNm = @Warehouse 
+
+	and		GradeID = @GradeID
+
+	and		InvClass = @InvClass
+
+	and		[Location] = @Location
+
+	and		Supplier = @Supplier
+
+	and (PostDate > @BegDate and PostDate <= @AsOfDate)
+
+
+
+
+
+	select @AvailQuantity = isnull(@BegQuantity,0) + isnull(@CurrentQuantity,0), @AvailValue= isnull(@BegValue,0) + isnull(@CurrentValue,0)
+
+
+
+	
+
+
+

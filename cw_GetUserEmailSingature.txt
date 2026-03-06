@@ -1,0 +1,24 @@
+CREATE PROC [dbo].[cw_GetUserEmailSingature] @UserID varchar(50) AS
+
+--08/14/2014 Alex: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	DECLARE @cieTradeUserID varchar(40)
+
+    SELECT @cieTradeUserID = cieTradeUserID FROM [CIE-SQLPROD01].[cieXChange].[dbo].[User] WHERE UserID = CONVERT(varchar(50),@UserID)
+
+
+
+	Select isnull(EmailSignature,'') as EmailSignature,UserNm from UserDef where UserID =  @cieTradeUserID
+
+
+
+
+

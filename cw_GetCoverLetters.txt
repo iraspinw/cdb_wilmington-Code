@@ -1,0 +1,32 @@
+Create PROC [dbo].[cw_GetCoverLetters]
+
+
+
+AS
+
+
+
+--12/11/2018 MEC: Created for Cover Letter Templates
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		Title As [Cover Letter Title],
+
+		Contents As [Cover Letter Contents]
+
+		
+
+	FROM CoverLetters
+
+	ORDER BY Title
+
+
+

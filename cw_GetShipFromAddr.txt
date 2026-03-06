@@ -1,0 +1,63 @@
+CREATE PROCEDURE [dbo].[cw_GetShipFromAddr] 
+
+	@CpID varchar(12),
+
+	@AddrType varchar(45)
+
+
+
+AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+If @CpID = '(INV)' Or @CpID = '(PLANT)' Begin
+
+	SELECT 
+
+		AddrWhse.Addr1, AddrWhse.Addr2, AddrWhse.Addr3, AddrWhse.City, AddrWhse.Region, AddrWhse.PostalCd, 
+
+		AddrWhse.Country, AddrWhse.Telephone, AddrWhse.Contact, AddrWhse.LoadingHours, AddrWhse.SpcInstruc, 
+
+		AddrLink.WarehouseID, AddrWhse.Fax, ISNULL(Country.UseAltAddrFormat,0),AddrWhse.Email 
+
+	FROM 
+
+		Address AddrWhse WITH (NOLOCK) INNER JOIN ADDRESS AddrLink WITH (NOLOCK) ON AddrLink.WarehouseID = AddrWhse.CPID 
+
+		LEFT JOIN Country WITH (NOLOCK) ON Country.CountryID = AddrWhse.Country 
+
+	WHERE 
+
+		AddrLink.CpID = '(INV)' 
+
+		AND AddrLink.Type = @AddrType
+
+		AND AddrWhse.InvoiceAddr = 'Y'
+
+End
+
+Else Begin
+
+	SELECT 
+
+		Addr1, Addr2, Addr3, City, Region, PostalCd, Country, Telephone, Contact, 
+
+		LoadingHours, SpcInstruc, WarehouseID,Fax, ISNULL(UseAltAddrFormat,0),Email 
+
+	From 
+
+		Address WITH (NOLOCK) 
+
+		LEFT JOIN Country WITH (NOLOCK) ON Country.CountryID = Address.Country 
+
+	Where CpID = @CpID
+
+	AND Type = @AddrType
+
+End

@@ -1,0 +1,22 @@
+
+
+CREATE   PROCEDURE [dbo].[CW_GetDocFormIDbyName] @FormID char(10) AS
+
+--06/21/2016 RS: Created from xDoc_GetFormIDbyName
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT DocFormID FROM xDocForm 
+
+		WHERE FormID= @FormID AND ISNULL(Inactive,0) = 0
+
+		AND ISNULL(IsWebDoc,0) = 1
+
+	
+

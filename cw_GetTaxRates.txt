@@ -1,0 +1,24 @@
+--INSERT INTO TaxRates(TaxName, TaxAuthority, Rate) VALUES('CTX', '', '8.5'), ('EURO-VAT', 'EU', '15.5'),('GST', 'Canadian Gov', '5'), ('QST', 'Quebec', '3.5')
+
+--ALTER TABLE Taxrates ALTER COLUMN Rate Decimal(4,1)
+
+--DELETE FROM TaxRates
+
+--SELECT * FROM TaxRates
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetTaxRates] AS
+
+--11/02/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT SalesTaxID [-Hidden- ID], TaxDescription [Tax Name], TaxRate As [Tax Rate], TaxRate As [Rate (%)]
+
+		FROM SalesTax s ORDER BY TaxDescription
+

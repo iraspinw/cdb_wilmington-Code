@@ -1,0 +1,58 @@
+
+
+
+
+
+
+CREATE PROC [dbo].[cw_GetSalesReps]
+
+
+
+	@UserName varchar(100),
+
+	@Status char(1)
+
+
+
+AS
+
+
+
+--10/01/2015 MEC: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		ReferrerNo [-Hidden- ReferrerNo], 
+
+		Name,
+
+		Case When Active= 1 Then 'Active' Else 'Inactive' End [Status], 
+
+		DefaultRate [Default Commission Rate], 
+
+		Cast(FixedCharge as decimal(6,2)) [Default Charge]
+
+		--,(Select UserNm From UserDef Where UserDef.DefSalesRepID = ReferrerNo) [Linked User Account]
+
+	FROM Referrer With (NoLock)
+
+	Where 
+
+		(@UserName = '' OR Name like '%' + @UserName + '%')
+
+		And (@Status = '' OR (Active = @Status))
+
+	ORDER BY Name
+
+
+
+
+

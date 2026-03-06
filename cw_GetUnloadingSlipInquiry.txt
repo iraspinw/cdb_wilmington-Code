@@ -1,0 +1,232 @@
+CREATE PROC [dbo].[cw_GetUnloadingSlipInquiry] 
+
+	@BuySellNo char(12), 
+
+	@FromDt datetime, 
+
+	@ToDt Datetime,
+
+	@WhseStatus varchar(300) = '', 
+
+	@WarehouseID CHAR(45) = '',
+
+	@EngOrSp char(5) = 'en-US'
+
+AS
+
+
+
+--03/31/2017 MEC: Created
+
+-- cw_GetUnloadingSlipInquiry '', '', '', ''
+
+
+
+/*
+
+Statuses:
+
+	SCHEDULED
+
+	OPEN
+
+	CLOSED
+
+*/
+
+
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	CREATE TABLE #UnloadingSlips(
+
+		UnloadingSlipNo CHAR(12),
+
+		ShippingDt DATE,
+
+		Supplier VARCHAR(100),
+
+		DeliveryFrom CHAR(200),
+
+		OrderNo CHAR(15),
+
+		FreightCarrier VARCHAR(100),
+
+		EquipmentNo VARCHAR(25),
+
+		ShipToWarehouse VARCHAR(100),
+
+		SalesRep VARCHAR(50),
+
+		WarehouseNm char(65),
+
+		WarehouseStatus VARCHAR(10)		
+
+	)
+
+
+
+
+
+	INSERT #UnloadingSlips	
+
+	SELECT		
+
+		B.BuySellNo, 
+
+		ShippingDt,
+
+		UPPER(C.CompanyNm),
+
+		UPPER(A.City)+', '+UPPER(A.Region)+'  ['+UPPER(RTRIM(B.ShipFromID))+']',
+
+		B.RefPONo,
+
+		ISNULL( 
+
+			CASE WHEN B.RefFreightCarrier = '(OTHER)' THEN 
+
+			(SELECT TOP 1 InvoiceDesc From WksDelivery Where BuySellNo = B.BuySellNo And VendorID = '(OTHER)') 
+
+			ELSE 
+
+			(SELECT CompanyNm FROM Counterparty WHERE CPID = B.RefFreightCarrier)
+
+			END,
+
+			''),
+
+		B.RefEquipNo As [Equipment Number],
+
+		B.ShipToID,
+
+		UPPER(R.[Name]),
+
+		Warehouse.Type,
+
+		B.WarehouseStatus
+
+	--	B.RefPONo
+
+	
+
+	FROM BuySell B	
+
+	INNER JOIN Counterparty C ON B.VendorID = C.CpID  
+
+	INNER JOIN [Address] A ON B.ShipFromID = A.[Type] AND B.VendorID = A.CPID
+
+	INNER JOIN [Address] Warehouse ON B.ShipToID = Warehouse.[Type] AND Warehouse.CpID = '(INV)'
+
+	LEFT JOIN Referrer R ON B.ReferrerNo1 = R.ReferrerNo
+
+	
+
+	WHERE 
+
+		( (@WhseStatus = '' AND B.WarehouseStatus IN ('SCHEDULED','IN PROCESS','COMPLETED') ) OR  (@WhseStatus = B.WarehouseStatus))
+
+		AND ( (ISNULL(@FromDt,'') = '' OR B.ShippingDt >= @FromDt) AND (ISNULL(@ToDt,'') = '' OR B.ShippingDt <= @ToDt) )
+
+		AND (@WarehouseID= '' OR @WarehouseID = B.ShipToID)
+
+		AND (B.[Status] <> 'X' AND B.[Status] <> 'I')
+
+		AND (Upper(CustID) = '(INV)')
+
+		AND IsNull(B.WarehouseStatus, '') <> ''
+
+		--AND (@BuySellNo = '' OR (B.BuySellNo LIKE '%'+@BuySellNo+'%' OR B.BuySellNo LIKE '%'+@BuySellNo+'%'))
+
+	
+
+--LEFT JOIN Inventory WITH(NOLOCK) ON WksPackingSlip.LotNo = Inventory.LotNo
+
+
+
+
+
+
+
+
+
+
+
+
+
+	IF(@EngOrSp = 'en-US')
+
+		BEGIN
+
+			SELECT DISTINCT
+
+				UnloadingSlipNo As [Load#],
+
+				ShippingDt As [Receive-Date],
+
+				Supplier,
+
+				DeliveryFrom As [Delivery-From],
+
+				FreightCarrier As Carrier,
+
+				EquipmentNo As [Equipment No],
+
+				ShipToWarehouse As [Ship To Whse],
+
+				SalesRep As [Sales Rep],
+
+				WarehouseNm As [Warehouse],
+
+				WarehouseStatus As [Warehouse-Status],
+
+				OrderNo AS [Order No]
+
+			FROM #UnloadingSlips Order By ShippingDt
+
+		END
+
+		IF(@EngOrSp = 'es')
+
+		BEGIN
+
+			SELECT DISTINCT
+
+				UnloadingSlipNo As [Carga#],
+
+				ShippingDt As [Fecha de Recepción],
+
+				Supplier As [Proveedor],
+
+				DeliveryFrom As [Envio Desde],
+
+				FreightCarrier As [Transportista],
+
+				EquipmentNo As [Equipment No],
+
+				ShipToWarehouse As [Entrega A],
+
+				SalesRep As [Representante],
+
+				WarehouseNm As [Bodega],
+
+				WarehouseStatus As [Estatus de la Bodega],
+
+				OrderNo AS [Núm de Orden]
+
+			FROM #UnloadingSlips Order By ShippingDt
+
+		END
+
+		--Descripción del Trabajo
+
+
+

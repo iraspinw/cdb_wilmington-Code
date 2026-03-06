@@ -1,0 +1,66 @@
+
+
+
+
+Create proc [dbo].[cw_GetGroupInvHeader] @StatementNo int as
+
+
+
+-- 05/30/2014 MEC: Copied for cieTrade.net Group Invoice Document Header
+
+
+
+	SELECT CompanyNm, CompanyAddr1, CompanyAddr2, CompanyCity, CompanyRegion, CompanyPostalCd,
+
+	CompanyPhone, CompanyFax, CompanyEmail, LogoImage,
+
+	InvoiceDt, PrintCompanyNm, LogoSize, LogoWidth, LogoHeight,
+
+	ISNULL(Country.Name,'') as Country,AltLogoImage
+
+	INTO #DocHeader
+
+	FROM CompanyInfo WITH (NOLOCK) 
+
+	INNER JOIN GroupInvoice WITH (NOLOCK) ON GroupInvoice.COID = CompanyInfo.COID
+
+	LEFT JOIN Country WITH (NOLOCK) ON CompanyInfo.CompanyCtry = Country.CountryID
+
+	WHERE GroupInvoice.StatementNo = @StatementNo
+
+
+
+
+
+	UPDATE #DocHeader SET AltLogoImage = (SELECT AltLogoImage FROM CompanyInfo WHERE COID = '00')
+
+	
+
+	UPDATE #DocHeader SET LogoImage = NULL WHERE LogoSize=0
+
+
+
+
+
+	IF ISNULL((select optionValue from options where optionname = 'OmitAddrPrint'),0)=1
+
+		UPDATE #DocHeader 
+
+		SET CompanyNm='', CompanyAddr1='', CompanyAddr2='', CompanyCity='', CompanyRegion='',
+
+			CompanyPostalCd='', CompanyPhone='', CompanyFax='', CompanyEmail='',Country=''
+
+
+
+
+
+	select * from #DocHeader
+
+
+
+
+
+--cw_GetGroupInvHeader '10101'
+
+
+

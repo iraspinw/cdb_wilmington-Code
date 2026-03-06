@@ -1,0 +1,64 @@
+CREATE PROC [dbo].[cw_GetShippingContainerImages] @BuySellNo char(12) as
+
+Set NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+--04/27/2016 MEC: Created
+
+
+
+	-- [cw_GetShippingContainerImages] '501007'
+
+
+
+	    CREATE TABLE #BuySellNos( 
+
+		BuySellNo	    CHAR(12)
+
+		);
+
+
+
+		INSERT #BuySellNos
+
+	    select container.RcvBuySellNo
+
+		from container 	
+
+		inner join ContainerContents on ContainerContents.ContainerID = container.ContainerID
+
+		left join WksInventory on WksInventory.BuySellNo = container.SaleBuySellNo and WksInventory.LotNo = ContainerContents.LotNo
+
+		left join buysell p on p.BuySellNo = container.RcvBuySellNo
+
+		left join counterparty on counterparty.cpid = p.VendorID
+
+		where SaleBuySellNo = @BuySellNo
+
+		group by container.containerID, containerNo, containertype, sealno, container.uom, dbo.formatweightUOM([NetWeight], container.uom), 
+
+		container.bookingno, companynm,shipdate, container.orderlinkID, container.units, container.RcvBuySellNo, p.RefPONo
+
+
+
+
+
+		INSERT #BuySellNos
+
+		select @BuySellNo
+
+
+
+
+
+		SELECT DocID
+
+		FROM BuySell WITH(NOLOCK)
+
+		INNER JOIN DocumentImage ON DocumentImage.RefID = BuySell.BuySellNo
+
+		WHERE BuySell.BuySellNo in (select * from  #BuySellNos) And DocumentImage.IsContainer = 1
+

@@ -1,0 +1,450 @@
+
+
+--09/22/23 I.R.
+
+-- [dbo].[cw_GetReceivables2] '', '', '', '', 0, '', ''
+
+
+
+CREATE   Procedure [dbo].[cw_GetReceivables2] 
+
+	@ByCustID char(12), 
+
+	@AgingDtFrom datetime, 
+
+	@AgingDtTo datetime, 
+
+	@COID char(2), 
+
+	@ARBatchNo int = 0, 
+
+	@InvoiceNo varchar(15)='' , 
+
+	@ShipToID varchar(45)='' 
+
+
+
+as
+
+
+
+--,@ShipToID char(15)='' as
+
+--11/08/2017 BF: Created for .NET copied from q_GetReceivables
+
+--04/17/2018 DSH Exclude AR Booked Activity.
+
+--07/27/2020 Alex: added  RelNo
+
+--03/30/2023 Nick: Added Hidden-EditStamp
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+BEGIN
+
+        IF @AgingDtFrom = ''
+
+		   SET @AgingDtFrom = '07/01/2023'
+
+		
+
+		IF @AgingDtTo = ''
+
+		   SET @AgingDtTo = GETDATE()
+
+
+
+        SELECT 
+
+		   	CompanyInfo.CompanyDesc Branch,
+
+			Counterparty.CompanyNm Customer,
+
+			buysell.ShipToID Location,
+
+			Counterparty.CpID [Hidden-CPID],
+
+			convert(varchar(50),buysellno) Wks#, 
+
+			CONVERT(varchar(25), BuySell.RelNo) as [Reference],
+
+			InvoiceDt [Posting Date], 
+
+			ShippingDt [Invoice Date], 
+
+			(isnull(SalesAmt,0)+isnull(SFreightChg,0)+isnull(SAdjustment,0)+isnull(SalesTaxAmt,0)) - isnull(SPayments,0) as [Hidden-HCAmount], 
+
+			(isnull(FxInvoiceAmt,0)+isnull(FxSAdjustment,0)+isnull(FXSalesTaxAmt,0)) as [Total Sale],
+
+			Spayments, 
+
+			SBalanceDue, 
+
+			CurrencyCd as Currency, 
+
+			(isnull(FxInvoiceAmt,0)+isnull(FxSAdjustment,0)+isnull(FXSalesTaxAmt,0)) - isnull(FxPayments, 0) as [Hidden-FxAmount], 
+
+			FxPayments, 
+
+			FxBalanceDue as [Balance], 
+
+			FxSAdjustment as [Adjustments], 
+
+			Buysell.COID [Hidden-COID], 
+
+			BillingTerm.DaysToPay,  
+
+			SalesTaxAmt, 
+
+			FXSalesTaxAmt, 
+
+			convert( int,BuySell.lastedit) AS LastEdit, 
+
+			--CompanyInfo.CompanyDesc,
+
+			SalesTaxAdjAmt,
+
+			FXSalesTaxAdjAmt,
+
+			MillRcvNo,	
+
+			DATEDIFF(d,BuySell.DueDt, GETDATE()) PDue,
+
+			BuySell.StatementNo,
+
+			CONVERT(float,0) as FxDiscAmt,
+
+			BillingTerm.DiscDays,BillingTerm.DiscType,BillingTerm.DiscRate,
+
+			FxInvoiceAmt,
+
+			(SELECT Sum(isnull(PrepaidFreight,0)) 
+
+			FROM wksdelivery WITH (NOLOCK) where wksdelivery.buysellno = Buysell.BuySellNo) as DiscFreight,
+
+			BuySell.ShipToID,
+
+			Supplier.CompanyNm as Supplier,	--,	FactorName
+
+			'STANDARD' as WksType,
+
+			buysellno as [Hidden-TableID],
+
+			Relno as [Release No],
+
+			FxRate,
+
+			SPayments as [Payments],
+
+			TotalWeightLbs/2000 TotalWeightTons,
+
+			CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END as [Hidden-WksType],
+
+			0 as [Interest],
+
+			0 as [Discount],
+
+			0 as [Fees],
+
+			--Companyinfo.CompanyNm Department,
+
+			0 as [Hidden-Posted],
+
+			0 as [Hidden-isPartial],
+
+			0 as [Hidden-isChecked],
+
+			case when isnull(duedt,'')= '' then '' else CAST(DAY(DueDt) AS VARCHAR(2)) + ' ' + DATENAME(MM, DueDt) + ' ' + CAST(YEAR(DueDt) AS VARCHAR(4)) end as DueDt,
+
+			0 as [Hidden-BookingID],
+
+			convert(varchar(50), buysell.BookingNo) as [Hidden-BookingNo],
+
+			buysell.buysellno as [Hidden-Buysellno],
+
+			BuySell.RelNo,
+
+			convert(int, buysell.lastedit) as [Hidden-EditStamp]
+
+
+
+			
+
+
+
+		INTO #REPORT
+
+
+
+        FROM BuySell WITH(NOLOCK)  
+
+        INNER JOIN CounterParty ON BuySell.CustID = CounterParty.CpID
+
+        INNER JOIN CounterParty Supplier ON BuySell.VendorID = Supplier.CpID
+
+        LEFT JOIN BillingTerm WITH(NOLOCK) ON BillingTerm.Term = BuySell.Terms
+
+        LEFT JOIN CompanyInfo WITH(NOLOCK) ON BuySell.COID = CompanyInfo.COID
+
+        --LEFT JOIN Factor WITH(NOLOCK) ON BuySell.FactorID = Factor.FactorID
+
+        WHERE 
+
+			((@InvoiceNo <> '' and buysell.[status]='I' and (buysell.buysellno = @InvoiceNo OR buysell.StatementNo = @InvoiceNo)) OR
+
+			((@ByCustID = '' OR (@ByCustID <> '' AND BuySell.CustID = @ByCustID And (@ShipToID = '' OR ShipToID = @ShipToID) ))
+
+			--((@ByCustID = '' OR (@ByCustID <> '' AND BuySell.CustID = @ByCustID ) and (@ByCustID = '' OR (@ShipToID = '' AND BuySell.ShipToID = @ShipToID )))
+
+			AND (CustID <> '(INV)' AND CustID <> ''  AND CustID <> '(PLANT)')
+
+			AND Round(FxBalanceDue,2) <> 0 
+
+			AND InvoiceDt >= @AgingDtFrom AND InvoiceDt <= @AgingDtTo  
+
+			AND BuySell.Status = 'I'			
+
+			AND ISNULL(BuySell.IsAgency,0) <> 1
+
+			AND ISNULL(IsInvoiceBooked,0) <> 1
+
+			and (@COID = '' OR buysell.coid = @COID)))
+
+			
+
+			 
+
+		INSERT #REPORT(Branch,Customer,Location,[Hidden-CPID],Wks#,Reference,[Posting Date],[Invoice Date],[Hidden-HCAmount],[Total Sale],Spayments,SBalanceDue
+
+		               ,Currency,[Hidden-FxAmount],FxPayments,[Balance],[Adjustments],[Hidden-COID],DaysToPay,SalesTaxAmt,FXSalesTaxAmt,LastEdit
+
+					   ,SalesTaxAdjAmt,FXSalesTaxAdjAmt,MillRcvNo,PDue,StatementNo,FxDiscAmt,DiscDays,DiscType,DiscRate,FxInvoiceAmt,DiscFreight
+
+					   ,ShipToID,Supplier,WksType,[Hidden-TableID],[Release No], FxRate,[Payments], TotalWeightTons,
+
+		               [Hidden-WksType],[Interest],[Discount],[Fees], /*Department,*/ [Hidden-Posted]
+
+					   ,[Hidden-isPartial], [Hidden-isChecked], DueDt, [Hidden-BookingID], [Hidden-BookingNo], [Hidden-Buysellno],RelNo
+
+					   ,[Hidden-EditStamp])
+
+		SELECT 
+
+		    CompanyInfo.CompanyDesc,
+
+			Counterparty.CompanyNm Customer,
+
+			buysell.ShipToID Location,
+
+			Counterparty.CpID [Hidden-CPID],
+
+			BuySellNo Wks#, 
+
+			CONVERT(varchar(25), BuySell.RelNo) as [Reference],
+
+			InvoiceDt [Posting Date], 
+
+			ShippingDt [Invoice Date], 
+
+			isnull(SalesAmt,0)+isnull(SFreightChg,0)+isnull(SAdjustment,0)+isnull(SalesTaxAmt,0) as [Hidden-HCAmount], 
+
+			(isnull(SalesAmt,0)+isnull(SFreightChg,0)+isnull(SAdjustment,0)+isnull(SalesTaxAmt,0)) as [Total Sale],
+
+			Spayments, 
+
+			SBalanceDue, 
+
+			CurrencyCd as Currency, 
+
+			isnull(FxInvoiceAmt,0)+isnull(FxSAdjustment,0)+isnull(FXSalesTaxAmt,0) as [Hidden-FxAmount], 
+
+			FxPayments, 
+
+			FxBalanceDue as [Balance], 
+
+			FxSAdjustment as [Adjustments], 
+
+			Buysell.COID Department, 
+
+			BillingTerm.DaysToPay,  
+
+			SalesTaxAmt, 
+
+			FXSalesTaxAmt, 
+
+			convert( int,BuySell.lastedit) AS LastEdit, 
+
+			--CompanyInfo.CompanyDesc,
+
+			SalesTaxAdjAmt,
+
+			FXSalesTaxAdjAmt,
+
+			MillRcvNo,	
+
+			DATEDIFF(d,BuySell.DueDt, GETDATE()) PDue,
+
+			BuySell.StatementNo,
+
+			CONVERT(float,0) as FxDiscAmt,
+
+			BillingTerm.DiscDays,BillingTerm.DiscType,BillingTerm.DiscRate,
+
+			FxInvoiceAmt,
+
+			(SELECT Sum(isnull(PrepaidFreight,0)) from wksdelivery WITH (NOLOCK) where wksdelivery.buysellno = Buysell.BuySellNo) as DiscFreight,
+
+			BuySell.ShipToID,
+
+			Supplier.CompanyNm as Supplier,	--,	FactorName
+
+			'STANDARD' as WksType,
+
+			buysellno as [Hidden-TableID],
+
+			Relno as [Release No],
+
+			FxRate,
+
+			SPayments as [Payments],
+
+			TotalWeightLbs/2000 TotalWeightTons,
+
+			CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END as [Hidden-WksType],
+
+			0 as [Interest],
+
+			0 as [Discount],
+
+			0 as [Fees],
+
+			--Companyinfo.CompanyNm Department,
+
+			1 as [Hidden-Posted],
+
+			0 as [Hidden-isPartial],
+
+			0,
+
+			case when isnull(duedt,'')= '' then '' else CAST(DAY(DueDt) AS VARCHAR(2)) + ' ' + DATENAME(MM, DueDt) + ' ' + CAST(YEAR(DueDt) AS VARCHAR(4)) end as DueDt,
+
+			0 as [Hidden-BookingID],
+
+			buysell.BookingNo as [Hidden-BookingNo],
+
+			buysell.buysellno as [Hidden-Buysellno],
+
+			BuySell.RelNo,
+
+			convert(int, buysell.lastedit) as [Hidden-EditStamp]
+
+
+
+
+
+        FROM BuySell WITH(NOLOCK)  
+
+        INNER JOIN CounterParty ON BuySell.CustID = CounterParty.CpID
+
+        INNER JOIN CounterParty Supplier ON BuySell.VendorID = Supplier.CpID
+
+        LEFT JOIN BillingTerm WITH(NOLOCK) ON BillingTerm.Term = BuySell.Terms
+
+        LEFT JOIN CompanyInfo WITH(NOLOCK) ON BuySell.COID = CompanyInfo.COID
+
+        --LEFT JOIN Factor WITH(NOLOCK) ON BuySell.FactorID = Factor.FactorID
+
+        WHERE 
+
+			(@ARBatchNo <> 0 and buysell.buysellno in(select buysellno from Receipt where arbatchno =@ARBatchNo))
+
+			
+
+
+
+		UPDATE #REPORT SET PDue= 0 WHERE PDue IS NULL			
+
+		--UPDATE #REPORT SET PastDueDays = 0 WHERE PastDueDays < 0	--04/26/2017 RS: Show negatives per Ekman
+
+			
+
+		------ IF MillRcvNo is empty replace with pickup no.
+
+		UPDATE #REPORT 
+
+			SET #REPORT.MillRcvNo = '*'+substring(BuySell.PickupNo,1,14)
+
+		FROM BuySell WITH(NOLOCK) INNER JOIN #REPORT ON BuySell.BuySellNo = #REPORT.Wks#
+
+		WHERE RTRIM(ISNULL(#REPORT.MillRcvNo,''))='' AND Rtrim(BuySell.PickupNo) <> ''
+
+		
+
+		update #report set [Reference] = BookingNo from buysell with(nolock) inner join #report on buysell.buysellno = #Report.wks# where isnull([Reference],'') = '' 
+
+		update #report set Wks# = rtrim(buysell.buysellno) + '/' + booksheet.ContainerRef,  [Hidden-WksType] = 'B',[Hidden-BookingID] = booksheetid from buysell with(nolock) 
+
+			inner join #report on buysell.buysellno = #REPORT.Wks#
+
+			inner join BookSheet on BookSheet.BookingNo = buysell.bookingno 
+
+			where isnull(buysell.bookingno,'') <> ''
+
+			and isnull(booksheet.ContainerRef, '') <> ''
+
+	--07/23/2014 RS: Changed
+
+		----05/30/2014 RS: Added
+
+		--update #report set Reference = BuySell.StatementNo from BuySell with(nolock) inner join #report on buysell.buysellno = #Report.buysellno where isnull(BuySell.StatementNo,'')<> '' 
+
+		
+
+		--07/18/2014 RS: Added
+
+		UPDATE #REPORT SET FxDiscAmt = ROUND((((FxInvoiceAmt - ISNULL(DiscFreight,0)) * DiscRate/100)),2)
+
+		WHERE DiscType = 'Days' AND ISNULL(DiscDays,0)>0
+
+		
+
+		--02/02/2017 RS: Added
+
+		--UPDATE #REPORT SET WksType = 'BILLING'
+
+		--FROM #REPORT
+
+		--INNER JOIN BillSheet WITH (NOLOCK) ON #REPORT.wks# = BillSheet.BillSheetID
+
+		
+
+		
+
+
+
+
+
+
+
+		-- FINAL REPORT
+
+		SELECT *, FORMAT([Posting Date], 'M/yyyy') PostingDatePeriod 
+
+		FROM #REPORT ORDER BY pdue desc, [Invoice Date], Wks#, [Balance]
+
+    
+
+END
+
+
+
+
+
+-- cw_GetReceivables '84698','10/15/1959','9/18/2018', ''
+
+
+

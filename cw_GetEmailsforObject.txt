@@ -1,0 +1,62 @@
+CREATE proc [dbo].[cw_GetEmailsforObject] @ObjectID varchar(30) = '', @Object varchar(30) = '' as
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SET NOCOUNT ON;
+
+--11/11/2015 MCM: Added @FromDt, @ToDt, @User, @Object, @ObjectID
+
+--12/07/2015: Added If(worksheet) block... to include AR-TRACKING and ADJUSTMENTS
+
+--11/14/2022 ZT: Seperated Date and time columns
+
+--03/22/2023 MEC: Added Batch Email 
+
+		BEGIN
+
+			SELECT CAST([Date] As DATE) As [Date], 
+
+			CAST([Date] AS Time) As [Time],
+
+			UserNm AS [User Name], 
+
+			emailTo As [Email To],
+
+			'User ' + UserNm + ' sent an email to ' + emailTo + ' for ' + @Object + ' in ' + DocTitle As [Comment]
+
+			FROM EmailLog e
+
+			inner join userdef on userdef.userid= e.UserID
+
+			--WHERE (s.UserID = @User OR @User = '')
+
+			WHERE (ObjectID = @ObjectID)
+
+			AND ([Object] = @Object OR [Object] = 'AR-TRACKING' OR [Object] = 'ADJUSTMENTS')
+
+			UNION
+
+			SELECT
+
+			CAST(IB.[Date] As DATE) As [Date], 
+
+			CAST(IB.[Date] AS Time) As [Time],
+
+			IB.UserName As [User Name],
+
+			IB.TestEmail as [Email To],
+
+			'User ' + IB.UserName + ' sent an email to ' + IB.TestEmail + ' for ' + @Object + ' in batch process.' As [Comment]
+
+			FROM InvoiceBatch IB
+
+			WHERE (IB.BuySellNo = @ObjectID) And IsNull(EmailSent,0) = 1 And @Object in ('worksheet', 'billsheet', 'INVSALE') And IsNull(EmailSent,0) = 1
+
+			order by [Date] Asc
+
+
+
+		END
+
+
+

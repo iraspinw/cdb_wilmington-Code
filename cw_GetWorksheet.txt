@@ -1,0 +1,667 @@
+CREATE   PROCEDURE [dbo].[cw_GetWorksheet] @pBuySellNo char(12) AS 
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+declare @SupplierID varchar(12)
+
+declare @IsSupplierPaid int
+
+declare @IsChargeBackWks int
+
+declare @RevBatchNo int
+
+
+
+SELECT @IsSupplierPaid = 0
+
+SELECT @IsChargeBackWks = 0
+
+
+
+-- cw_GetWorksheet '507473'
+
+-- 01/05/2016 MEC: Added BookSheetID for Booking drilldown from wks view page.6
+
+-- 01/15/2016 MEC: Added IsBlindBOL
+
+-- 01/29/2016 MEC: Added LotNo, SerialNo for Inventory View Page
+
+-- 04/1/2016 MEC: Added BlindBOL char column
+
+-- 08/18/2016 MEC: Added ContainerRef from Booking for the Booking Inv#
+
+-- 02/06/2017 MEC: Added AdjType='P' And AdjPosted='Y' to "CHECK IF SUPPLIER ADJUSTMENT EXISTS"
+
+-- 03/29/2017 MEC: Removed Supplier Adjustments Check for "IsSupplierPaid"
+
+-- 05/01/2017 MEC: Added POReferenceNo and SOReference for Email Templates
+
+-- 05/25/2017 MEC: Added PODate for Receiving Worksheets
+
+-- 11/21/2017 MEC: Added FxPayments column for AR Module option
+
+-- 04/04/2018 MEC: Added IsReturned column from WksInventory for Returned Sale Items
+
+--05/15/2019 Alex : Added AesReturnedCode
+
+--05/15/2019 Alex : Added SFxContractNo,PFxContractNo
+
+--12/13/2019 Alex : Added BuySell.IsBillingSheet ,WKSDetail.Area,WKSDetail.AreaUOM
+
+--2/14/2020 Alex : Added  WKSDetail.Area,WKSDetail.AreaUOM
+
+--10/06/2020 Alex : Added  BookSheet.VGMCutOffDate
+
+--10/04/2022 Nick: Added PO Price Index Formula join to wksdetail select
+
+--10/17/2022 Nick: SourcePO on Inventory select now uses the PONumber from Inventory instead of wksdetail. Added isnull to isfixed
+
+--10//26/2022 DSH: Fixed Unit Cost on Packing List "/ fxrate"
+
+BEGIN 
+
+
+
+		declare @SfxContractNo varchar(70);
+
+		declare @PfxContractNo varchar(70);
+
+
+
+		select @PfxContractNo=PFxContractNo ,@SfxContractNo=SFxContractNo
+
+		From BuySell with(nolock) 
+
+		LEFT JOIN FxContracts SfxContract ON BuySell.SFxContractNo = SFxContract.ContractNo
+
+	    LEFT JOIN FxContracts PfxContract ON BuySell.PFxContractNo = PFxContract.ContractNo
+
+	    WHERE BuySellNo = @pBuySellNo 
+
+		
+
+	DECLARE @ScaleWtUOM char(4)
+
+	SET @ScaleWtUOM = dbo.CnvUOM_Names(ISNULL((SELECT ScaleWtUOM FROM SystemInfo),'S'))
+
+	IF @ScaleWtUOM = 'LBS'
+
+		SET @ScaleWtUOM = 'ST'
+
+	ELSE IF @ScaleWtUOM = 'KG'
+
+		SET @ScaleWtUOM = 'MT'
+
+	
+
+	DECLARE @SWTUOM char(1)
+
+	SET @SWTUOM = ISNULL((SELECT TOP 1 SWeightUOM FROM WksDetail WITH (NOLOCK) WHERE BuySellNo = @pBuySellNo),'L')
+
+
+
+    SELECT BuySellNo, BuySell.UserID, userdef.UserNm, ShippingDt, ClosePeriodDt, BuySell.CustID, BuySell.ShipToID, RelNo, GradingID, VendorID, ShipFromID, MinWt, PickupNo, 
+
+    ReferrerNo1, Rate1, RChg1, ReferrerNo2, Rate2, RChg2, 
+
+    SalesAmt, SAdjustment, SFreightChg, SPayments, (SBalanceDue-isnull(ARTrkPaymentAmt,0)) As SBalanceDue, PSupplierCost, PFreightChg, PAdjustment, 
+
+    Commission1, Commission2, Completed, CompletedDt, Approved, BuySell.InvoiceDt, Rejected, RejectedDt, 
+
+    RejectType , Invoiced, InvoicePrintDt, InvoiceNote, BuySell.Notes, PickupInstructions, InvoiceHold, ShippingOK, ShippingNotes, Problem, ProblemNotes, UnDisposed, CommPerTon, CommPerTon2, BuySell.COID,
+
+    AltCoName, AltCoAddr1, AltCoAddr2, AltCoCity, AltCoRegion, AltCoPostalCd, AltCoCtry, AltCoPhone, AltCoFax, AltCoEmail, DocReviewed, Terms, Claim, OrderDt, 
+
+    convert( int,BuySell.lastedit) AS EditStamp, BuySell.TradeType, InvGrouping, PriceBasis, ReceivedWeight, LightLoadChg, InternalInterestRate, ControlNo, BuySell.TareWt, TareDt, TareOper, GrossWt, GrossDt, GrossOper,
+
+    NetWt, NetDt, ExFeed, BuySell.DueDt, BuySell.SalesTaxAmt, FXSalesTaxAmt, buysell.SalesTaxCodeID, ExFeed, buysell.BookingNo, 
+
+		(Select BookSheetID from BookSheet Where buysell.BookingNo = BookSheet.BookingNo) As BookSheetID,
+
+	TrafficDept,MarineInsNo, IsRecurring, CntrSheetID, IsAgency, dbo.cw_RemoveTrailingZeros(BuySell.FxRate,2) as FxRate, 
+
+	dbo.cw_RemoveTrailingZeros(PFxRate,2) as PFxRate,ARTermQualifier, ARTermDesc, IntInterestSpread, IntInterestAccrual, IntInterestClosing, IntInterest, BuySell.DBAAddrID, MillRcvNo, ExportBatchNo, 
+
+	IntInterestDelay, DBAAddress.CoName, SFxContractNo, PFxContractNo, BLNo, DescOfGoods, Buysell.VatNo, IntInterestAdjDt,IntInterestAdjAmt, IntInterestAdjRef, credithold,RefNotes,
+
+	BuySell.CurrencyCd, PCurrencyCd, AlternateCustNm, BuySell.ReceiptPlace, BuySell.LoadPort, BuySell.PortOfDischg, BuySell.PlaceOfDeliv, COID_DUETO, WksVessel, IntInterestDueDt,
+
+	PackingListNotes, BuySell.[Status], CustomTax, SalesTaxAdjAmt, FxSalesTaxAdjAmt, BuySell.RemitID, TicketType,VesselID,BunkerPort,FactorID,
+
+	bIsLotNoAssigned, BuySell.EqType, JobNo,BaleRouteID, RefPONo, RefSONo, WarehouseStatus, PublicTradeID, RiskCover, EquipmentID, RefEquipNo, RefSealNo, IsOffset,
+
+	ARTrkPaymentAmt, ARTrkFxPaymentAmt, ARTrkPaymentDate, ARTrkPaymentRef, FxBalanceDue As FxSBalanceDue, FxInvoiceAmt, FxSAdjustment, IsBlindBOL, salestaxcode.SalesTaxCode, BlindBOL,ClaimStatus,
+
+	IsNull((Select ContainerRef from BookSheet Where buysell.BookingNo = BookSheet.BookingNo), '') As BookingInv, BuySell.EqType, AcctingInvoiceNo,PrintShippingIntrucOnBOL,
+
+	IsNull((Select Top 1 BuySellNo From WksPackingSlip WITH(NOLOCK) WHERE WksPackingSlip.BuySellNo = @pBuySellNo), '') As PackingSlipNo,
+
+	IsNull((Select POReference from PO Where PONumber = RefPONo), '') POReferenceNo,
+
+	IsNull((Select POReference from PO Where PONumber = RefSONo), '') SOReferenceNo,
+
+	ScaleGross, ScaleTare, ScaleGrossTime, ScaleTareTime, ScaleNet,PrintShippingIntrucOnBOL,
+
+	(Select PODate from PO Where PONumber = RefPONo) PODate,
+
+	FxPayments,
+
+	isnull(IsInvoiceBooked,0) IsInvoiceBooked,
+
+	(IsNull(Vend.City,'') + ', ' + IsNull(Vend.Region,'')) ShipFromAddr,
+
+	(IsNull(Cust.City,'') + ', ' + IsNull(Cust.Region,'')) ShipToAddr,
+
+	EqTareWt, buysell.VGM, ContainerUOM, isnull(ContainerID,0) ContainerID, StatementNo, PrintShipInstOnRcvTkt,
+
+	Case When IsNull(StatementNo, 0) > 0 Then (Select Sum(IsNull(Bstmt.FxInvoiceAmt,0)) + Sum(IsNull(Bstmt.FxSAdjustment,0)) + Sum(IsNull(Bstmt.FxSalesTaxAdjAmt,0)) + Sum(IsNull(Bstmt.FXSalesTaxAmt,0)) From BuySell Bstmt Where Bstmt.StatementNo = BuySell.Sta
+tementNo) Else 0 End GroupInvFxAmount
+
+	, dbo.FormatAddress('', Cust.Addr2, Cust.Addr3, Cust.City, Cust.Region, Cust.PostalCd, Cust.Country, 1) As LoadConnexDestAddr
+
+	, dbo.FormatAddress('', Vend.Addr2, Vend.Addr3, Vend.City, Vend.Region, Vend.PostalCd, Vend.Country, 1) As LoadConnexStartAddr
+
+	, Cust.Country As LoadConnexDestCtry
+
+	, Vend.Country As LoadConnexStartCtry
+
+	,AesReturnedCode,
+
+	SFxContractNo,
+
+	 [dbo].[cw_RemoveTrailingZeros](SfxContract.ExchRate ,2) as SFxRates,
+
+	--SfxContract.ExchRate as SFxRates,
+
+	SfxContract.ExpirationDt SFxExpDt,
+
+	SfxContract.RefNo SfxRefNo,
+
+	--SfxContract.ContractValue SfxValue,
+
+	(SfxContract.ContractValue-(SELECT isnull(sum(SFxAmount),0) From WKSDetail with(nolock)  inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.SFxContractNo=@SfxContractNo))  as SfxValue,--+(SELECT isnull(sum(FxAmount),0) From PODet
+ail with(nolock) inner join PO on PO.PONumber = PODetail.PONumber WHERE PO.ContractNo=@PfxContractNo))) as SfxValue,
+
+	PFxContractNo,
+
+	 [dbo].[cw_RemoveTrailingZeros](PfxContract.ExchRate,2) as PFxRates,
+
+	--PfxContract.ExchRate as PFxRates,
+
+	PfxContract.ExpirationDt PFxExpDt,
+
+	PfxContract.RefNo PfxRefNo,
+
+	PfxContract.ContractValue PfxValue1,
+
+	(PfxContract.ContractValue-(SELECT isnull(sum(PFxAmount),0) From WKSDetail with(nolock) inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.PFxContractNo=@PfxContractNo)) as PfxValue,--+(SELECT isnull(sum(FxAmount),0) From PODetai
+l with(nolock) inner join PO on PO.PONumber = PODetail.PONumber WHERE PO.ContractNo=@PfxContractNo))) as PfxValue,
+
+	Case When dbo.CONVERT_TO_UOM(TotalWeightLbs,'L',@ScaleWtUOM) = 0 Then
+
+		'0.00'
+
+	Else
+
+		FORMAT(convert(decimal(25,2), (((IsNull(SalesAmt,0) + IsNull(SAdjustment,0) + IsNull(SFreightChg,0)) - (IsNull(PSupplierCost,0) + IsNull(PAdjustment,0)) - (IsNull(PFreightChg,0))) / dbo.CONVERT_TO_UOM(TotalWeightLbs,'L',@ScaleWtUOM))), '#,0.00')
+
+	End
+
+	As GrossProfitPerAmt,
+
+	@ScaleWtUOM As GrossProfitPer,
+
+	BuySell.UserDefined1,
+
+	BuySell.UserDefined2,
+
+	BuySell.UserDefined3,
+
+	BillSheet.[Status] As [BillSheetStatus],
+
+	case when isnull(BuySell.IsBillingSheet,0)=0 then 'STANDARD' else 'BILLING' END AS IsBillingSheet,
+
+	Driver,
+
+	ShippingTm ,
+
+	EquipmentType.EqType as EqTypeName,
+
+	BookSheet.VGMCutOffDate,
+
+	BuySell.TransportationNo,
+
+	[dbo].xDoc_GetAddress(BuySell.VendorID,BuySell.ShipFromID,0,0) as VendorAddress,
+
+	[dbo].xDoc_GetAddress(BuySell.CustID,BuySell.ShipToID,0,0) as CustomerAddress,
+
+	isnull(Uncertified,0) as Uncertified,
+
+	Case When IsNull(InvoicePrefix,'') <> '' Then InvoicePrefix + RTrim(BuySell.BuySellNo) Else '' End As InvoicePrefixed,
+
+	InvoicePrefix,
+
+	BookSheet.VoyageNo,
+
+	BookSheet.Vessel,
+
+	(select sum(units) from WKSDetail where BuySellNo = @pBuySellNo) SumUnits,
+
+	(select SUM(dbo.CONVERT_TO_UOM(isnull(WKSDetail.SWeight,0),SWeightUOM,@SWTUOM)) from WKSDetail where BuySellNo = @pBuySellNo) SumNetWeight,
+
+	(select SUM(dbo.CONVERT_TO_UOM(isnull(WKSDetail.GrossWt,0),SWeightUOM,@SWTUOM)) from WKSDetail where BuySellNo = @pBuySellNo) SumGrossWt,
+
+	(select top 1 Contact.ContactNm from Contact where Contact.CpID = BuySell.CustID and IsPrimary=1) as PrimaryContactNm,
+
+	Rtrim(isnull(container.SaleBuySellNo,'')) as SaleBuySellNo
+
+    From BuySell with(nolock) 
+
+	LEFT JOIN userdef WITH(NOLOCK) ON  BuySell.UserID = userdef.UserID
+
+	LEFT JOIN DBAAddress WITH(NOLOCK) ON DBAAddress.CoAddrID = BuySell.DBAAddrID
+
+	LEFT JOIN salestaxcode WITH(NOLOCK) ON salestaxcode.salestaxcodeid= buysell.SalesTaxCodeID
+
+	LEFT JOIN [Address] Vend WITH(NOLOCK) ON Vend.CpID = VendorID AND Vend.[Type] = BuySell.[ShipFromID]
+
+	LEFT JOIN [Address] Cust WITH(NOLOCK) ON Cust.CpID = CustID AND Cust.[Type] = BuySell.[ShipToID]
+
+	Left JOIN container on container.RcvBuySellNo = @pBuySellNo
+
+	LEFT JOIN FxContracts SfxContract ON BuySell.SFxContractNo = SFxContract.ContractNo
+
+	LEFT JOIN FxContracts PfxContract ON BuySell.PFxContractNo = PFxContract.ContractNo
+
+	LEFT JOIN BillSheet ON BillSheet.BillSheetID = BuySell.BuySellNo
+
+	left join EquipmentType on EquipmentType.ShortName = BuySell.EqType
+
+	left join BookSheet on BookSheet.BookingNo =BuySell.BookingNo
+
+	left join CompanyInfo on BuySell.COID = CompanyInfo.COID
+
+    WHERE BuySellNo = @pBuySellNo 
+
+
+
+	
+
+    SELECT WKSDetail.GradeID,InvoiceDesc,[SWeight] as SWeight,SWeightUOM,dbo.cw_RemoveTrailingZeros(SPrice, 2) as SPrice,
+
+	SPriceUOM,SAmount,dbo.cw_RemoveTrailingZeros(PPrice,2) as PPrice,PUOM,PAmount, Grade.Description, RejectedSrcBuySellNo, WKSDetail.Specifications, 
+
+    dbo.formatweightUOM([PWeight], PWeightUOM) as [Pweight], PWeightUOM, SCurrencyCd, SFxAmount, PCurrencyCd, PFxAmount, dbo.cw_removeTrailingZeros(WKSDetail.BasisWt,0) as BasisWt, WKSDetail.BasisWtUOM, WKSDetail.Color, 
+
+	Acid_Alkaline, WKSDETAIL.InvClass, dbo.cw_removeTrailingZeros(WKSDetail.Diameter,0) as Diameter, WKSDetail.DiameterUOM, dbo.cw_removeTrailingZeros(WKSDetail.RollWd,0) as RollWd, WKSDetail.RollWdUOM, 
+
+	dbo.cw_removeTrailingZeros(WKSDetail.CoreSize,0) as CoreSize, 
+
+    dbo.cw_removeTrailingZeros(WKSDetail.Caliper,0) as Caliper, WKSDetail.SheetSize, WKSDetail.SheetSizeUOM, WKSDetail.SheetGrain, SealNo, WKSDetail.IsMSF, IsPMSF, WksDetail.Mill, WksDetail.Brand, 
+
+	WksDetail.Finish, WksDetail.JobLot, WksDetail.MWeight, WksDetail.WarehouseLocation, 
+
+    WksDetail.WarehouseBin, WksDetail.DesignatedCpID, WksDetail.LinearLen, WksDetail.NoSheets, WksDetail.DetailID, WksDetail.SPo, WksDetail.PPo, WksDetail.SMSFPrice, WksDetail.PMSFPrice,
+
+    WKSDetail.LotNo, WKSDetail.UnitType, WKSDetail.Units, RelNo, ContainerNo, WKSDetail.CoreSizeUOM, WKSDETAIL.Condition, SheetSizeWd, wksdetail.SpeciesID, WKSDetail.Comment, WKSDetail.LengthUOM, WKSDetail.WoodThickness, WKSDetail.WoodWidth, 
+
+    WKSDetail.WoodSzUOM, WKSDetail.WoodLength, WKSDetail.WoodLengthUOM, wksDetail.WoodGrade, wksDetail.WoodGrain, wksDetail.SPO_ID, wksDetail.PPO_ID, wksDetail.GrossMT, 
+
+    wksDetail.AirDryPct, wksDetail.MoisturePct, wksDetail.DesignatedSONo, wksDetail.TareWt, wksDetail.GrossWt, WKSDetail.MSF, WKSDetail.OrderLinkID, WKSDetail.LotNo, 
+
+    SerialNo, WKSDetail.PlasticForm, WKSDetail.PlasticType, WKSDetail.PlasticMelt, AdjWt, Grade.inventorytype, BarcodeNo, BulkSupplier AS BULKSUPPLIER, WKSDETAIL.BalanceID, wksdetail.BulkWarehouse,WKSDetail.Area,WKSDetail.AreaUOM,
+
+	UnitType.PropertySet, WKSDetail.UserDefined1, WKSDetail.UserDefined2, WKSDetail.UserDefined3, WKSDetail.UserDefined4, WKSDetail.UserDefined5,WKSDetail.UserDefinedSecond1, WKSDetail.UserDefinedSecond2, WKSDetail.UserDefinedSecond3, WKSDetail.UserDefinedSe
+cond4, WKSDetail.UserDefinedSecond5
+
+	,WKSDetail.UserDefinedThird1, WKSDetail.UserDefinedThird2, WKSDetail.UserDefinedThird3, WKSDetail.UserDefinedThird4, WKSDetail.UserDefinedThird5,
+
+	GPLedger.FP_DetailID, GPLedger.Sale FP_Sale, GPLedger.FP_MarketPrice, FP_NetPrice, FP_NetPriceUOM, GPLedger.FxContractRate, IsNull(GPLedger.AdjPosted,'') FP_Posted, 
+
+	GPLedger.FP_Discount, GPLedger.FP_Rate FP_Percent, GPLedger.AdjPostDt FP_PostDt,
+
+	WKSDetail.UserDefinedFourth1, WKSDetail.UserDefinedFourth2, WKSDetail.UserDefinedFourth3, WKSDetail.UserDefinedFourth4, WKSDetail.UserDefinedFourth5,
+
+	WKSDetail.UserDefinedFourth6, WKSDetail.UserDefinedFourth7, WKSDetail.UserDefinedFourth8, WKSDetail.UserDefinedFourth9, WKSDetail.UserDefinedFourth10,
+
+	CONVERT(bit,IIF(PriceFormula.indexID = 0, 1, 0)) as SalesPriceFormula,
+
+	PriceFormula.FormulaID,
+
+	PriceFormula.MinPrice,
+
+	PriceFormula.MaxPrice,
+
+	PriceFormula.PriceDiscount,
+
+	isnull(PriceFormula.IsFixed, 0) as IsFixed
+
+    From WKSDetail with(nolock)  
+
+    INNER JOIN Grade WITH(NOLOCK) ON WKSDetail.GradeID = Grade.GradeID 
+
+	
+
+	left join UnitType on UnitType.TypeID =WKSDetail.UnitType
+
+	left join GPLedger ON GPLedger.FP_DetailID = WKSDetail.DetailID
+
+	left join podetail on wksdetail.PPO_ID = podetail.PO_ID
+
+	left join PriceFormula on PriceFormula.FormulaID = PODetail.FormulaID
+
+    WHERE WksDetail.BuySellNo = @pBuySellNo      
+
+    ORDER BY DetailID
+
+
+
+	
+
+
+
+    SELECT salestax.TaxDescription, FXTaxAmount, PmtCurCode, FxRate as FxRate, FxPmtAmount, FxContractNo, TaxAmount, FxTaxAmount as FmtTax FROM WksSalesTax WITH(NOLOCK)
+
+	INNER JOIN SalesTax on salestax.SalesTaxID = WksSalesTax.salestaxid
+
+    WHERE BuySellNo = @pBuySellNo AND Source = 'B'
+
+
+
+	SELECT SUM(Amount) AS TotalAgencyCash FROM AgencyCash WITH(NOLOCK)
+
+	WHERE AgencyCash.BuySellNo = @pBuySellNo
+
+	GROUP BY BuySellNo
+
+	
+
+	SELECT 
+
+	
+
+	ItemID, VendorID, CounterParty.CompanyNm, TrailerNo, InvoiceDesc, convert(char(10),DeliveryDt,101) as DeliveryDt, 
+
+	dbo.cw_RemoveTrailingZeros(Cost,2) as Cost, ChgToCustAmt, Mileage, PrintOnInvoice, wksdelivery.CurrencyCd, CurrencyCdCust, wksdelivery.FxAmount, 
+
+	FxAmountCust, WksDelivery.GLAcct, Manifest, PrepaidFreight, PFreightCurCode, dbo.cw_RemoveTrailingZeros(Price,2) as Price, 
+
+	PricePer, dbo.cw_RemoveTrailingZeros(PriceCust,2) as PriceCust, PricePerCust, DeliveryTime, FxRate, FxContractNo, 
+
+	ExpSalesFxRate, SalesGLAcct, 0 as posted, isnull(wksdelivery.IsFreight,0) as IsFreight
+
+	into #wksdelivtemp
+
+    FROM WKSDelivery WITH (NOLOCK) 	
+
+	INNER JOIN Counterparty WITH (NOLOCK) ON WKSDelivery.VendorID = CounterParty.CpID
+
+	WHERE WksDelivery.BuySellNo = @pBuySellNo
+
+	
+
+	if exists(select 1 from payables inner join #wksdelivtemp on payables.ItemID = #wksdelivtemp.ItemID where payables.ItemIDSource = 'D' and (payables.posted=1 or IsNull(Payables.ReverseBatchNo,0) <> 0)) begin
+
+		update #wksdelivtemp set posted =1
+
+		from payables where payables.ItemID = #wksdelivtemp.ItemID and payables.ItemIDSource = 'D' and (payables.posted=1 or IsNull(Payables.ReverseBatchNo,0) <> 0)
+
+	end
+
+	select * from #wksdelivtemp
+
+	drop table #wksdelivtemp
+
+
+
+	
+
+    SELECT Sum(Commission) AS Commission FROM GPLedger WITH(NOLOCK) where GPLedger.BuySellNo = @pBuySellNo and (GPLedger.Source = 'A' or GPLedger.Source = 'F' or GPLedger.Source = 'D') And AdjApproved = 'Y'
+
+
+
+    -- GET OPEN PERIOD
+
+    SELECT convert(char(10),OpenMonth,101) AS OpenMonth FROM SYSTEMINFO WITH (NOLOCK) WHERE ID = '00'
+
+    
+
+    -- CHECK IF SUPPLIER PAYABLE IS POSTED.
+
+    SELECT @SupplierID = VendorID FROM BuySell WITH(NOLOCK) WHERE BuySellNo = @pBuySellNo 
+
+	IF EXISTS(Select PayableID from Payables WITH(NOLOCK) where BuySellNo = @pBuySellNo And CpID = @SupplierID and (Posted = 1 OR IsNull(Payables.ReverseBatchNo,0) <> 0) And ItemIDSource = 'S' AND (Reversed is  NULL OR Reversed  = 0))
+
+		SET @IsSupplierPaid = 1
+
+
+
+	-- CHECK IF SUPPLIER ADJUSTMENT EXISTS.
+
+	--IF EXISTS(Select LedgerID from GPLedger WITH(NOLOCK) where BuySellNo = @pBuySellNo And AdjCpID = @SupplierID and Source = 'A' And AdjType='P' And AdjPosted='Y')
+
+	--	SET @IsSupplierPaid = 1
+
+
+
+    SELECT @IsSupplierPaid AS IsSupplierPaid 
+
+
+
+
+
+    -- CHECK IF IS CHARGEBACK WORKSHEET
+
+	IF EXISTS(Select InvoiceDt from Payables WITH(NOLOCK) where ChgBackWks = @pBuySellNo)
+
+	     SELECT @IsChargeBackWks = 1
+
+	
+
+	SELECT @IsChargeBackWks AS IsChargeBackWks
+
+	
+
+	-- CHECK IF ANY PAYABLES IN AN UNPOSTED REV BILLING BATCH
+
+	SELECT TOP 1 @RevBatchNo = Payables.ReverseBatchNo FROM ReverseBillingStatement WITH(NOLOCK) 
+
+		INNER JOIN Payables WITH(NOLOCK) ON Payables.ReverseBatchNo = ReverseBillingStatement.ReverseBatchNo AND Payables.CpID = ReverseBillingStatement.CpID
+
+		INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = Payables.BuySellNo
+
+		WHERE BuySell.BuySellNo = @pBuySellNo
+
+	
+
+	IF ISNULL(@RevBatchNo,0) <> 0
+
+		SELECT 1 AS IsRevBilling
+
+	ELSE
+
+		SELECT 0 AS IsRevBilling
+
+    
+
+
+
+	-- PACKING LIST
+
+	---------------
+
+	SELECT DISTINCT 
+
+		WksInventory.LotNo, 
+
+		b.[Description], 
+
+		wksInventory.ForGradeID, 
+
+		dbo.formatweightUOM(WksInventory.[Weight], wksinventory.UOM) as [weight],
+
+		WksInventory.UOM, 
+
+		CONVERT(DECIMAL(22,3),WksInventory.UnitCost) HcPrice, 
+
+		WksInventory.UnitCostUOM PriceUOM, 
+
+		WksInventory.Units, 
+
+		Inventory.[WarehouseNm], 
+
+		Inventory.SerialNo, 
+
+		'' AS BookingNo, 
+
+		CONVERT(CHAR(10),Inventory.RcvDt,101) AS RcvDt, 
+
+		wksInventory.NoSheets,
+
+		dbo.cw_removeTrailingZeros(Inventory.Caliper,0) as Caliper, dbo.cw_removeTrailingZeros(Inventory.RollWd,0) as RollWd, Inventory.RollWdUOM, 
+
+		dbo.cw_removeTrailingZeros(Inventory.LinearLen,0) as LinearLen, '' AS SealNo,
+
+		dbo.cw_removeTrailingZeros(Inventory.[BasisWt],0) as BasisWt, Inventory.[BasisWtUOM], dbo.cw_removeTrailingZeros(Inventory.[Diameter],0) as Diameter, 
+
+		Inventory.[DiameterUOM], 
+
+		dbo.cw_removeTrailingZeros(Inventory.[CoreSize],0) as CoreSize,
+
+		Inventory.[SheetSize], Inventory.[SheetSizeUOM], Inventory.[MWeight],
+
+		Inventory.[SheetGrain], Inventory.[Color], Inventory.[Acid_Alkaline], Inventory.[InvClass],
+
+		Inventory.[Finish], Inventory.[Mill], Inventory.[Brand], wksInventory.DetailID, 
+
+		'' AS ContainerNo, Inventory.CoreSizeUOM, '' AS CreatedFrom,
+
+		Supplier.CompanyNm,
+
+		isnull(Inventory.PONumber, '') AS SourcePO,    
+
+		Inventory.LengthUOM,
+
+		WksInventory.WksInvID, 
+
+		ISNULL(WksInventory.IsReturned,0) as IsReturned, 
+
+		WksInventory.ReturnedAsLotNo,
+
+		isnull(wksInventory.IsStored, 0) as IsStored,
+
+		Inventory.WarehouseLocation, 
+
+		WksInventory.wksInvValue, 
+
+		convert(int,Inventory.LastEdit) AS LastEdit,
+
+		POReference	AS SORef,
+
+		Inventory.GrossMT, 
+
+		Inventory.AirDryPct, 
+
+		Inventory.MoisturePct,		
+
+		Inventory.Comments,
+
+		Inventory.RefID As BuyReferrer,
+
+		'' AS ContainerNoX,
+
+		Inventory.TareWt,
+
+		Inventory.GrossWt, 
+
+		WksInventory.OrderLinkID,
+
+		Inventory.GradeID,
+
+		Inventory.QtyOnHand, 
+
+		inventory.InvValue,
+
+		inventory.origInvValue,
+
+		wksinventory.[Weight] as OrigWeight,
+
+		
+
+		inventory.SerialNo as invSerial,
+
+		0 as origunits,
+
+		inventory.BarcodeNo,
+
+		ContainerContents.ContainerID
+
+		INTO #REPORT
+
+		FROM WksInventory 
+
+			INNER JOIN Inventory ON WksInventory.LotNo = Inventory.LotNo
+
+			left JOIN Counterparty Supplier ON Inventory.VendorID = Supplier.CpID
+
+			LEFT JOIN Grade b ON Inventory.GradeID = b.GradeID
+
+			LEFT JOIN WKSDetail ON WksDetail.buysellno = WksInventory.BuySellNo
+
+			LEFT JOIN PO ON Inventory.ReservePoNumber = PO.PoNumber
+
+			left join ContainerContents on ContainerContents.LotNo = inventory.LotNo
+
+		WHERE WksInventory.BuySellNo = @pBuySellNo and wksdetail.DetailID=WksInventory.OrderLinkID
+
+		AND NOT EXISTS(SELECT ContainerNo FROM Container INNER JOIN ContainerContents ON Container.ContainerID = ContainerContents.ContainerID WHERE ContainerContents.LotNo = WksInventory.LotNo AND Container.ContainerType = 'S' And Container.RcvBuySellNo = @pBu
+ySellNo)
+
+		
+
+		select * from #REPORT
+
+		
+
+
+
+		select container.containerID, containerNo, sealno, container.uom, dbo.formatweightUOM([NetWeight], container.uom) NetWeight, container.bookingno,
+
+		case when containertype='C' then 'PACKED' else companynm  end SupplierNm,
+
+		ShipDate, container.orderlinkID, sum(wksinvvalue) amount, sum(wksinventory.units) Units, container.RcvBuySellNo, p.RefPONo PONo
+
+		from container 
+
+		inner join ContainerContents on ContainerContents.ContainerID = container.ContainerID
+
+		left join WksInventory on WksInventory.BuySellNo = container.SaleBuySellNo and WksInventory.LotNo = ContainerContents.LotNo
+
+		left join buysell p on p.BuySellNo = container.RcvBuySellNo
+
+		left join counterparty on counterparty.cpid = p.VendorID
+
+		where SaleBuySellNo = @pBuySellNo
+
+		group by container.containerID, containerNo, containertype, sealno, container.uom, dbo.formatweightUOM([NetWeight], container.uom), 
+
+		container.bookingno, companynm,shipdate, container.orderlinkID, container.units, container.RcvBuySellNo, p.RefPONo
+
+
+
+
+
+		Select DetailID, SWeight, Units from WksPackingBulkWeights where BuySellNo = @pBuySellNo
+
+
+
+		Select LotNo from WksPackingSlip where BuySellNo = @pBuySellNo
+
+END
+
+
+
+
+

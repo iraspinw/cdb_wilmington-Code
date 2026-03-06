@@ -1,0 +1,32 @@
+CREATE PROC [dbo].[cw_GetTimeZones] 
+
+As
+
+--7/5/17 MN: Create
+
+ 
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+		SELECT
+
+			TimeZoneNm As [TimeZoneNm],
+
+			GMTOffsetVAL As [GMTOffsetVAL],
+
+			GMTOffsetFormat AS [GMTOffsetFormat],
+
+			SortID As [SortID]
+
+
+
+		FROM TimeZone
+
+		ORDER BY SortID, GMTOffsetVAL
+
+
+

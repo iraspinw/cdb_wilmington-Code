@@ -1,0 +1,44 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetSalesRepInfo] @ReferrerNo varchar(10)
+
+AS
+
+BEGIN
+
+
+
+-- 10/02/2015 MEC: Created for cieTrade.net 
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT
+
+		Name,
+
+		DefaultRate,
+
+		Cast(FixedCharge as decimal(6,2)) as FixedCharge,
+
+		Active
+
+	FROM
+
+		Referrer With (NoLock)
+
+	WHERE
+
+		ReferrerNo = @ReferrerNo
+
+END
+
+
+

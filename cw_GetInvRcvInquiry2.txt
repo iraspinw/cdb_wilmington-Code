@@ -1,0 +1,378 @@
+
+
+-- 10/31/24
+
+
+
+-- [dbo].[cw_GetInvRcvInquiry2] '','7/1/2023','','', '','', '', '', '', '', 'RCV', '', '', '', '', '', '', 0, 'LOAD'
+
+
+
+-- [dbo].[cw_GetInvRcvInquiry2] '','7/1/2023','','', '','', '', '', '', '', 'RCV', '', '', '', '', '', '', 0, 'GRADE'
+
+
+
+CREATE PROCEDURE [dbo].[cw_GetInvRcvInquiry2] 
+
+	
+
+	@WhseID varchar(65) = '',
+
+	@FromDt datetime = '',
+
+	@ToDt datetime = '',
+
+	@SupplierID char(12) = '',
+
+	@ShipToID varchar(65) = '',
+
+	@COID char(2) = '', 
+
+	@SalesRep char(10) = '',
+
+	@GradeID char(15) = '',
+
+	@EquipNo char(24) = '',
+
+	@BolNo char(24) = '',
+
+	@DateType CHAR(4) = 'RCV',
+
+	@Status char(1) = '',
+
+	@Logistics varchar(1) = '', 
+
+	@TradeType varchar(36) = '',
+
+	@WhseStatus varchar(300) = '',
+
+	@ClaimStatus char(15) = '',
+
+	@Driver char(50) = '', 
+
+	@ContainerOnly bit = 0,
+
+	@ReportType varchar(10) = 'LOAD' 
+
+	--@ReportType CHAR(10) = ''	-- "LOAD" or "GRADE"  
+
+AS
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+/* INVENTORY RECEIVING */	
+
+-- 01/28/2016 MEC: Created for cieTrade.net Inventory
+
+--06/08/2016 DSH Updated for different date ranges
+
+-- cw_GetInvRcvInquiry '', '', '', '', '', '', ''
+
+--06/21/2016 DSH Updated for numerous errors.
+
+-- 02/14/2019 BF: Removed filter for received containers
+
+-- 09/29/2020 MN: Added UDF	
+
+-- 05/27/2021 MEC: Added Pickup No
+
+--11/5/2021 Alex: Added @ReportType
+
+--12/12/2022 Nick: Added RefDt
+
+--05/12/2023 DN: changed weight lbs and weight kg datatype convertion to bigint
+
+
+
+If @ToDt = '' SET @ToDt = getdate()
+
+
+
+	IF @ReportType= '' OR @ReportType = 'LOAD' BEGIN
+
+
+
+		SELECT  
+
+		BuySell.BuySellNo [Rcv-No], 
+
+		ShippingDt [Received],
+
+		Case When InvoiceDt < '1/1/1980' Then NULL Else InvoiceDt End [Post Date],
+
+		Grade.Description [Product-Grade],
+
+		Supplier.CompanyNm [Supplier], 
+
+		BuySell.ShipFromID [Ship From],
+
+		Warehouse.[Type] [Warehouse],
+
+		BuySell.RefPONo [Order No],				
+
+		convert(bigint,IsNull(BuySell.TotalWeightLBS,0)) [Weight LBS],
+
+		convert(bigint,IsNull(dbo.CnvFromLbs(IsNull(TotalWeightLbs, 0), 'K'),0)) [Weight KG],
+
+		--dbo.cw_RemoveTrailingZeros(Round(dbo.CnvFromLbs(IsNull(TotalWeightLbs, 0), 'K'), 0),0) [Weight KG],
+
+		Referrer.Name [Buyer],
+
+		upper([dbo].[CnvShipStatus_Name](BuySell.ShippingOK)) Logistics,	
+
+		refequipno as [Equipment No],
+
+		Buysell.BLNo [BOL],	
+
+		W.CompanyDesc As [Dept],
+
+		BuySell.TradeType As [Trade-Type],			
+
+		BuySell.FxSupplierCost, 
+
+		BuySell.CurrencyCd As [Currency],		
+
+		BuySell.PSupplierCost [HCPurchaseAmt],
+
+		ClaimStatus AS [ClaimStatus],
+
+		[dbo].[CnvWksStatus_Name](ISNULL(BuySell.[Status],''),BuySell.CustID) [Status],
+
+		--RTRIM((SELECT TOP 1 dbo.CnvUnitName(WksDetail.[UnitType]) FROM WksDetail WHERE WksDetail.BuySellNo = BuYSell.BuySellNo)) +'-'+
+
+		--RTRIM(CONVERT(VARCHAR(10),(SELECT COUNT(*) FROM WksDetail WHERE WksDetail.BuySellNo = BuYSell.BuySellNo)))	[Packaging],
+
+		BuySell.WarehouseStatus	As [Warehouse-Status],
+
+		BookSheet.BookingNo,
+
+		BuySell.UserDefined1,BuySell.UserDefined2,BuySell.UserDefined3,
+
+		userdef.usernm As [Owner],
+
+		Driver,
+
+		PickupNo As [Pickup No],
+
+		BuySell.RefDt as [Ref Date]
+
+		,FORMAT(ShippingDt, 'MM/yyyy') [ReceivedPeriod]
+
+		,FORMAT(InvoiceDt, 'MM/yyyy') [PostedPeriod]
+
+		FROM 
+
+			BuySell 		
+
+			INNER JOIN Counterparty Supplier ON BuySell.VendorID = Supplier.CpID
+
+			left JOIN [Address] Warehouse ON BuySell.ShipToID = Warehouse.[Type] AND Warehouse.CpID = '(INV)'
+
+			INNER JOIN [CompanyInfo] W ON W.COID = BuySell.COID
+
+			LEFT JOIN GRADE ON Grade.GradeID = BuySell.RefGradeID		
+
+			LEFT JOIN Referrer ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+			left join BookSheet on BookSheet.BookingNo= BuySell.BookingNo
+
+			LEFT JOIN userdef WITH(NOLOCK) ON  BuySell.UserID = userdef.UserID
+
+		WHERE
+
+			BuySell.CustID = '(INV)'
+
+		 AND((@FromDt = '' AND @ToDt = '') OR  (@DateType = 'RCV' AND ((BuySell.ShippingDt >= @FromDt AND BuySell.ShippingDt <= @ToDt) )) OR (@DateType = 'POST' AND ((BuySell.InvoiceDt >= @FromDt AND BuySell.InvoiceDt <= @ToDt) ) AND Status = 'I'))
+
+		 AND (@WhseID = '' OR @WhseID = Warehouse.[Type])
+
+		 AND (@Driver = '' OR BuySell.Driver = @Driver)
+
+		 AND (@COID = '' OR BuySell.COID = @COID)
+
+		 AND (@Status = '' or BuySell.[Status]=@Status)
+
+		 AND (@SupplierID = '' OR @SupplierID = BuySell.VendorID)
+
+		 AND (@ShipToID = '' OR @ShipToID = BuySell.ShipFromID)
+
+		 AND (@SalesRep = '' OR @SalesRep = BuySell.ReferrerNo2)
+
+		 AND (@EquipNo = '' OR @EquipNo = BuySell.RefEquipNo)
+
+		 AND (@BolNo = '' OR @BolNo = BuySell.BLNo)
+
+		 AND (@Logistics = '' OR BuySell.ShippingOK = @Logistics)
+
+		 AND ((@TradeType = '') OR (@TradeType = BuySell.TradeType))
+
+		 AND ((@ClaimStatus = '') OR (@ClaimStatus = BuySell.ClaimStatus))
+
+		 AND (@GradeID = '' OR EXISTS(SELECT * FROM wksDetail WITH(NOLOCK) WHERE wksDetail.BuySellNo = BuySell.BuySellNo AND GradeID = @GradeID))
+
+		 AND (@WhseStatus = ''  OR  @WhseStatus = BuySell.WarehouseStatus)
+
+		 AND ISNULL(BuySell.PublicTradeID,0) = 0
+
+			ORDER BY BuySell.BuySellNo
+
+
+
+	END
+
+
+
+
+
+	IF @ReportType = 'GRADE' BEGIN
+
+		SELECT  
+
+		BuySell.BuySellNo [Rcv-No], 
+
+		ShippingDt [Received],
+
+		Case When InvoiceDt < '1/1/1980' Then NULL Else InvoiceDt End [Post Date],
+
+		--Grade.Description [Product-Grade],
+
+		WksGrade.Description [Product-Grade],
+
+		Supplier.CompanyNm [Supplier], 
+
+		BuySell.ShipFromID [Ship From],
+
+		Warehouse.[Type] [Warehouse],
+
+		BuySell.RefPONo [Order No],				
+
+		--convert(int,IsNull(BuySell.TotalWeightLBS,0)) [Weight LBS],
+
+		cast ([dbo].[FormatQty](dbo.[CONVERT_TO_UOM]( WKSDetail.SWeight,WKSDetail.SWeightUOM,'L'),'L') as float) as [Weight LBS],
+
+		cast ([dbo].[FormatQty](dbo.[CONVERT_TO_UOM]( WKSDetail.SWeight,WKSDetail.SWeightUOM,'K'),'K') as float) as [Weight KG],
+
+		--dbo.cw_RemoveTrailingZeros(Round(dbo.CnvFromLbs(IsNull(TotalWeightLbs, 0), 'K'), 0),0) [Weight KG],
+
+		Referrer.Name [Buyer],
+
+		upper([dbo].[CnvShipStatus_Name](BuySell.ShippingOK)) Logistics,	
+
+		refequipno as [Equipment No],
+
+		Buysell.BLNo [BOL],	
+
+		W.CompanyDesc As [Dept],
+
+		BuySell.TradeType As [Trade-Type],			
+
+		--BuySell.FxSupplierCost, 
+
+		WKSDetail.SFxAmount as FxSupplierCost,
+
+		BuySell.CurrencyCd As [Currency],		
+
+		BuySell.PSupplierCost [HCPurchaseAmt],
+
+		ClaimStatus AS [ClaimStatus],
+
+		[dbo].[CnvWksStatus_Name](ISNULL(BuySell.[Status],''),BuySell.CustID) [Status],
+
+		--RTRIM((SELECT TOP 1 dbo.CnvUnitName(WksDetail.[UnitType]) FROM WksDetail WHERE WksDetail.BuySellNo = BuYSell.BuySellNo)) +'-'+
+
+		--RTRIM(CONVERT(VARCHAR(10),(SELECT COUNT(*) FROM WksDetail WHERE WksDetail.BuySellNo = BuYSell.BuySellNo)))	[Packaging],
+
+		BuySell.WarehouseStatus	As [Warehouse-Status],
+
+		BookSheet.BookingNo,
+
+		BuySell.UserDefined1,BuySell.UserDefined2,BuySell.UserDefined3,
+
+		userdef.usernm As [Owner],
+
+		Driver,
+
+		PickupNo As [Pickup No],
+
+		FORMAT(WKSDetail.SPrice,'#,##0.#####')+'/' + [dbo].[CnvUOM_Names](WKSDetail.SPriceUOM) as Price,
+
+		CASE WHEN WKSDetail.Units=0 THEN NULL ELSE WKSDetail.Units END AS  Units,
+
+		[dbo].[CnvUnitName](WKSDetail.UnitType) as Packaging
+
+		,FORMAT(ShippingDt, 'MM/yyyy') [ReceivedPeriod]
+
+		,FORMAT(InvoiceDt, 'MM/yyyy') [PostedPeriod]
+
+		
+
+		FROM 
+
+			BuySell 		
+
+			INNER JOIN WKSDetail ON WKSDetail.BuySellNo = BuySell.BuySellNo
+
+			INNER JOIN Counterparty Supplier ON BuySell.VendorID = Supplier.CpID
+
+			LEFT  JOIN [Address] Warehouse ON BuySell.ShipToID = Warehouse.[Type] AND Warehouse.CpID = '(INV)'
+
+			INNER JOIN [CompanyInfo] W ON W.COID = BuySell.COID
+
+			LEFT  JOIN GRADE ON Grade.GradeID = BuySell.RefGradeID	
+
+			LEFT  JOIN Grade WksGrade ON WksGrade.GradeID = WKSDetail.GradeID	
+
+			LEFT  JOIN Referrer ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+			left  join BookSheet on BookSheet.BookingNo= BuySell.BookingNo
+
+			LEFT  JOIN userdef WITH(NOLOCK) ON  BuySell.UserID = userdef.UserID
+
+		WHERE
+
+			BuySell.CustID = '(INV)'
+
+		 AND((@FromDt = '' AND @ToDt = '') OR  (@DateType = 'RCV' AND ((BuySell.ShippingDt >= @FromDt AND BuySell.ShippingDt <= @ToDt) )) OR (@DateType = 'POST' AND ((BuySell.InvoiceDt >= @FromDt AND BuySell.InvoiceDt <= @ToDt) ) AND Status = 'I'))
+
+		 AND (@WhseID = '' OR @WhseID = Warehouse.[Type])
+
+		 AND (@Driver = '' OR BuySell.Driver = @Driver)
+
+		 AND (@COID = '' OR BuySell.COID = @COID)
+
+		 AND (@Status = '' or BuySell.[Status]=@Status)
+
+		 AND (@SupplierID = '' OR @SupplierID = BuySell.VendorID)
+
+		 AND (@ShipToID = '' OR @ShipToID = BuySell.ShipFromID)
+
+		 AND (@SalesRep = '' OR @SalesRep = BuySell.ReferrerNo2)
+
+		 AND (@EquipNo = '' OR @EquipNo = BuySell.RefEquipNo)
+
+		 AND (@BolNo = '' OR @BolNo = BuySell.BLNo)
+
+		 AND (@Logistics = '' OR BuySell.ShippingOK = @Logistics)
+
+		 AND ((@TradeType = '') OR (@TradeType = BuySell.TradeType))
+
+		 AND ((@ClaimStatus = '') OR (@ClaimStatus = BuySell.ClaimStatus))
+
+		 AND (@GradeID = '' OR EXISTS(SELECT * FROM wksDetail WITH(NOLOCK) WHERE wksDetail.BuySellNo = BuySell.BuySellNo AND GradeID = @GradeID))
+
+		 AND (@WhseStatus = ''  OR  @WhseStatus = BuySell.WarehouseStatus)
+
+		 AND ISNULL(BuySell.PublicTradeID,0) = 0
+
+			ORDER BY BuySell.BuySellNo
+
+
+
+	END
+
+
+
+
+

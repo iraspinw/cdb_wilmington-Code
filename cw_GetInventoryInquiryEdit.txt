@@ -1,0 +1,144 @@
+CREATE   PROCEDURE [dbo].[cw_GetInventoryInquiryEdit] 
+
+   @RcvFromDt  datetime,
+
+   @RcvToDt    datetime,
+
+   @COID       char(2) = '',
+
+   @InvClassID varchar(40) = '',
+
+   @WhLocation varchar(40) = '',
+
+   @WhseID varchar(300)='',
+
+   @Condition  varchar(80)='',
+
+   @WksNo varchar(12)='',
+
+   @ItemNo varchar(25)=''
+
+
+
+AS
+
+--[cw_GetInventoryInquiryEdit] '1/14/2022','2/14/2022'
+
+select 
+
+         Inventory.LotNo [Item No] ,
+
+		 Inventory.SerialNo [Serial No],
+
+		 FORMAT(CAST(dbo.formatweightuom(Inventory.QtyOnHand, inventory.weightuom)as DECIMAL(18,5)),'0.###') + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM)[Quantity On Hand],
+
+		 Inventory.WarehouseLocation as Location,
+
+		 inventory.SpecString as Specifications,
+
+		 inventory.Condition,
+
+		 inventory.InvClass AS Class,
+
+		 inventory.Comments,
+
+		 CASE WHEN  exists(SELECT * FROM ConvertingJob WHERE ConvertingJob.BuySellNo = Inventory.BuySellNo) THEN 'Converting' ELSE 'Receving' END AS Source,
+
+		 CASE WHEN  exists(select * from Payables where BuySellNo = Inventory.BuySellNo and Payables.Posted= 1 and Payables.ItemIDSource = 'S') then 'Paid' else 'Not Paid' end as Status,
+
+		 Inventory.WarehouseNm as Warehouse,
+
+		 GRADE.GradeID,
+
+		 GRADE.Description as Grade,
+
+		 Inventory.BuySellNo [Wks No]
+
+
+
+FROM 
+
+		Inventory 
+
+		INNER JOIN Counterparty Supplier ON Inventory.VendorID = Supplier.CpID
+
+		INNER JOIN GRADE ON Inventory.GradeID = Grade.GradeID		
+
+		LEFT JOIN BuySell WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo
+
+		LEFT JOIN Counterparty Customer  WITH(NOLOCK) ON Customer.CpID = Inventory.DesignatedCpID 
+
+		LEFT JOIN CompanyInfo Dept WITH (NOLOCK) ON Dept.COID = Inventory.COID
+
+		LEFT JOIN Referrer WITH(NOLOCK) ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+		LEFT JOIN WarehouseLocation ON Inventory.warehouselocation = WarehouseLocation.ID
+
+		LEFT JOIN WKSDetail WITH(NOLOCK) ON Inventory.BuySellNo = WKSDetail.BuySellNo 	and Inventory.LotNo=WKSDetail.LotNo
+
+		
+
+		
+
+		
+
+	WHERE	
+
+		  (@RcvFromDt = '' OR (Inventory.RcvDt >= @RcvFromDt AND Inventory.RcvDt <= @RcvToDt))
+
+	  AND (@COID = '' OR Inventory.COID = @COID)	
+
+	  AND GRADE.InventoryType = 'SERIAL'
+
+	  AND Inventory.QtyOnHand = Inventory.Weight --Not in sold
+
+	  AND Inventory.LotNo NOT IN  (SELECT ContainerContents.LotNo FROM ContainerContents) --not containrized 
+
+	  AND (@InvClassID = '' OR Inventory.InvClass = @InvClassID)
+
+	  AND (@WhLocation = '' or Inventory.WarehouseLocation = @WhLocation)
+
+	  AND (@WhseID = '' OR @WhseID = inventory.warehousenm)
+
+	  AND (@Condition = '' OR @Condition = inventory.Condition)
+
+	  AND (@WksNo = '' OR Inventory.BuySellNo Like @WksNo + '%')
+
+	  AND (@ItemNo = '' OR  Inventory.LotNo Like  @ItemNo + '%')
+
+	  
+
+	 -- AND 
+
+	 -- AND Inventory.LotNo NOT IN (SELECT Payables.ItemID FROM Payables WHERE Posted =1) -- not paid
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+
+	   
+
+
+
+	  
+
+
+
+	   
+

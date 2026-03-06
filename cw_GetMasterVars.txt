@@ -1,0 +1,38 @@
+CREATE   PROCEDURE [dbo].[cw_GetMasterVars] @UserID char(10) = ''
+
+--05/25/17 MN: Created
+
+--06/22/2022 DSH: Revised to eliminate BEGIN TRANS and Open tickets which was in needed.
+
+AS
+
+SET NOCOUNT ON;
+
+
+
+
+
+	DECLARE @TaskCount varchar(15)
+
+	DECLARE @OpenPeriod DATE
+
+
+
+	SELECT @TaskCount = COUNT(TaskID) FROM CRMTask WITH (NOLOCK) 
+
+		WHERE ISNULL(TaskComplete,0) <> 1 AND UserID = @UserID
+
+	
+
+	SELECT @OpenPeriod = openmonth from systeminfo WITH (NOLOCK) 
+
+
+
+	SELECT 
+
+		@TaskCount [TaskCount], 
+
+		@OpenPeriod [OpenPeriod]
+
+
+

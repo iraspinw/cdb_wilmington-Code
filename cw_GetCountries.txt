@@ -1,0 +1,26 @@
+CREATE PROC [dbo].[cw_GetCountries] as 
+
+--07/29/2015 MCM: Created
+
+--11/04/2015 MEC: Added Order By Name
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+	Name, 
+
+	CountryID,GlobalRegion,
+
+	case when EXISTS(select * from  address where address.Country= Country.CountryID) then 1 else 0 end InUse,
+
+	IsEU
+
+	FROM Country 
+
+	Order By Name
+

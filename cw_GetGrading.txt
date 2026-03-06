@@ -1,0 +1,445 @@
+CREATE proc [dbo].[cw_GetGrading] @GradingID int AS
+
+
+
+--05/15/2011 BF Created for Grading Ticket.
+
+--05/19/2011 DSH Revised:W
+
+--07/18/2011 BF: pulling AdjReason from gpledger
+
+--08/29/2011 BF: added new tare wt fields
+
+--11/4/2011 BF: added lastedit to get
+
+--08/15/2012 BF: changed order by to detailId instead of gradenm to match worksheet order
+
+--09/05/2012 DSH: Added support for Sold-As Allocations.
+
+--04/20/2013 MCM: Added 2nd tare wt adjustment fields
+
+--05/01/2013 MCM: Added BintTicketID
+
+--10/15/2013 MCM: Added ManualContract
+
+--12/10/2013 MCM: Added BinTicketID for route bin ticket support
+
+--05/19/2014 RS: Added CalcGradeID, CalcUnitType 
+
+--07/16/2014 DSH Added support for new Per-Each Price Conversion feature for plant Grading. 
+
+--10/08/2015 DSH Correct problem with inner join to buysell ticket for manualgross/tare settings.
+
+--02/16/2016 EMR: Changed CRVProcFeePrc from money to decimal
+
+--06/05/2019 RS:  Added Grading.IsManualGross, Grading.IsManualTare
+
+--09/10/2020 RS:  Added ItemRefNo
+
+--04/21/2022 MEC: Copied from 'q_ReceivingGet' for cieTrade.net Grading
+
+--09/19/2022 MEC: Added DriverNm
+
+--09/20/2022 Nick: Added UserNm
+
+
+
+--cw_GetGrading 1007
+
+
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+	-- GET Grading TICKET.
+
+	SELECT	Grading.GradingID, Grading.COID, Grading.PostedDt,
+
+			Grading.TradeType, ReceiveDtTm, Grading.[Status], Grading.UserID, 
+
+			RouteID, BreakDownType, DispatchJobNo, ScaleTicketNo,
+
+			CarrierID, EquipmentType, EquipmentNo,TruckNo, Grading.Driver, 
+
+			Grading.WarehouseNm, Grading.TareWt, TareWtDtTm, TareWtAdj, 
+
+			Grading.GrossWt, GrossWtDtTm, Grading.NetWt, Grading.Notes,  
+
+			convert( int,Grading.lastedit) AS EditStamp,
+
+			Drivers.DriverNm, UserDef.UserNm
+
+	FROM Grading WITH (NOLOCK)
+
+	LEFT JOIN Drivers WITH (NOLOCK) On Grading.Driver = Drivers.DriverID
+
+	LEFT JOIN UserDef WITH (NOLOCK) On Grading.UserID = UserDef.UserID
+
+	WHERE Grading.GradingID = @GradingID
+
+
+
+	-- GET CRV GL Acct (If any)
+
+	declare @CrvGlAcct varchar(12)
+
+	SET @CrvGlAcct = NULL
+
+	Select @CrvGlAcct = rtrim(Coalesce(OptionValue,'')) FROM Options WITH (NOLOCK) WHERE OptionName = 'CRVGLAcct'
+
+	IF @CrvGlAcct IS NULL SET @CrvGlAcct = ''
+
+
+
+
+
+	-- DEFINE Grading TICKET WORK TABLE.
+
+	CREATE TABLE #wrkGrading (
+
+		BuySellno CHAR(12),
+
+		UserID char(10),
+
+		AccountNm varchar(65),		
+
+		AccountID char(12),
+
+		AccountLocation char(45),
+
+		GradeID CHAR(15),
+
+		GradeNm varchar(65),   
+
+		PWeight decimal(22,8),
+
+		PWeightUOM CHAR(1),
+
+		Units int,
+
+		UnitType CHAR(1),
+
+		Price decimal(25,14),
+
+		PriceUOM CHAR(1),
+
+		PAmount Money,			
+
+		AllocType CHAR(1),
+
+		GradeAltDesc varchar(85),
+
+		PONumber char(15),
+
+		PODetailID int,
+
+		DetailID int,
+
+		OrderSeq int,
+
+		CRVPrice Decimal(22,5),
+
+		CRVPriceUOM char(1),
+
+		CRVWeight Decimal(18,5),
+
+		CRVWeightUOM char(1),
+
+		CRVRefundAmt Money,
+
+		CRVProcFeePrc Decimal(22,6), 
+
+		CRVProcFeeUOM char(1),		
+
+		CRVProcFeeAmt money,
+
+		CRVUseRefundQty bit, 
+
+		CRVAdminFeeAmt money,
+
+		TarePer decimal(22,8),
+
+		UseAvgBaleWt smallint,
+
+		AdjWt decimal(22,8) default 0,
+
+		AdjDescription varchar(100),
+
+		AdjUnits int,
+
+		AdjUnitType char(1),
+
+		SoldAsPackage varchar(100),
+
+		AdjWt2 decimal(22,8) default 0,
+
+		AdjUnits2 int,
+
+		AdjUnitType2 char(1),
+
+		TarePer2 decimal(22,8),
+
+		BinTicketID int,
+
+		CalcGradeID char(15), 
+
+		CalcUnitType char(1),
+
+		IsPerEachCnv bit,
+
+		PerEachCnvPrice Money,
+
+		ItemRefNo varchar(25),
+
+		SupplierPaid bit
+
+	)
+
+	Create Index #IE_wrkGrading ON #wrkGrading(DetailID)		
+
+
+
+	
+
+	-- POPULATE TALLY WEIGHT RECORDS - ALLOC TYPE (1)
+
+	--===============================================
+
+	INSERT #wrkGrading 
+
+	SELECT	
+
+		buysell.buysellno, 
+
+		buysell.userid, 
+
+		companynm,
+
+		buysell.vendorid, 
+
+		shipfromid,
+
+		WKSDETAIL.GradeID, 
+
+		Grade.Description, 
+
+		PWeight, 
+
+		PWeightUOM, 
+
+		WKSDETAIL.Units, 
+
+		WKSDETAIL.UnitType, 
+
+		PPrice as Price, 
+
+		PUOM as PriceUOM, 
+
+		PAmount, 
+
+		'0' AS AllocType,
+
+		WksDetail.InvoiceDesc, 
+
+		wksdetail.ppo,
+
+		WksDetail.PPO_ID,
+
+		WKSDETAIL.DetailID, 
+
+		WksDetail.DetailID as OrderSeq, 
+
+		WksDetail.CRVPrice, 
+
+		WksDetail.CRVPriceUOM, 
+
+		CRVWt,
+
+		CRVWtUOM, 
+
+		CRVRefundAmt,
+
+		CRVProcFeePrc, 
+
+		wksDetail.CRVProcFeeUOM, 
+
+		CRVProcFeeAmt,
+
+		wksDetail.CRVUseRefundQty,
+
+		wksDetail.CRVAdminFeeAmt,
+
+		TareWtPerUnit as TarePer,
+
+		isnull(UseAvgBaleWt,0),
+
+		wksdetail.TareWt,
+
+		'',
+
+		TareWtUnits,
+
+		TareWtUnitType,
+
+		dbo.GetSoldAsPackage(WksDetail.DetailID),
+
+		TareWt2,
+
+		TareWtUnits2,
+
+		TareWtUnitType2,
+
+		TareWtPerUnit2,
+
+		0,
+
+		'','',
+
+		Wksdetail.IsPerEachCnv,
+
+		Wksdetail.PerEachCnvPrice,
+
+		Buysell.PickupNo as ItemRefNo,
+
+		Case When (Select Count(PayableID) from Payables P WITH(NOLOCK) where P.BuySellNo = buysell.buysellno And CpID = buysell.vendorid and (Posted = 1 OR IsNull(P.ReverseBatchNo,0) <> 0) And ItemIDSource = 'S' AND (Reversed is  NULL OR Reversed  = 0)) > 0 Th
+en 1 Else 0 End as SupplierPaid
+
+	FROM Buysell 
+
+		INNER JOIN Counterparty WITH(NOLOCK)  on counterparty.cpid = buysell.vendorid
+
+		left JOIN wksdetail WITH(NOLOCK) on wksdetail.buysellno = buysell.buysellno
+
+		left JOIN GRADE WITH(NOLOCK) ON WKSDETAIL.GRADEID = GRADE.GRADEID
+
+    WHERE buysell.GradingID = @GradingID
+
+   
+
+
+
+	-- POPULATE ADJUSTMENT CHARGEBACKS RECORDS - ALLOC TYPE (2)
+
+	--=========================================================
+
+	INSERT #wrkGrading     
+
+    SELECT 		
+
+		buysell.buysellno, 
+
+		buysell.userid, 
+
+		companynm,
+
+		buysell.vendorid, 
+
+		shipfromid,
+
+		GPLedger.GLAcct, 
+
+		gpledger.adjreason,
+
+		--Substring(upper(GLAccount.Name),1,65), 
+
+		0, '', 0, '', Cost, '', Cost, 
+
+		'2' AS AllocType, 
+
+		substring(AdjNotes,1,85) as AdjNotes,
+
+		--'' as ponumber, 
+
+		RefPONo as PONumber,
+
+		0 as PODetailID, 
+
+		LedgerID as DetailID, 
+
+		LedgerID as OrderSeq, 
+
+		0,'',0,'',0,0,'',0,0,0,0,0,0,'',0,'','',
+
+		0,0,'',0
+
+		,0 -- BintTicketID
+
+		,CalcGradeID, CalcUnitType
+
+		,0,0,Buysell.PickupNo as ItemRefNo,
+
+		Case When (Select Count(PayableID) from Payables P WITH(NOLOCK) where P.BuySellNo = buysell.buysellno And CpID = buysell.vendorid and (Posted = 1 OR IsNull(P.ReverseBatchNo,0) <> 0) And ItemIDSource = 'S' AND (Reversed is  NULL OR Reversed  = 0)) > 0 Th
+en 1 Else 0 End as SupplierPaid
+
+    FROM GPLedger WITH(NOLOCK) 
+
+		INNER JOIN BuySell WITH(NOLOCK) ON GPLedger.BuySellNo = BuySell.BuySellNo
+
+		INNER JOIN GLAccount WITH(NOLOCK)  ON GLAccount.GLAcct = GPLedger.GLAcct
+
+		inner join counterparty WITH(NOLOCK)  on counterparty.cpid = buysell.vendorid
+
+    WHERE BuySell.GradingID = @GradingID
+
+		AND Source = 'A' AND AdjType = 'P' AND AdjCpID = BuySell.VendorID AND FromJob = 1
+
+		AND rtrim(GPLedger.GLAcct) <> @CrvGlAcct
+
+
+
+
+
+    
+
+	-- FINAL RESULT SET.	
+
+    select * from #wrkGrading 
+
+		 order by AccountNm, AccountLocation,  detailid, alloctype
+
+
+
+
+
+
+
+	--POPULATE EXPENSES FROM EXPENSE WORKSHEET FOR GRADING
+
+	SELECT
+
+		BuySell.BuySellNo, ItemID, WKSDelivery.VendorID, CounterParty.CompanyNm, TrailerNo, InvoiceDesc, convert(char(10),DeliveryDt,101) as DeliveryDt, 
+
+		dbo.cw_RemoveTrailingZeros(Cost,2) as Cost, ChgToCustAmt, Mileage, PrintOnInvoice, wksdelivery.CurrencyCd, CurrencyCdCust, wksdelivery.FxAmount, 
+
+		FxAmountCust, WksDelivery.GLAcct, Manifest, PrepaidFreight, PFreightCurCode, dbo.cw_RemoveTrailingZeros(Price,2) as Price, 
+
+		PricePer, dbo.cw_RemoveTrailingZeros(PriceCust,2) as PriceCust, PricePerCust, DeliveryTime, WKSDelivery.FxRate, FxContractNo, 
+
+		ExpSalesFxRate, SalesGLAcct, 0 as posted, isnull(wksdelivery.IsFreight,0) as IsFreight
+
+	into #wksdelivtemp
+
+    FROM WKSDelivery
+
+		INNER JOIN BuySell ON BuySell.BuySellNo = WksDelivery.BuySellNo
+
+		INNER JOIN Counterparty ON WKSDelivery.VendorID = CounterParty.CpID
+
+	WHERE BuySell.GradingID = @GradingID
+
+	
+
+	if exists(select 1 from payables inner join #wksdelivtemp on payables.ItemID = #wksdelivtemp.ItemID where payables.ItemIDSource = 'D' and (payables.posted=1 or IsNull(Payables.ReverseBatchNo,0) <> 0)) begin
+
+		update #wksdelivtemp set posted =1
+
+		from payables where payables.ItemID = #wksdelivtemp.ItemID and payables.ItemIDSource = 'D' and (payables.posted=1 or IsNull(Payables.ReverseBatchNo,0) <> 0)
+
+	end
+
+	select * from #wksdelivtemp
+
+	drop table #wksdelivtemp

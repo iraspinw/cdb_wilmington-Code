@@ -1,0 +1,36 @@
+CREATE   PROCEDURE [dbo].[cw_GetCounterpartyList_TEST] AS
+
+--12/19/2005 DSH Added Status
+
+--3/7/2006 BM: Added INACTIVE counterparties to List
+
+--10/19/2007 JW: Added AutoFeedAPVoucher for checking when posting payable for a cp
+
+--08/27/2009 MCM: Added FreightType
+
+--12/16/2009 MCM: Added CurrCode to SELECT
+
+--12/12/2014 MCM: TRIM CPID for eDock
+
+--11/23/2020 MEC: Added ScaleCheck and Reverse Billing settings
+
+SET NOCOUNT ON 
+
+SELECT CompanyNm, RTRIM(CpID) AS CpID, [Role], ActiveStatus, AutoFeedAPVoucher, FreightType, CurrCode, ScaleCheck, ReverseBilling,case when  isnull(ReferenceID,'')='' then CompanyNm else ReferenceID end ReferenceID,
+
+ISNULL((SELECT COID + ',' FROM CounterpartyDepts WHERE CounterpartyDepts.CpID = CounterParty.CpID FOR XML PATH('')  ), '') As Depts
+
+FROM CounterParty WITH (NOLOCK)  
+
+WHERE (ActiveStatus = 'A' or ActiveStatus = 'I')
+
+AND RTRIM(CpID) NOT IN ('(INV)','(PLANT)','{C}')
+
+ORDER BY CompanyNm
+
+
+
+
+
+
+

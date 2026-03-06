@@ -1,0 +1,104 @@
+CREATE PROC [dbo].[cw_GetDescriptionOfGoods]
+
+	@LCNo varchar(25) = '',
+
+	@PONumber char(15) = '',
+
+	@BookingNo char(25) = ''
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--11/7/16 MN: CREATED TO RETURN DESCRIPTION OF GOODS FOR BOOKING
+
+
+
+
+
+-- GET DESCRIPTION FROM LC
+
+If @LCNo <> '' BEGIN
+
+	SELECT  CommodityDesc AS [Desc], CommodityDesc,[Weight], WeightUOM AS [WTUOM] 
+
+	FROM LC 
+
+	INNER JOIN PODetail on 1 = 1
+
+	WHERE LCNo = @LCNo
+
+	and podetail.PONumber = @PONumber
+
+	--SELECT [Weight], WeightUOM AS [WTUOM]
+
+ --       FROM PODetail INNER JOIN GRADE  WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID 
+
+	--    INNER JOIN PO ON PO.PONumber = PODetail.PONumber	    
+
+ --       WHERE PODetail.PONumber = @PONumber
+
+	--RETURN
+
+
+
+	RETURN
+
+END
+
+
+
+-- GET DESCRIPTION FROM SALES ORDER
+
+IF @PONumber <> '' BEGIN    
+
+
+
+	SELECT [Weight], CASE WHEN PODetail.PODesc <> '' THEN PODesc ELSE Grade.[Description] END AS [Desc], WeightUOM AS [WTUOM], CommodityDesc
+
+        FROM PODetail INNER JOIN GRADE  WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID 
+
+	    INNER JOIN PO ON PO.PONumber = PODetail.PONumber	    
+
+        WHERE PODetail.PONumber = @PONumber
+
+	RETURN
+
+
+
+END
+
+
+
+-- GET DESCRIPTION FROM WORKSHEET.
+
+DECLARE @WksDetail INT
+
+SELECT TOP 1 @WksDetail = DetailID 
+
+	FROM WksDetail 
+
+	INNER JOIN BuySell ON BuySell.BuySellNo = WksDetail.BuySellNo
+
+	WHERE 
+
+	BuySell.BookingNo = @BookingNo 
+
+	AND BuySell.[Status] <> 'X'
+
+
+
+IF ISNULL(@WksDetail,'') <> '' BEGIN
+
+	SELECT Grade.[Description] AS [Desc], CommodityDesc
+
+        FROM WksDetail INNER JOIN GRADE ON WksDetail.GradeID = Grade.GradeID 
+
+        WHERE WksDetail.DetailID = @WksDetail
+
+	RETURN
+
+END
+

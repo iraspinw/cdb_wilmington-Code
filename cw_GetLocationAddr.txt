@@ -1,0 +1,33 @@
+CREATE proc [dbo].[cw_GetLocationAddr] @CpID char(12), @Location char(45) = 0 
+
+
+
+as
+
+
+
+--05/01/2017 MEC: Created for new Inventory Receiving
+
+
+
+--cw_GetLocationAddr '1205', 'PRATVILLE'
+
+
+
+	SELECT 
+
+		Addr1, Addr2, Addr3, City, Region, PostalCd, Country, 
+
+		IsNull(PhoneBusiness,'') Telephone, IsNull(ContactNm,'') Contact, 
+
+		Instructions, ISNULL(UseAltAddrFormat,0) 
+
+	FROM [Address] WITH (NOLOCK) 
+
+	LEFT JOIN Contact WITH (NOLOCK) ON Contact.CpID = [Address].CpID AND Contact.Location = [Address].[Type]
+
+	LEFT JOIN Country WITH (NOLOCK) ON Country.CountryID = [Address].Country 
+
+	WHERE 
+
+		[Address].CpID = @CpID AND [Type] = @Location

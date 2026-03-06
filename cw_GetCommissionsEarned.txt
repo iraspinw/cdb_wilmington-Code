@@ -1,0 +1,670 @@
+CREATE   PROCEDURE [dbo].[cw_GetCommissionsEarned] @FromDt datetime, @ToDt datetime, @VendorID char(12), @UOM char(1) AS
+
+	--@UnpostedOnly bit = 0, @Dept char(2) = '', @TradeType char(25) = '', @SalesRep CHAR(10) = ''
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+-- 01/27/2005 (JW) - modified joins to GLAcct
+
+-- 11/02/2007 DSH: Added UNION all to fix 
+
+-- 10/09/2008 MCM: Added FxAmount, Currency Columns and @CustID filter
+
+-- 11/14/2008 MCM: Added @VendorID parameter for EGOT to filter on "agent"
+
+-- 02/19/2009 MCM: Added COID to result set
+
+-- 07/07/2009 RS: PO.POReference added, @UOM changed from char(3) to char(4)
+
+-- 08/21/2009 RS: @UnpostedOnly, Posted and SBalanceDue added
+
+-- 08/28/2009 RS: @UnpostedOnly filter fixed
+
+-- 09/04/2009 RS: UPDATE #REPORT SET Posted = 'Y' part fixed 
+
+-- 09/14/2009 RS: check for Payables.Reversed fixed
+
+-- 04/07/2015 RS: @SalesRep fixed
+
+-- 10/02/2018 DSH Rewritten for .NET Software
+
+-- 02/21/2020 DSH Corrected problem when there are two commission expenses on one worksheet.
+
+-- 05/1/2020 Alex : Removed the negative amount from 'WksDelivery.FxAmount*-1'--Requeted by Richard
+
+-- 09/02/2020: DSH Corrected issue with reporting on PER EA sales detail items
+
+-- 09/11/2020: Corrected probelm with reporting on worksheets mising details 
+
+-- 09/13/2020: DSH Furtehr corrections to handle multiple commissions on one worksheet (caused totalquantity to double)
+
+-- 03/03/2023 Nick: Added WksType to prevent incorrect URL Redirects
+
+
+
+	CREATE TABLE #ReportDetail(
+
+		SeqNo INT IDENTITY(1,1),
+
+		RecType CHAR(1),
+
+		InvoiceDt DATE,
+
+		LoadNo CHAR(12),
+
+		SoldToCustomer VARCHAR(100),
+
+		ShipToLocation  VARCHAR(100),
+
+		CustomerPO CHAR(35),
+
+		ProductNm VARCHAR(200), 
+
+		SalesPrice VARCHAR(50),		
+
+		SalesExtension MONEY,
+
+		QuantityWt DECIMAL(22,3),		
+
+		CommissionRate VARCHAR(50),
+
+		CommissionAmt MONEY,		
+
+		TotalQty DECIMAL(22,3),		
+
+		AllocQty DECIMAL(22,3),	
+
+		AllocWtQty DECIMAL(22,3),		
+
+		AllocEaQty DECIMAL(22,3),
+
+		AllocType CHAR(1),
+
+		WksDetailID INT,
+
+		WksDetailSeq INT,
+
+		WksType char(1)
+
+	)
+
+
+
+
+
+
+
+	-- WORKSHEET COMMISSION EXPENSES 
+
+	--------------------------------
+
+	INSERT #ReportDetail(RecType,InvoiceDt,LoadNo,SoldToCustomer,ShipToLocation,CustomerPO,ProductNm,SalesPrice,SalesExtension,QuantityWt,CommissionRate,CommissionAmt,TotalQty,AllocQty,AllocWtQty,AllocEaQty,AllocType,WksDetailID,WksDetailSeq,WksType) 		
+
+	SELECT 
+
+		'B',
+
+		BuySell.InvoiceDt,
+
+		BuySell.BuySellNo,
+
+		Customer.CompanyNm,																			--Customer
+
+		A.City+' '+A.Region,
+
+		ISNULL(PO.POReference,''),																	--Customer Order
+
+		Grade.[Description]+' '+ISNULL(dbo.CnvUnitName(WksDetail.UnitType),''), 
+
+		CONVERT(VARCHAR(20),CONVERT(FLOAT,WksDetail.SPrice))+' /'+ rtrim(dbo.CnvUOM_Names2(WksDetail.SPriceUOM))+' '+BuySell.CurrencyCd,		
+
+		WksDetail.SAmount,
+
+		dbo.convert_to_Uom(SWeight,SWeightUOM,@UOM),												--Weight
+
+		Convert(VARCHAR(20),CONVERT(FLOAT,wksDelivery.Price)) + ' '+rtrim(dbo.CnvUOM_Names2(wksDelivery.PricePer)),		
+
+		WksDelivery.FxAmount,
+
+		0,
+
+		0,
+
+		(CASE WHEN SWeightUom <> 'E' THEN dbo.convert_to_Uom(SWeight,SWeightUOM,'L') ELSE 0 END),
+
+		(CASE WHEN SWeightUom = 'E' THEN SWeight ELSE 0 END),
+
+		'W',
+
+		WksDetail.DetailID,
+
+		ROW_NUMBER()  OVER(PARTITION BY WksDetail.DetailID ORDER BY WksDetail.DetailID ASC),
+
+		CASE
+
+			WHEN buysell.CustID = '(INV)' THEN 'R'
+
+			WHEN buysell.VendorID = '(INV)' THEN 'S'
+
+			ELSE 'B'
+
+		END as WksType
+
+		FROM WksDelivery 
+
+			INNER JOIN Buysell WITH(NOLOCK) ON BuySell.BuySellNo = wksDelivery.BuySellNo
+
+			INNER JOIN GLAccount WITH(NOLOCK) ON GLAccount.GLAcct = wksDelivery.GLAcct 						
+
+			INNER JOIN Counterparty Customer WITH(NOLOCK) ON BuySell.CustID = Customer.CpID
+
+			INNER JOIN [Address] A ON A.CPID = BuySell.CustID AND A.[Type] = BuySell.ShipToID
+
+			LEFT JOIN PO WITH(NOLOCK) ON BuySell.RefSoNo = PO.PONUmber	
+
+			LEFT JOIN WksDetail WITH(NOLOCK) ON WksDetail.BuySellNo = BuySell.BuySellNo
+
+			LEFT JOIN Grade WITH(NOLOCK) ON Grade.GradeID = wksDetail.GradeID
+
+		WHERE WksDelivery.VendorID = @VendorID
+
+			AND BuySell.[STATUS] = 'I'
+
+			AND GLAccount.Cat = 'COMMISSION'
+
+			AND (@FromDt = '' OR InvoiceDt >= @FromDt)
+
+			AND (@ToDt = '' OR InvoiceDt <= @ToDt)
+
+
+
+
+
+	UPDATE #ReportDetail SET ProductNm = '', SalesPrice = 'na', SalesExtension = 0 WHERE ProductNm Is NULL
+
+
+
+
+
+--delete from #ReportDetail  where loadno <> '13276'
+
+
+
+
+
+	--ASSIGN QUANTITY TYPE		
+
+	UPDATE #ReportDetail SET AllocType = 'E' WHERE EXISTS(Select * from Wksdetail where WksDetail.BuysellNo = #ReportDetail.LoadNo AND SWeightUOM = 'E')
+
+			
+
+
+
+	
+
+	
+
+	-- ALLOCATE COMMMISSION EXPENSES BY GRADE --
+
+	--------------------------------------------------------------------------------------------------------
+
+
+
+	-- GET LIST OF WORKSHEETS 
+
+	CREATE TABLE #Loads(LoadNo CHAR(12))
+
+	INSERT #Loads
+
+		SELECT DISTINCT LoadNo FROM #ReportDetail
+
+	
+
+	UPDATE #ReportDetail SET AllocQty = AllocEaQty WHERE AllocEaQty <> 0  AND  AllocType = 'E'
+
+	UPDATE #ReportDetail SET AllocQty = AllocWtQty WHERE AllocWtQty  <> 0  AND  AllocType = 'W'
+
+
+
+	
+
+	---- GET TOTAL WEIGHT OF LOADS.
+
+	CREATE TABLE #TotalWeight(LoadNo CHAR(12), TotalQty DECIMAL(22,5))
+
+	INSERT #TotalWeight
+
+		SELECT DISTINCT LoadNo, SUM(AllocQTy) FROM #ReportDetail WHERE WksDetailSeq=1 GROUP BY LoadNo
+
+
+
+
+
+	UPDATE #ReportDetail SET TotalQty = #TotalWeight.TotalQty  FROM #ReportDetail INNER JOIN #TotalWeight ON #ReportDetail.LoadNo = #TotalWeight.LoadNo	
+
+	UPDATE #ReportDetail SET CommissionAmt = Round(CommissionAmt * (AllocQty / TotalQty),2) WHERE TotalQty <> 0 
+
+
+
+	
+
+	--------------------------------------------------------------------------------------------------------
+
+
+
+
+
+	-- COMMISSION ADJUSTMENTS
+
+	-------------------------
+
+	INSERT #ReportDetail(RecType,InvoiceDt,LoadNo,SoldToCustomer,ShipToLocation,CustomerPO,ProductNm,SalesPrice,SalesExtension,QuantityWt,CommissionRate,CommissionAmt,TotalQty,AllocQty,WksType) 		
+
+	SELECT 
+
+		'A',
+
+		CASE WHEN GPLedger.AdjPosted = 'N' THEN BuySell.InvoiceDt ELSE GPLedger.TradeDt END,
+
+		GPLedger.BuySellNo,
+
+		Customer.CompanyNm,	
+
+		A.City+' '+A.Region,
+
+		ISNULL(PO.POReference,''),																	--Customer Order
+
+		'Commission Adjustment',
+
+		' ',
+
+		0,
+
+		0,
+
+		' ',
+
+		GPLedger.AdjFxAmount,
+
+		NULL,NULL,
+
+		CASE
+
+			WHEN buysell.CustID = '(INV)' THEN 'R'
+
+			WHEN buysell.VendorID = '(INV)' THEN 'S'
+
+			ELSE 'B'
+
+		END as WksType
+
+	FROM GPLedger
+
+			INNER JOIN Buysell WITH(NOLOCK) ON BuySell.BuySellNo = GPLedger.BuySellNo
+
+			INNER JOIN GLAccount WITH(NOLOCK) ON GLAccount.GLAcct = GPLedger.GLAcct 
+
+			INNER JOIN Counterparty Customer WITH(NOLOCK) ON BuySell.CustID = Customer.CpID
+
+			INNER JOIN [Address] A ON A.CPID = BuySell.CustID AND A.[Type] = BuySell.ShipToID
+
+			LEFT JOIN PO WITH(NOLOCK) ON BuySell.RefSONo = PO.PONUmber	
+
+		WHERE GPLedger.AdjCPID = @VendorID
+
+			AND 
+
+			(
+
+				(GPLedger.AdjPosted = 'Y' AND ((@FromDt = '' OR TradeDt >= @FromDt) and (@ToDt = '' OR TradeDt <= @ToDt)))
+
+				OR
+
+				(GPLedger.AdjPosted = 'N' AND  ((@FromDt = '' OR InvoiceDt >= @FromDt) and (@ToDt = '' OR InvoiceDt <= @ToDt)))
+
+			)
+
+			AND BuySell.[STATUS] = 'I'
+
+			AND GPLedger.Source = 'A'
+
+			AND (GLAccount.Cat = 'COMMISSION')
+
+		
+
+
+
+
+
+	-- FINAL REPORT
+
+	---------------
+
+	SELECT	InvoiceDt [Invoice Date],
+
+			LoadNo [Load#],
+
+			SoldToCustomer [Customer],
+
+			ShipToLocation [Ship To Location],
+
+			CustomerPO [PO#], 
+
+			ProductNm [Product/Description],
+
+			SalesPrice [Sales Price],
+
+			SalesExtension [Extension],
+
+			QuantityWt [Quantity],
+
+			CommissionRate [Comm Rate],
+
+			CommissionAmt [Comm Amount],
+
+			WksType [-hidden-WksType]	
+
+		FROM #ReportDetail
+
+		Order By InvoiceDt, LoadNo
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	--SELECT Vendor.CompanyNm, Customer.CompanyNm, BuySell.BuySellNo, DATEADD(dd, DATEDIFF(dd, 0, BuySell.InvoiceDt), 0)  AS InvoiceDt, 
+
+	--Supplier.CompanyNm, BuySell.ShipFromID,Grade.Description, 
+
+	--(GPLedger.Sale *  (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs)) , 
+
+	--(GPLedger.Cost *  (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs)) , 
+
+	--dbo.convertfromlbs(dbo.CALCLBS(SWeight,SWeightUOM), @UOM), 
+
+	--GPLedger.GrossProfit * (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs), 
+
+	--GPLedger.Cost * (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs), WksDetail.SPO As SONo, 
+
+	
+
+	--GPLedger.AdjFxAmount * (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs) AS FxAmount, 
+
+	
+
+	
+
+	--AdjcurrencyCd AS CurrencyCd, BuySell.COID,PO.POReference,GPLedger.AdjPosted,
+
+	--BuySell.SBalanceDue,''
+
+	
+
+	
+
+	--FROM GPLedger WITH(NOLOCK) 
+
+	--INNER JOIN BuySell WITH(NOLOCK) ON GPLedger.BuySellNo =  BuySell.BuySellNo
+
+	--INNER JOIN Counterparty Vendor WITH(NOLOCK) ON Vendor.CpID = GPLedger.AdjCpID
+
+	--INNER JOIN Counterparty Customer WITH(NOLOCK) ON Customer.CpID = BuySell.CustID
+
+	--INNER JOIN Counterparty Supplier WITH(NOLOCK) ON BuySell.VendorID = Supplier.CpID
+
+	--INNER JOIN wksDetail WITH(NOLOCK) ON BuySell.BuySellNo = wksDetail.BuySellNo
+
+	--INNER JOIN Grade WITH(NOLOCK) ON Grade.GradeID = wksDetail.GradeID
+
+	--INNER JOIN GLAccount WITH(NOLOCK) ON GLAccount.GLAcct = GPLedger.GLAcct
+
+	--LEFT JOIN PO WITH(NOLOCK) ON WksDetail.SPO = PO.PONumber
+
+	--WHERE TradeDt >= @FromDt and TradeDT <= @ToDt
+
+	--AND Buysell.[Status] = 'I'
+
+	--AND BuySell.TotalWeightLbs <> 0
+
+	--AND wksDetail.SWeight <> 0
+
+	--AND GLAccount.Cat = 'COMM EXPENSE'
+
+	--AND GPLedger.Source = 'A'
+
+	--AND (@CustID = '' OR BuySell.CustID = @CustID)
+
+	--AND (@VendorID = '' OR GPLedger.AdjCpID = @VendorID)
+
+	--AND (@Dept = '' OR Buysell.COID = @Dept )
+
+	--AND (@TradeType = '' OR Buysell.TradeType = @TradeType )
+
+	--AND (@SalesRep = '' OR (@SalesRep = BuySell.ReferrerNo1 OR @SalesRep = BuySell.ReferrerNo2)) 
+
+	--ORDER BY  Vendor.CompanyNm, InvoiceDt
+
+
+
+
+
+
+
+
+
+		--Vendor.CompanyNm as Vend, 
+
+		
+
+		--BuySell.BuySellNo, 
+
+		--DATEADD(dd, DATEDIFF(dd, 0, BuySell.InvoiceDt), 0)  AS InvoiceDt, 
+
+		--Supplier.CompanyNm, 
+
+		--BuySell.ShipFromID,
+
+		
+
+		--SAmount + (isnull(#Expense.ChgToCustAmt,0) *  (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs)) as SPrice, 
+
+		--PAmount + (isnull(#Expense.Cost,0) *  (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs)) as PPrice, 
+
+		
+
+		--GPLedger.GrossProfit * (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs) as GP, 
+
+		--wksDelivery.Cost * (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs) as CommAmt, 
+
+		--WksDetail.SPO as SONo, 
+
+		--wksDelivery.FxAmount * (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs) AS FxAmount,
+
+		--wksDelivery.CurrencyCd AS CurrencyCd,
+
+		--BuySell.COID,
+
+		--PO.POReference,
+
+		--'' as Posted,
+
+		--BuySell.SBalanceDue,
+
+		--wksDelivery.ItemID
+
+
+
+	----INTO #REPORT
+
+	--FROM BuySell WITH(NOLOCK) 
+
+	--INNER JOIN Counterparty Customer WITH(NOLOCK) ON BuySell.CustID = Customer.CpID
+
+	--INNER JOIN Counterparty Supplier WITH(NOLOCK) ON BuySell.VendorID = Supplier.CpID
+
+	--INNER JOIN wksDetail WITH(NOLOCK) ON BuySell.BuySellNo = wksDetail.BuySellNo
+
+	
+
+	--INNER JOIN GPLedger WITH(NOLOCK) ON (BuySell.BuySellNo = GPLedger.BuySellNo AND GPLedger.Source = 'B')
+
+	--INNER JOIN wksDelivery WITH(NOLOCK) ON wksDelivery.BuySellNo = BuySell.BuySellNo
+
+	--INNER JOIN Counterparty Vendor WITH(NOLOCK) ON wksDelivery.VendorID = Vendor.CpID
+
+	--INNER JOIN GLAccount WITH(NOLOCK) ON GLAccount.GLAcct = wksDelivery.GLAcct 
+
+	--LEFT JOIN #Expense WITH(NOLOCK) ON #Expense.BuySellNo = BuySell.BuySellNo
+
+	
+
+	--WHERE TradeDt >= @FromDt and TradeDT <= @ToDt
+
+	--AND BuySell.[STATUS] = 'I'
+
+	--AND BuySell.TotalWeightLbs <> 0
+
+	--AND wksDetail.SWeight <> 0
+
+	--AND GLAccount.Cat = 'COMM EXPENSE'
+
+	
+
+	--AND (@VendorID = '' OR wksDelivery.VendorID = @VendorID)
+
+	--AND (@Dept = '' OR Buysell.COID = @Dept )
+
+	--AND (@TradeType = '' OR Buysell.TradeType = @TradeType )
+
+	--AND (@SalesRep = '' OR (@SalesRep = BuySell.ReferrerNo1 OR @SalesRep = BuySell.ReferrerNo2)) 
+
+
+
+
+
+/*
+
+	
+
+
+
+
+
+
+
+	UNION ALL
+
+
+
+	-- ADJUSTMENTS
+
+	SELECT Vendor.CompanyNm, Customer.CompanyNm, BuySell.BuySellNo, DATEADD(dd, DATEDIFF(dd, 0, BuySell.InvoiceDt), 0)  AS InvoiceDt, 
+
+	Supplier.CompanyNm, BuySell.ShipFromID,Grade.Description, 
+
+	(GPLedger.Sale *  (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs)) , 
+
+	(GPLedger.Cost *  (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs)) , 
+
+	dbo.convertfromlbs(dbo.CALCLBS(SWeight,SWeightUOM), @UOM), GPLedger.GrossProfit * (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs), 
+
+	GPLedger.Cost * (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs), WksDetail.SPO As SONo, 
+
+	
+
+	GPLedger.AdjFxAmount * (dbo.CALCLBS(SWeight,SWeightUOM)/BuySell.TotalWeightLbs) AS FxAmount, 
+
+	
+
+	
+
+	AdjcurrencyCd AS CurrencyCd, BuySell.COID,PO.POReference,GPLedger.AdjPosted,BuySell.SBalanceDue,''
+
+	FROM GPLedger WITH(NOLOCK) 
+
+	INNER JOIN BuySell WITH(NOLOCK) ON GPLedger.BuySellNo =  BuySell.BuySellNo
+
+	INNER JOIN Counterparty Vendor WITH(NOLOCK) ON Vendor.CpID = GPLedger.AdjCpID
+
+	INNER JOIN Counterparty Customer WITH(NOLOCK) ON Customer.CpID = BuySell.CustID
+
+	INNER JOIN Counterparty Supplier WITH(NOLOCK) ON BuySell.VendorID = Supplier.CpID
+
+	INNER JOIN wksDetail WITH(NOLOCK) ON BuySell.BuySellNo = wksDetail.BuySellNo
+
+	INNER JOIN Grade WITH(NOLOCK) ON Grade.GradeID = wksDetail.GradeID
+
+	INNER JOIN GLAccount WITH(NOLOCK) ON GLAccount.GLAcct = GPLedger.GLAcct
+
+	LEFT JOIN PO WITH(NOLOCK) ON WksDetail.SPO = PO.PONumber
+
+	WHERE TradeDt >= @FromDt and TradeDT <= @ToDt
+
+	AND Buysell.[Status] = 'I'
+
+	AND BuySell.TotalWeightLbs <> 0
+
+	AND wksDetail.SWeight <> 0
+
+	AND GLAccount.Cat = 'COMM EXPENSE'
+
+	AND GPLedger.Source = 'A'
+
+	AND (@CustID = '' OR BuySell.CustID = @CustID)
+
+	AND (@VendorID = '' OR GPLedger.AdjCpID = @VendorID)
+
+	AND (@Dept = '' OR Buysell.COID = @Dept )
+
+	AND (@TradeType = '' OR Buysell.TradeType = @TradeType )
+
+	AND (@SalesRep = '' OR (@SalesRep = BuySell.ReferrerNo1 OR @SalesRep = BuySell.ReferrerNo2)) 
+
+	ORDER BY  Vendor.CompanyNm, InvoiceDt
+
+
+
+
+
+	UPDATE #REPORT SET Posted = 'Y' 
+
+		FROM #REPORT INNER JOIN Payables WITH(NOLOCK) ON #REPORT.ItemID = Payables.ItemID AND #REPORT.BuySellNo = Payables.BuySellNo
+
+		WHERE Payables.Posted = 1 AND #REPORT.ItemID<>'' AND ISNULL(Payables.Reversed,0)<>1
+
+
+
+	SELECT * FROM #REPORT WHERE (@UnpostedOnly = 0 OR (@UnpostedOnly = 1 AND Rtrim(ISNULL(Posted,''))<>'Y'))
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,58 @@
+CREATE   PROCEDURE [dbo].[cw_GetLabelLogDetail]  @ItemNo char(25) AS
+
+
+
+--10/14/2020 MEC: Created for cieTrade.Net to log barcode label prints
+
+
+
+--cw_GetLabelLogDetail '12138'
+
+
+
+BEGIN
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	SELECT 
+
+		BuySell.BuySellNo,
+
+		[Status],
+
+		'RECEIVING' WksType
+
+	From BuySell WITH (NOLOCK)
+
+	INNER JOIN WksDetail WITH(NOLOCK) ON BuySell.BuySellNo = WKSDetail.BuySellNo
+
+	WHERE WksDetail.LotNo = @ItemNo
+
+	UNION 
+
+	SELECT 
+
+		convert(varchar, ConvertingJob.JobNo),
+
+		[Status],
+
+		'CONV' WksType
+
+	From ConvertingJob WITH (NOLOCK)
+
+	INNER JOIN ConvertingAllocation WITH(NOLOCK) ON ConvertingJob.JobNo = ConvertingAllocation.JobNo
+
+	WHERE ConvertingAllocation.LotDesc = @ItemNo
+
+	
+
+END
+
+
+

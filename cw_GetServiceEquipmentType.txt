@@ -1,0 +1,70 @@
+CREATE   PROCEDURE [dbo].[cw_GetServiceEquipmentType] @cpid char(12), @Loc varchar(45) = '', @EqType char(30) = '', @serviceid int = 0, @ExcludeInactive bit = 0, @ExcludeService int = 0, @SchdDt datetime = '' AS
+
+--7/30/2019 MN:CREATED
+
+--09/14/2022 Nick: added FrtName
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+--IF @OnlyFetchEquipment = 0
+
+	SELECT DispatchScheduleKey, ISNULL(R.CompanyNm, '') as [ReceiverNm],
+
+	RTRIM(EquipmentType) + (SELECT CASE WHEN SiteRef IS NULL OR SiteRef = '' THEN '' 
+
+		ELSE '  ['+SiteRef+']' END) AS [EquipmentNm],
+
+	RTRIM(EquipmentType) AS [EquipmentType],
+
+	GradeID, FrtCarrierID, EquipNo,Receiver,
+
+	RTRIM(ReceiverLocation) AS [ReceiverLocation],
+
+	DispatchNotes,InternalNotes,RequestedBy,RTRIM(JobType) AS JobType, SiteRef,Terms As [PaymentTerms],DispatchEmails,Active,
+
+	dbo.xDoc_GetAddress(@cpid, @Loc,0,0) AS [AccountAddr],
+
+	Case When (Select Count(*) From ServiceRecordExpense where ServiceRecordExpense.DispatchScheduleKey = ServiceRecord.DispatchScheduleKey And IsNull(IsWeightOvercharge,0) = 1) > 0 Then 0 Else TargetWeight End TargetWeight,
+
+	TargetWeightUOM,
+
+	(select companynm from CounterParty where cpid = FrtCarrierID) as FrtName,
+
+	SchdExpirationDt,
+
+	DispatchQuestionsToAsk 
+
+	FROM ServiceRecord 
+
+	LEFT JOIN CounterParty R ON R.CpID = ServiceRecord.Receiver
+
+	WHERE Account = @cpid AND Location = @Loc AND (@EqType = '' OR EquipmentType = @EqType)
+
+	AND (@serviceid = 0 OR DispatchScheduleKey = @serviceid)
+
+	AND (@ExcludeService = 0 OR DispatchScheduleKey <> @ExcludeService)
+
+	AND (@ExcludeInactive = 0 OR Active = 1)
+
+	AND (@SchdDt = '' OR @SchdDt <= ServiceRecord.SchdExpirationDt OR SchdExpirationDt = '1900-01-01 00:00:00.000')
+
+	and (@SchdDt = '' or @SchdDt >= ServiceRecord.SchdStartDt)
+
+	ORDER BY DispatchScheduleKey
+
+--ELSE 
+
+--	SELECT DISTINCT EquipmentType, SiteRef, DispatchScheduleKey
+
+--	FROM ServiceRecord 
+
+--	LEFT JOIN CounterParty R ON R.CpID = ServiceRecord.Receiver
+
+--	WHERE Account = @cpid AND Location = @Loc AND (@EqType = '' OR EquipmentType = @EqType)
+
+
+

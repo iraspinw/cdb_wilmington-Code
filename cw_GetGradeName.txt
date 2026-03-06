@@ -1,0 +1,3 @@
+create proc cw_GetGradeName @GradeID varchar(65) as
+
+select [description] from grade where gradeid=@gradeid

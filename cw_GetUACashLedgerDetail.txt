@@ -1,0 +1,72 @@
+CREATE   PROCEDURE [dbo].[cw_GetUACashLedgerDetail] 
+
+
+
+	@LedgerID int
+
+
+
+AS
+
+
+
+-- 01/23/2018 MEC: Created to retrieve ledger detail for UA Cash Ledger
+
+
+
+--cw_GetUACashLedgerDetail 1001
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT 
+
+		CustID, 
+
+		EntryDt, 
+
+		OriginalAmount, 
+
+		BankFees, 
+
+		Balance, 
+
+		CurrencyCd, 
+
+		FxAmount, 
+
+		FxBankFees, 
+
+		FxBalance, 
+
+		Reference, 
+
+		COID,
+
+		CheckNo, 
+
+		ARBatchNo, 
+
+		GLAcct, 
+
+		Reversed, 
+
+		Reversed_LedgerID, 
+
+		FxRate,
+
+		convert(int,LastEdit) AS EditStamp,
+
+		PONumber
+
+	FROM UACashLedger
+
+	WHERE 
+
+		LedgerID = @LedgerID
+

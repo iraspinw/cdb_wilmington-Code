@@ -1,0 +1,130 @@
+
+
+CREATE  PROCEDURE [dbo].[cw_GetDocTrackInquiryDetails] @BuySellNo char(12) as
+
+
+
+
+
+--1/17/2020 alex: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	Select po.PONumber,
+
+	CounterParty.CompanyNm,
+
+	ShipToID,
+
+	DocSetType.SetName,
+
+	BuySell.OrderDt,
+
+	BuySell.ShippingDt,
+
+	BuySell.BookingNo,
+
+	LC.LCNo,
+
+	ISNULL(DocTrackHeader.SetStatus,'OPEN') AS SetStatus,
+
+	BuySell.BuySellNo
+
+    from BuySell 
+
+	inner join po on  po.PONumber = BuySell.RefSONo 
+
+	inner join CounterParty on CounterParty.CpID = BuySell.CustID
+
+	inner join DocSetType on po.DocSetTypeID = DocSetType.SetTypeID
+
+	left join LC on lc.ID = po.IssuingLC_ID
+
+	LEFT JOIN DocTrackHeader ON DocTrackHeader.DocTrackID=BuySell.DocTrackID
+
+	where BuySellNo =  @BuySellNo
+
+
+
+	Select EventDescription,
+
+	DocEventType.EventTypeID,
+
+	(isnull(rtrim(ltrim(DocTrackDetail.EventDt)),'')) as EventDt,
+
+	DocTrackDetail.TrackingNo,
+
+	DocTrackDetail.ConfirmNo,
+
+	po.PONumber as PONo,
+
+	BuySell.BuySellNo,
+
+	po.DocSetTypeID,
+
+	DocTrackDetail.DocTrackID,
+
+	isnull(DocTrackDetail.IsCompleted,0) as IsCompleted,
+
+	DocSetEvents.SeqOrder
+
+	from po 
+
+	inner join BuySell on  po.PONumber = BuySell.RefSONo 
+
+	inner join DocSetType on po.DocSetTypeID = DocSetType.SetTypeID
+
+	inner join DocSetEvents on DocSetEvents.SetTypeID = DocSetType.SetTypeID
+
+	inner join DocEventType on DocEventType.EventTypeID =DocSetEvents.EventTypeID
+
+	left Join  DocTrackDetail  on DocTrackDetail.DocTrackID =BuySell.DocTrackID and DocTrackDetail.EventTypeID =DocSetEvents.EventTypeID
+
+	--left Join  DocTrackDetail  on DocTrackDetail.EventTypeID =DocSetEvents.EventTypeID
+
+	--inner join DocTrackHeader on DocTrackHeader.DocTrackID = BuySell.DocTrackID
+
+	 where BuySellNo =  @BuySellNo 
+
+	 order by DocSetEvents.SeqOrder
+
+
+
+
+
+
+
+	---cw_GetDocTrackInquiryDetails '231785'
+
+	--cw_GetDocTrackInquiryDetails '231779'
+
+	--select * from DocTrackDetail
+
+	--select * from DocTrackHeader
+
+--	delete  from DocTrackDetail
+
+--select * from DocEventType
+
+	--select BuySell.DocTrackID,* from BuySell where BuySellNo = '231779'
+
+
+
+
+
+
+
+	
+
+
+
+	                                   
+
+
+

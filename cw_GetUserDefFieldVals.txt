@@ -1,0 +1,212 @@
+CREATE proc [dbo].[cw_GetUserDefFieldVals]
+
+@UDF_ID int
+
+ as
+
+	
+
+--8/1/2017 MN: Created
+
+
+
+SELECT * FROM UserDefinedFldValues WHERE UDF_ID = @UDF_ID
+
+ORDER BY FieldVal
+
+
+
+
+
+Declare @Module varchar(30),  @UserDefineField varchar(20)
+
+
+
+SELECT @Module = Rtrim(Module), @UserDefineField = Rtrim(Field) FROM UserDefinedFlds WHERE UDF_ID = @UDF_ID
+
+
+
+
+
+-- Detail 1
+
+
+
+If @Module = 'Worksheet Detail' AND @UserDefineField = 'User Defined 1' Begin
+
+	SELECT DISTINCT  Inventory.UserDefined1 as FieldVal from Inventory  where isnull(Rtrim(Inventory.UserDefined1),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail' AND @UserDefineField = 'User Defined 2' Begin
+
+	SELECT DISTINCT  Inventory.UserDefined2 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefined2),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail' AND @UserDefineField = 'User Defined 3' Begin
+
+	SELECT DISTINCT  Inventory.UserDefined3 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefined3),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail' AND @UserDefineField = 'User Defined 4' Begin
+
+	SELECT DISTINCT  Inventory.UserDefined4 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefined4),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail' AND @UserDefineField = 'User Defined 5' Begin
+
+	SELECT DISTINCT  Inventory.UserDefined5 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefined5),'') <>''
+
+End
+
+
+
+-- Detail 2
+
+
+
+If @Module = 'Worksheet Detail 2' AND @UserDefineField = 'User Defined 1' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedSecond1 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedSecond1),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 2' AND @UserDefineField = 'User Defined 2' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedSecond2 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedSecond2),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 2' AND @UserDefineField = 'User Defined 3' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedSecond3 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedSecond3),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 2' AND @UserDefineField = 'User Defined 4' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedSecond4 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedSecond4),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 2' AND @UserDefineField = 'User Defined 4' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedSecond4 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedSecond4),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 2' AND @UserDefineField = 'User Defined 5' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedSecond5 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedSecond5),'') <>''
+
+End
+
+
+
+-- Detail 3
+
+
+
+If @Module = 'Worksheet Detail 3' AND @UserDefineField = 'User Defined 1' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedThird1 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedThird1),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 3' AND @UserDefineField = 'User Defined 2' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedThird2 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedThird2),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 3' AND @UserDefineField = 'User Defined 3' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedThird3 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedThird3),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 3' AND @UserDefineField = 'User Defined 4' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedThird4 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedThird4),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 3' AND @UserDefineField = 'User Defined 5' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedThird5 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedThird5),'') <>''
+
+End 
+
+
+
+-- Detail 4
+
+
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 1' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth1 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth1),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 2' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth2 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth2),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 3' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth3 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth3),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 4' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth4 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth4),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 5' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth5 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth5),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 6' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth6 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth6),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 7' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth7 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth7),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 8' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth8 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth8),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 9' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth9 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth9),'') <>''
+
+End
+
+If @Module = 'Worksheet Detail 4' AND @UserDefineField = 'User Defined 10' Begin
+
+	SELECT DISTINCT  Inventory.UserDefinedFourth10 as FieldVal  from Inventory  where isnull(Rtrim(Inventory.UserDefinedFourth10),'') <>''
+
+End
+
+
+
+
+

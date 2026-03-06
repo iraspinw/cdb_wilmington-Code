@@ -1,0 +1,14 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetProductGroups] AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	SELECT RTRIM(GroupID) GroupID, RTRIM(CategoryID) CategoryID FROM ProductGroup ORDER BY GroupID
+

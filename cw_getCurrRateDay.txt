@@ -1,0 +1,14 @@
+CREATE   PROCEDURE [dbo].[cw_getCurrRateDay]  @RateDate DATE
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+select count(*) from CurrencyRate where ExchDate = @RateDate
+
+
+

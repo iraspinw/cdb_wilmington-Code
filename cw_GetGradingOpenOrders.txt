@@ -1,0 +1,23 @@
+CREATE proc [dbo].[cw_GetGradingOpenOrders] @CPID varchar(25), @Location varchar(45) = '' as
+
+
+
+--09/20/2022 MEC: Created for Returning Grading Orders
+
+
+
+	if (select count(*)			   from po inner join PODetail on po.PONumber=PODetail.PONumber inner join Grade on PODetail.GradeID = Grade.GradeID where Grade.InventoryType <> 'SERIAL' AND @CPID=CpID and 'PO'=[Source] and [Status]='OPEN' and ISNULL(MonthlyContra
+ct,0) = 1 and @Location=AddrType) > 0 begin
+
+		select po.ponumber, podate from po inner join PODetail on po.PONumber=PODetail.PONumber inner join Grade on PODetail.GradeID = Grade.GradeID where Grade.InventoryType <> 'SERIAL' AND @CPID=CpID and 'PO'=[Source] and [Status]='OPEN' and ISNULL(MonthlyCon
+tract,0) = 1 and @Location=AddrType order by podate desc
+
+	end
+
+	else begin 
+
+		select po.ponumber, podate from po inner join PODetail on po.PONumber=PODetail.PONumber inner join Grade on PODetail.GradeID = Grade.GradeID where Grade.InventoryType <> 'SERIAL' AND @CPID=CpID and 'PO'=[Source] and [Status]='OPEN' and ISNULL(MonthlyCon
+tract,0) = 1 order by podate desc
+
+	end
+

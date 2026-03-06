@@ -1,0 +1,246 @@
+CREATE Proc [dbo].[cw_GetPOProducts] @PONo char(15)  AS
+
+SET NOCOUNT ON
+
+
+
+-- 06/13/2016 RS: Created from xDoc_GetPOProducts for .NET
+
+
+
+
+
+	DECLARE @WTUOM char(1)
+
+	SET @WTUOM = ISNULL((SELECT TOP 1 WeightUOM FROM PODetail WITH (NOLOCK) WHERE PONumber = @PONo),'L')
+
+	
+
+	DECLARE @SUM_SWT decimal(18,5)
+
+	SELECT @SUM_SWT = SUM(dbo.CONVERT_TO_UOM(Weight,WeightUOM,@WTUOM))
+
+	FROM PODetail WITH (NOLOCK) 
+
+	WHERE PONumber = @PONo
+
+
+
+	DECLARE @SalesTaxID int
+
+	DECLARE @CpID Char(12)
+
+
+
+	SET @CpID = (SELECT CpID FROM PO WHERE PONumber = @PONo)
+
+	SET @SalesTaxID = (SELECT TOP 1 SalesTaxCodeID FROM [Address] WHERE CpID = @CpID)
+
+
+
+
+
+		CREATE TABLE #POPRODUCTS( 
+
+		GradeID			CHAR(15),
+
+		[Description]	VARCHAR(65),
+
+		[PODesc]		CHAR(65),
+
+		[Weight]		DECIMAL(18,5),
+
+		WUOM			CHAR(6),
+
+		Units			INT,
+
+		UnitType		CHAR(30),
+
+		NoSheets		INT,
+
+		Specifications	VARCHAR(500),
+
+		Price			DECIMAL(22,5),
+
+		PriceUOM		CHAR(6),
+
+		CurrencyCd		CHAR(3),
+
+		Amt				FLOAT,
+
+		TotalUOM		CHAR(6),
+
+		TotalWTInUOM	VARCHAR(34)
+
+	)
+
+
+
+	INSERT #POPRODUCTS
+
+	SELECT PODetail.GradeID,
+
+	Grade.[Description],
+
+	PODetail.PODesc,
+
+	dbo.FormatQty(PODetail.[Weight],PODetail.WeightUOM) as [Weight],
+
+	dbo.CnvUOM_Names(PODetail.WeightUOM) as WUOM,PODetail.Units,
+
+	dbo.CnvUnitName(PODetail.UnitType) As UnitType,
+
+	NoSheets, 
+
+	CASE WHEN IsNull(ShowCommDescOnDocs,0) = 1 And (IsNull(Specifications,'') <> IsNull(CommodityDesc,'')) Then IsNull(Specifications,'') + ' ' + IsNull(CommodityDesc,'') Else IsNull(Specifications,'') End As Specifications,
+
+	dbo.RemoveTrailingZeros(ISNULL(Price,0)) AS Price,
+
+	dbo.CnvUOM_Names(PriceUOM) as PriceUOM,
+
+	CurrencyCd,
+
+	ISNULL(FxAmount,0) as Amt,
+
+	dbo.CnvUOM_Names(@WTUOM) as TotalUOM,
+
+	dbo.FormatQty(@SUM_SWT,@WTUOM) as TotalWTInUOM
+
+	FROM PODetail WITH (NOLOCK) 
+
+	INNER JOIN Grade WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID 
+
+	WHERE PONumber = @PONo
+
+	Order by DetailOrderNo
+
+	
+
+   	INSERT #POPRODUCTS
+
+	select 
+
+		'',
+
+		'',
+
+		TaxDescription + ' ' + CAST(CAST((TaxRate * 100) as decimal(12,2)) as varchar) + '%',
+
+		0,
+
+		'',
+
+		0,
+
+		'',
+
+		0,
+
+		'',
+
+		0,
+
+		'',
+
+		'',
+
+		0,
+
+		'',
+
+		''		
+
+		from SalesTax inner join SalesTaxcode ON salestax.SalesTaxID = SalesTaxcode.SalesTax01
+
+		WHERE SalesTaxcode.SalesTaxCodeID = @SalesTaxID
+
+	UNION ALL
+
+	select 
+
+		'',
+
+		'',
+
+		TaxDescription + ' ' + CAST(CAST((TaxRate * 100) as decimal(12,2)) as varchar) + '%',
+
+		0,
+
+		'',
+
+		0,
+
+		'',
+
+		0,
+
+		'',
+
+		0,
+
+		'',
+
+		'',
+
+		0,
+
+		'',
+
+		''	
+
+		from SalesTax inner join SalesTaxcode ON salestax.SalesTaxID = SalesTaxcode.SalesTax02
+
+		WHERE SalesTaxcode.SalesTaxCodeID = @SalesTaxID
+
+	UNION ALL
+
+	select 
+
+		'',
+
+		'',
+
+		TaxDescription + ' ' + CAST(CAST((TaxRate * 100) as decimal(12,2)) as varchar) + '%',
+
+		0,
+
+		'',
+
+		0,
+
+		'',
+
+		0,
+
+		'',
+
+		0,
+
+		'',
+
+		'',
+
+		0,
+
+		'',
+
+		''	
+
+		from SalesTax inner join SalesTaxcode ON salestax.SalesTaxID = SalesTaxcode.SalesTax03
+
+		WHERE SalesTaxcode.SalesTaxCodeID = @SalesTaxID
+
+
+
+
+
+    SELECT * FROM #POPRODUCTS
+
+    
+
+-- cw_GetPOProducts '10196'
+
+-- select * from POdetail where PONUMBER = '206705'
+
+
+

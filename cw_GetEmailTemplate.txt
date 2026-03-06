@@ -1,0 +1,8 @@
+CREATE proc [dbo].[cw_GetEmailTemplate] @TemplateID int as
+
+
+
+select EmailCC, EmailBCC, EmailFrom, EmailSubject, EmailBody, TemplateID,isnull(EmailTO,'') as EmailTO  from EmailTemplates 
+
+where Templateid = @TemplateID
+

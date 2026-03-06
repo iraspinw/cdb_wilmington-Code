@@ -1,0 +1,64 @@
+CREATE PROC [dbo].[cw_GetPublicTradeCustomers] AS
+
+--12/22/2020: MN:CREATED
+
+SET NOCOUNT ON
+
+
+
+SELECT
+
+	PTCustID
+
+	,FirstName	
+
+	,LastName
+
+	,Company
+
+	,Addr1
+
+	,Addr2
+
+	,Addr3
+
+	,City
+
+	,Region 
+
+	,PostalCd 
+
+	,CountryID 
+
+	,Phone 
+
+	,PLID
+
+	,SalesTaxCodeID 
+
+	,LicenseNo
+
+	,TagNo
+
+	,TagState
+
+	,VehicleMake 
+
+	,VehicleModel 
+
+	,DateOfBirth 
+
+	,Note 
+
+	,LicenseExpirationDt 
+
+	,FileAs 
+
+	,Email 
+
+	,IsActive
+
+FROM PublicTradeCustomer ORDER BY LastName
+
+
+

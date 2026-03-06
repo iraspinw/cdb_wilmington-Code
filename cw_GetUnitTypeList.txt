@@ -1,0 +1,16 @@
+CREATE   PROCEDURE [dbo].[cw_GetUnitTypeList] AS
+
+--08/06/2015 MCM: Modified for cietrade.net
+
+--03/29/2017 MEC: Added TareWt
+
+--05/24/2023 Nick: Added DefaultUnitCount
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+Select TypeID,RTRIM(UnitType) AS UnitType,RTRIM(PropertySet) AS PropertySet, IsNull(TareWt, 0) As TareWt, isnull(Rtrim(Ltrim(ExtCode)),'') as ExtCode, isnull(DefaultUnitCount, 0) as DefaultUnitCount from UnitType order by [UnitType]
+

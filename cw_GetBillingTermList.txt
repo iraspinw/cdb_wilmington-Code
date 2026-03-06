@@ -1,0 +1,17 @@
+Create PROC [dbo].[cw_GetBillingTermList] AS 
+
+SET NOCOUNT ON
+
+--06/22/2012 DSH Created.
+
+
+
+    SELECT ID, Term, DaystoPay, UseUserDueDt, ExcludeFromCreditCheck, DueType FROM BillingTerm WITH (NOLOCK) order by Term 
+
+    
+
+    
+
+
+
+	

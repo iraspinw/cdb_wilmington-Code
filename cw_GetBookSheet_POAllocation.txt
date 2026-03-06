@@ -1,0 +1,118 @@
+CREATE   PROCEDURE [dbo].[cw_GetBookSheet_POAllocation] @BookingID INT AS
+
+SET NOCOUNT ON
+
+--02/07/2013 MCM: Copied from [q_GetBookSheet_POs] for POAllocation
+
+--03/05/2013 RS: ISNULL, WITH(NOLOCK) added
+
+--1/20/2016 MEC: Added CpID for order allocation selection
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT	
+
+	PO.Ponumber, 	
+
+	PO.POID,
+
+	PO.PODate, 	
+
+	counterparty.companynm as SUPPLIER, 
+
+	(SELECT TOP 1 Grade.Description FROM PODETAIL WITH(NOLOCK) INNER JOIN GRADE WITH(NOLOCK) ON PODETAIL.GRADEID = GRADE.GRADEID 
+
+		WHERE PODETAIL.PONumber = PO.PONumber) AS GRADE, 
+
+	POBooking.ContainerQty, 
+
+	(SELECT TOP 1 WeightUOM FROM PODETAIL WITH(NOLOCK) WHERE PODetail.PONumber = PO.PONumber) AS WeightUOM,
+
+	0 AS [Weight],
+
+	0 AS Units,
+
+	POBooking.ID,
+
+	CounterParty.CpID,
+
+	PO.Containers
+
+	INTO #REPORT
+
+	FROM BOOKSHEET WITH(NOLOCK)
+
+	inner join POBooking WITH(NOLOCK) ON BookSheet.BookSheetID = POBooking.BookSheetID
+
+	INNER JOIN PO WITH(NOLOCK) on PO.POID = POBooking.POID
+
+	INNER JOIN counterparty WITH(NOLOCK) ON po.cpid = counterparty.cpid
+
+	WHERE Booksheet.BookSheetID = @BookingID AND PO.Source = 'PO'
+
+	
+
+	ALTER TABLE #REPORT ADD IDX int identity
+
+	
+
+	DECLARE @i int, @Count int, @WeightUOM char(1)
+
+	SELECT @Count = COUNT(*), @i = 1 FROM #REPORT
+
+	
+
+	WHILE @i <= @Count
+
+	BEGIN
+
+		SELECT @WeightUOM = WeightUOM FROM #REPORT WHERE IDX = @i
+
+		
+
+		UPDATE #REPORT SET 
+
+			[Weight] = ISNULL((SELECT sum(dbo.convertfromlbs(dbo.calclbs(PODETAIL.[weight],PODETAIL.weightuom),@WeightUOM )) FROM PODetail WHERE PODetail.PONumber = #REPORT.PONumber),0),
+
+			Units = ISNULL((SELECT sum(units) FROM PODetail WHERE PODetail.PONumber = #REPORT.PONumber),0)
+
+			WHERE IDX = @i
+
+			
+
+		SET @i = @i + 1
+
+	END
+
+
+
+	SELECT 
+
+		PONumber As [PO NUMBER], 
+
+		POID As [-Hidden-POID], 
+
+		PODate As [DATE], 
+
+		SUPPLIER, 
+
+		#REPORT.GRADE As PRODUCT,
+
+		Cast([Weight] as varchar) + ' ' + dbo.CnvUOM_Names(WeightUOM) As [ORDER WEIGHT],
+
+		Containers [CNTR ORDERED],
+
+		ContainerQty As [CNTR RESERVED],
+
+		CpID As [-Hidden-CpID]
+
+	FROM #REPORT
+
+
+

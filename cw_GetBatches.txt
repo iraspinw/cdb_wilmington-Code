@@ -1,0 +1,26 @@
+create proc [dbo].[cw_GetBatches] 
+
+AS
+
+set nocount on 
+
+set transaction isolation level read uncommitted
+
+--11/2/2021 Alex: Created for Batch Print page
+
+
+
+SELECT 
+
+	BatchNo, 
+
+	count(InvoiceBatch.BuySellNo) as CountInvoices,
+
+	cast(year(Date) as varchar(10))+'/' +cast(month(Date) as varchar(10))+'/' + cast(day(Date) as varchar(10))   as BatchDate
+
+from InvoiceBatch
+
+GROUP BY BatchNo, year(Date), month(Date),day(Date)
+
+ORDER BY year(Date) DESC,month(Date) DESC, day(Date) DESC
+

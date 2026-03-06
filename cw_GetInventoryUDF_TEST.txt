@@ -1,0 +1,33 @@
+--03/31/2022 ZT: Created
+
+CREATE   PROCEDURE [dbo].[cw_GetInventoryUDF_TEST]
+
+	@No	CHAR(1)
+
+AS
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED 
+
+SET NOCOUNT ON
+
+SELECT 
+
+	UDF.Field,
+
+	CASE WHEN ISNULL(UDF.LabelCaption, '') <> '' THEN RTRIM(UDF.LabelCaption) + ' (UDF' + @No + ')' ELSE '' END As [LabelCaption], --CASE WHEN EXISTS(SELECT * FROM UserDefinedFlds WHERE UDF.UDF_ID <> UserDefinedFlds.UDF_ID AND UDF.LabelCaption = UserDefinedF
+lds.LabelCaption AND Module LIKE '%Worksheet Detail%') THEN RTRIM(LabelCaption) + ' (' + @No + ')' ELSE LabelCaption END As [LabelCaption],
+
+	UDF.UDF_ID,
+
+	ISNULL(DropDownOnly, 0)
+
+FROM UserDefinedFlds As UDF
+
+WHERE 
+
+Module LIKE '%Worksheet Detail%'
+
+AND
+
+((Module LIKE '%' + @No + '%') OR (@No = '1' AND Module = 'Worksheet Detail'))
+

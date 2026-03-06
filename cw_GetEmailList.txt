@@ -1,0 +1,378 @@
+CREATE proc [dbo].[cw_GetEmailList] @Buysellno varchar(15), @ShipToID varchar(65), @ShipFromID varchar(65), @CPID varchar(15) = '' as
+
+
+
+--cw_GetEmailList '500191', 'NORTH PORT', 'MIAMI2'
+
+
+
+-- 03/16/2017 MEC: Added Warehouse Emails for Inventory Receiving and Shipping 
+
+-- 04/19/2018 MEC: Altered to support new Contact module
+
+-- 07/19/2023 Nick: Added isnull(IsActive, 1) = 1 as contacts often have a NULL IsActive value
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	declare @CustID varchar(12)
+
+	declare @SuppID varchar(12)
+
+	--declare @FreightID varchar(12)
+
+	declare @VendID varchar(12)
+
+	declare @WhseID varchar(45)
+
+
+
+	select @Custid = custid from buysell where buysellno = @Buysellno
+
+	select @SuppID = vendorid from buysell where BuySellNo = @Buysellno
+
+	--set @FreightID = (select top 1 VendorID from WksDelivery inner join counterparty on CounterParty.cpid = WksDelivery.VendorID where buysellno = @Buysellno and (WksDelivery.isFreight=1 or counterparty.isFreight = 1))
+
+	set @VendID = (select top 1 VendorID from WksDelivery inner join counterparty on CounterParty.cpid = WksDelivery.VendorID where buysellno = @Buysellno and isnull(counterparty.isFreight,0) = 0)
+
+	select @WhseID = ShipToID from buysell where BuySellNo = @Buysellno And CustID = '(INV)'
+
+	select @WhseID = ShipFromID from buysell where BuySellNo = @Buysellno And VendorID = '(INV)'
+
+
+
+	select ContactNm as [Name], Email as Email, 'Customer' as [Type], dbo.GetContactRoleList([CT_ID]) as [Contact Role],Contact.Location
+
+		From Contact
+
+		where cpid=@CustID 
+
+		--and Location = @ShipToID
+
+		and isnull(Email,'') <> '' and CpID <> '(INV)'
+
+		AND isnull(IsActive, 1) = 1
+
+	UNION
+
+	select ContactNm as [Name], Email as Email, 'Supplier' as [Type], dbo.GetContactRoleList([CT_ID]) as [Contact Role],Contact.Location
+
+		From Contact
+
+		where cpid=@SuppID 
+
+		--and Location = @ShipFromID 
+
+		and CpID <> '(INV)'
+
+		and isnull(Email,'') <> ''
+
+		AND isnull(IsActive, 1) = 1
+
+	UNION
+
+	select ContactNm as [Name], Contact.Email as Email, 'Freight' as [Type], dbo.GetContactRoleList([CT_ID]) as [Contact Role],Contact.Location
+
+		from WksDelivery
+
+		INNER JOIN Counterparty ON WksDelivery.VendorID = Counterparty.CpID
+
+		INNER JOIN Contact ON CounterParty.cpid = Contact.CpID
+
+		where buysellno = @Buysellno and (WksDelivery.isFreight=1 or counterparty.isFreight = 1) 
+
+		--and Location = @ShipFromID 
+
+		and Contact.CpID <> '(INV)'
+
+		and isnull(Contact.Email,'') <> ''
+
+		AND isnull(IsActive, 1) = 1
+
+	UNION
+
+	select ContactNm as [Name], Email as Email, 'Vendor' as [Type], dbo.GetContactRoleList([CT_ID]) as [Contact Role],Contact.Location
+
+		from Contact 
+
+		where cpid=@VendID 
+
+		--and Location = @ShipFromID 
+
+		and CpID <> '(INV)'
+
+		and isnull(Email,'') <> ''
+
+		AND isnull(IsActive, 1) = 1
+
+	UNION
+
+	select ContactNm As Name, Email, 'Warehouse' as [Type], dbo.GetContactRoleList([CT_ID]) as [Contact Role],Contact.Location
+
+		from Contact 
+
+		Where Location = @WhseID
+
+		and isnull(Email,'') <> '' and Contact.CpID = '(INV)' 
+
+		AND isnull(IsActive, 1) = 1
+
+
+
+--	select 'Billing Contact' as [Name], email as Email, 'Customer' as [Type]
+
+--		from Contact 
+
+--		where cpid=@CustID and [type] = @ShipToID
+
+--		and isnull(email,'') <> '' and CpID <> '(INV)'
+
+--	UNION
+
+--	select Contact, email, 'Customer'
+
+--		from [Address] 
+
+--		where cpid=@CustID and [type] = @ShipToID
+
+--		and isnull(email,'') <> '' and CpID <> '(INV)'
+
+
+
+--	UNION
+
+--	select Contact, email, 'Customer'
+
+--		from [Address] 
+
+--		where cpid=@CustID and InvoiceAddr = 'Y'
+
+--		and isnull(email,'') <> '' and CpID <> '(INV)'
+
+--	UNION
+
+--	select 'Billing Contact' as [Name], billingemail as Email, 'Customer' as [Type]
+
+--		from [Address] 
+
+--		where cpid=@CustID and InvoiceAddr = 'Y'
+
+--		and isnull(billingemail,'') <> ''
+
+
+
+--	UNION
+
+--	select 'AP Email', APEmail, 'Customer'
+
+--		from [Counterparty] 
+
+--		where [Counterparty].cpid = @CustID
+
+--		and isnull(APEmail,'') <> ''
+
+--	UNION
+
+--	select 'Billing Contact' as [Name], billingemail as Email, 'Supplier' as [Type]
+
+--		from [Address] 
+
+--		where cpid=@SuppID and [type] = @ShipFromID and CpID <> '(INV)'
+
+--		and isnull(billingemail,'') <> ''
+
+--	UNION
+
+--	select Contact, email, 'Supplier'
+
+--		from [Address] 
+
+--		where cpid=@SuppID and [type] = @ShipFromID and CpID <> '(INV)'
+
+--		and isnull(email,'') <> ''
+
+--	UNION
+
+--	select Contact, email, 'Supplier'
+
+--		from [Address] 
+
+--		where cpid=@SuppID and InvoiceAddr = 'Y' and CpID <> '(INV)'
+
+--		and isnull(email,'') <> ''
+
+--	UNION
+
+--	select 'Billing Contact' as [Name], billingemail as Email, 'Supplier' as [Type]
+
+--		from [Address] 
+
+--		where cpid=@SuppID and InvoiceAddr = 'Y' and CpID <> '(INV)'
+
+--		and isnull(billingemail,'') <> ''
+
+--	UNION
+
+--	select 'AP Email', APEmail, 'Supplier'
+
+--		from [Counterparty] 
+
+--		where [Counterparty].cpid = @SuppID and CpID <> '(INV)'
+
+--		and isnull(APEmail,'') <> ''
+
+
+
+
+
+--	UNION
+
+--	select 'Billing Contact' as [Name], billingemail as Email, 'Freight' as [Type]
+
+--		from [Address] 
+
+--		INNER JOIN Counterparty ON CounterParty.cpid = [Address].CpID
+
+--		INNER JOIN WksDelivery ON WksDelivery.VendorID = [Address].CpID
+
+--		where buysellno = @Buysellno and (WksDelivery.isFreight=1 or counterparty.isFreight = 1) 
+
+--		and [type] = @ShipFromID and [Address].CpID <> '(INV)'
+
+--		and isnull(billingemail,'') <> ''
+
+--	UNION
+
+--	select Contact, [Address].email, 'Freight'
+
+--		from [Address] 
+
+--		INNER JOIN Counterparty ON CounterParty.cpid = [Address].CpID
+
+--		INNER JOIN WksDelivery ON WksDelivery.VendorID = [Address].CpID
+
+--		where buysellno = @Buysellno and (WksDelivery.isFreight=1 or counterparty.isFreight = 1) 
+
+--		and [type] = @ShipFromID and [Address].CpID <> '(INV)'
+
+--		and isnull([Address].email,'') <> ''
+
+--	UNION
+
+--	select Contact, [Address].email, 'Freight'
+
+--		from [Address] 
+
+--		INNER JOIN Counterparty ON CounterParty.cpid = [Address].CpID
+
+--		INNER JOIN WksDelivery ON WksDelivery.VendorID = [Address].CpID
+
+--		where buysellno = @Buysellno and (WksDelivery.isFreight=1 or counterparty.isFreight = 1)
+
+--		and InvoiceAddr = 'Y' and [Address].CpID <> '(INV)'
+
+--		and isnull([Address].email,'') <> ''
+
+--	UNION
+
+--	select 'Billing Contact' as [Name], billingemail as Email, 'Freight' as [Type]
+
+--		from [Address] 
+
+--		INNER JOIN Counterparty ON CounterParty.cpid = [Address].CpID
+
+--		INNER JOIN WksDelivery ON WksDelivery.VendorID = [Address].CpID
+
+--		where buysellno = @Buysellno and (WksDelivery.isFreight=1 or counterparty.isFreight = 1) 
+
+--		and InvoiceAddr = 'Y' and [Address].CpID <> '(INV)'
+
+--		and isnull(billingemail,'') <> ''
+
+--	UNION
+
+--	select 'AP Email', APEmail, 'Freight'
+
+--		from [Counterparty] 
+
+--		INNER JOIN WksDelivery ON WksDelivery.VendorID = [Counterparty].CpID
+
+--		where buysellno = @Buysellno and (WksDelivery.isFreight=1 or counterparty.isFreight = 1) 
+
+--		and isnull(APEmail,'') <> '' and CpID <> '(INV)'
+
+
+
+--	UNION
+
+--	select 'Billing Contact' as [Name], billingemail as Email, 'Vendor' as [Type]
+
+--		from [Address] 
+
+--		where cpid=@VendID and [type] = @ShipFromID and CpID <> '(INV)'
+
+--		and isnull(billingemail,'') <> ''
+
+--	UNION
+
+--	select Contact, email, 'Vendor'
+
+--		from [Address] 
+
+--		where cpid=@VendID and [type] = @ShipFromID and CpID <> '(INV)'
+
+--		and isnull(email,'') <> ''
+
+--	UNION
+
+--	select Contact, email, 'Vendor'
+
+--		from [Address] 
+
+--		where cpid=@VendID and InvoiceAddr = 'Y' and CpID <> '(INV)'
+
+--		and isnull(email,'') <> ''
+
+--	UNION
+
+--	select 'Billing Contact' as [Name], billingemail as Email, 'Vendor' as [Type]
+
+--		from [Address] 
+
+--		where cpid=@VendID and InvoiceAddr = 'Y' and CpID <> '(INV)'
+
+--		and isnull(billingemail,'') <> ''
+
+--	UNION
+
+--	select 'AP Email', APEmail, 'Vendor'
+
+--		from [Counterparty] 
+
+--		where [Counterparty].cpid = @VendID and CpID <> '(INV)'
+
+--		and isnull(APEmail,'') <> ''
+
+--	UNION
+
+--	select [Type] As Name, Email, 'Warehouse' as [Type]
+
+--		From [Address]
+
+--		Where [Type] = @WhseID
+
+--		and isnull(Email,'') <> '' and [Address].CpID = '(INV)' 
+
+
+
+
+
+	order by [type]
+
+
+

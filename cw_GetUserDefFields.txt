@@ -1,0 +1,14 @@
+CREATE proc [dbo].[cw_GetUserDefFields] as
+
+
+
+--8/1/2017 MN: Created
+
+
+
+SELECT * FROM UserDefinedFlds
+
+
+
+
+

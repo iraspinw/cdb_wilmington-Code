@@ -1,0 +1,16 @@
+CREATE   PROCEDURE [dbo].[cw_GetDocIDFromDocheaderBasesDocDesc] 
+
+@DocDesc varchar(100)
+
+	AS
+
+
+
+	--8/21/2019 Alex: Created to get Tiitle of  documents for Email Templete page
+
+select top 1 docformid from xdocheader 
+
+where doctitle=@DocDesc
+
+order by CreatedDt desc
+

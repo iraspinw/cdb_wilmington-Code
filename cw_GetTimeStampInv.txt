@@ -1,0 +1,6 @@
+--05/18/2022 ZT: Created from cw_GetTimeStamp
+
+CREATE  procedure [dbo].[cw_GetTimeStampInv] @LotNo char(25), @EditStamp int OUTPUT AS
+
+select @EditStamp = convert( int,lastedit) FROM Inventory WITH (NOLOCK) Where LotNo = @LotNo
+

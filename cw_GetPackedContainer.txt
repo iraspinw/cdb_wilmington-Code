@@ -1,0 +1,30 @@
+
+
+
+
+
+
+CREATE proc [dbo].[cw_GetPackedContainer] @ContainerID int as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+--8/8/2019 Alex:Returned 
+
+select containerno, bookingno, sealno,isnull(Tare,0) as Tare,ISNULL(FromWarehouse,'') AS FromWarehouse  from container where containerid=@containerid
+
+
+
+select containercontents.lotno, containercontents.[weight], uom, companynm, serialno, Units, VendorID, [description],inventory.InDate
+
+from containercontents
+
+inner join inventory on inventory.lotno = containercontents.lotno
+
+inner join counterparty on counterparty.cpid = inventory.VendorID
+
+inner join grade on grade.gradeid = inventory.GradeID
+
+where ContainerContents.ContainerID = @ContainerID
+

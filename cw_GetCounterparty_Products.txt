@@ -1,0 +1,136 @@
+CREATE PROC [dbo].[cw_GetCounterparty_Products] @CpID char(12), @ItemID int = 0 AS
+
+--08/05/2011 MCM: Created for Counterparty Service Project
+
+--08/24/2022 Nick: added Table specification to UserDefined selects
+
+SET NOCOUNT ON;
+
+
+
+	SELECT 	
+
+		ItemID AS [-Hidden-ItemID],	
+
+		CpID AS [-Hidden-CpID],
+
+		Grade.GradeID As [-Hidden-GradeID],
+
+		Grade.[Description] AS [Grade],
+
+		CPI.UnitType AS [-Hidden-UnitType],
+
+		UnitType.UnitType AS [Packaging],
+
+		PriceIdea AS [Price],
+
+		PriceIdeaUOM AS [-Hidden-PriceIdeaUOM],
+
+		dbo.CnvUOM_Names(PriceIdeaUOM) AS [Price UOM],
+
+		PriceIdeaCurrency AS [Currency], 
+
+		InterestType AS [Interest Type],
+
+		convert(int, Qty) AS [Quantity],
+
+		QtyUOM AS [-Hidden-QtyUOM],
+
+		dbo.CnvUOM_Names(QtyUOM) AS [Quantity UOM],
+
+		Notes,
+
+		BW, 
+
+		BWUOM, 
+
+		Caliper,
+
+		RW, 
+
+		RWUOM,
+
+		Diameter,
+
+		DiameterUOM,
+
+		CoreSize,
+
+		CoreSizeUOM,
+
+		LinearLen,
+
+		LengthUOM,
+
+		SheetSize, 
+
+		SheetSizeUOM,
+
+		NoSheets,
+
+		 MWeight, 
+
+		 Color, 
+
+		 PlasticForm as Form ,
+
+		 PlasticType as Type,
+
+		 PlasticMelt as Melt,
+
+		 Area,
+
+		 AreaUOM,
+
+		 ExpDt,
+
+		 isnull(CPI.UserDefined1,'') as UserDefined1, 
+
+		  isnull(CPI.UserDefined2,'') as UserDefined2, 
+
+		  isnull(CPI.UserDefined3,'') as UserDefined3, 
+
+		  isnull(CPI.UserDefined4,'') as UserDefined4, 
+
+		  isnull(CPI.UserDefined5,'') as UserDefined5,
+
+		 isnull(CPI.UserDefinedSecond1,'') as UserDefinedSecond1, 
+
+		  isnull(CPI.UserDefinedSecond2,'') as UserDefinedSecond2, 
+
+		  isnull(CPI.UserDefinedSecond3,'') as UserDefinedSecond3, 
+
+		  isnull(CPI.UserDefinedSecond4,'') as UserDefinedSecond4, 
+
+		  isnull(CPI.UserDefinedSecond5,'') as UserDefinedSecond5,
+
+		 isnull(CPI.UserDefinedThird1,'') as UserDefinedThird1, 
+
+		  isnull(CPI.UserDefinedThird2,'') as UserDefinedThird2, 
+
+		  isnull(CPI.UserDefinedThird3,'') as UserDefinedThird3, 
+
+		  isnull(CPI.UserDefinedThird4,'') as UserDefinedThird4, 
+
+		  isnull(CPI.UserDefinedThird5,'') as UserDefinedThird5
+
+	FROM Counterparty_ProductsOfInterest CPI WITH(NOLOCK) 
+
+	LEFT JOIN Grade ON Grade.GradeID = CPI.GradeID
+
+	LEFT JOIN UnitType ON UnitType.TypeID = CPI.UnitType
+
+	
+
+
+
+	WHERE
+
+	(@ItemID = 0 AND CPI.CpID = @CpID)
+
+	OR (@ItemID = CPI.ItemID )
+
+	 
+
+
+

@@ -1,0 +1,48 @@
+
+
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetPortalLogs]  @CpID CHAR(12) = '', @UserID VARCHAR(150) = ''
+
+
+
+-- 1/24/2022 ZT: Created
+
+As
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+SELECT
+
+	ISNULL(CompanyNm,'')As [Company Name],
+
+	ISNULL(UserID,'')	As [User],
+
+	WebPortalName		As [Portal],
+
+	LoginDate			As [Last Login],
+
+	LoginCount			As [Login Count]
+
+
+
+FROM WebPortalLoginHistory
+
+LEFT JOIN CounterParty ON WebPortalLoginHistory.CpID = Counterparty.CpID 
+
+WHERE
+
+	(@CpID = '' OR WebPortalLoginHistory.CpID = @CpID)
+
+	AND
+
+	(@UserID = '' OR WebPortalLoginHistory.UserID = @UserID)
+

@@ -1,0 +1,13 @@
+CREATE proc [dbo].[cw_GetBulkGradesNP] as
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+
+
+--11/22/2022 Nick: Created
+
+
+
+select gradeid, [description] from grade where InventoryType = 'BULK_WT' order by [Description]

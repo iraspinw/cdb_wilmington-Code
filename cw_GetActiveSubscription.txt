@@ -1,0 +1,8 @@
+CREATE   PROCEDURE [dbo].[cw_GetActiveSubscription] AS
+
+
+
+select [ActiveSubscription] from [SystemInfo]
+
+
+

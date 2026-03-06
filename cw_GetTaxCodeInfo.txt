@@ -1,0 +1,48 @@
+CREATE   PROCEDURE [dbo].[cw_GetTaxCodeInfo] @ID varchar(10)
+
+AS
+
+BEGIN
+
+
+
+-- 10/02/2015 MEC: Created for cieTrade.net 
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT
+
+		SalesTaxCodeID,
+
+		SalesTaxCode,
+
+		SalesTaxCodeDescription,
+
+		SalesTax01,
+
+		SalesTax02,
+
+		SalesTax03
+
+	FROM
+
+		SalesTaxCode With (NoLock)
+
+	WHERE
+
+		SalesTaxCodeID = @ID
+
+END
+
+
+
+
+
+
+

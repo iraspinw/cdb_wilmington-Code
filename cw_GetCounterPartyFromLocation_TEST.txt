@@ -1,0 +1,106 @@
+CREATE   PROCEDURE [dbo].[cw_GetCounterPartyFromLocation_TEST] @Location varchar(45),@IsAddress bit  as
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+--select CpID from  [Address] where type = @Location
+
+
+
+			if @IsAddress =0
+
+				begin
+
+						select 
+
+						[Address].CpID,
+
+						counterparty.CompanyNm,
+
+						[type] as Location,
+
+						[dbo].[xDoc_GetAddressFlatNET]([Address].CpID,[type],0) as [LocationAddress]	
+
+						from  [Address] 
+
+						inner join counterparty on counterparty.CpID = [Address].CpID
+
+						where 
+
+						(
+
+							([type] like '%' + @Location + '%' and @Location<>'')
+
+							OR
+
+							([CompanyNm] like '%' + @Location + '%' and @Location<>'')
+
+						)
+
+						AND (CompanyNm <> '(INVENTORY)' AND CompanyNm <> '(INTERNAL COSTS)')
+
+						order by counterparty.CompanyNm
+
+				end
+
+			else if @IsAddress =1
+
+				begin
+
+						select 
+
+						[Address].CpID,
+
+						counterparty.CompanyNm,
+
+						[type] as Location,
+
+						[dbo].[xDoc_GetAddressFlatNET]([Address].CpID,[type],0) as [LocationAddress]	
+
+						from  [Address] 
+
+						inner join counterparty on counterparty.CpID = [Address].CpID
+
+						where 
+
+						(
+
+						    [type] like '%' + @Location + '%'
+
+							or [CompanyNm] like '%' + @Location + '%'
+
+							 or   [Address].Addr2 like '%' + @Location + '%'
+
+							  or   [Address].Addr3 like '%' + @Location + '%'
+
+							   or   [Address].Addr4 like '%' + @Location + '%'
+
+							    or   [Address].City like '%' + @Location + '%'
+
+								 or   [Address].Country like '%' + @Location + '%'
+
+								  or   [Address].Region like '%' + @Location + '%'
+
+						)								
+
+						and @Location<>''
+
+						AND (CompanyNm <> '(INVENTORY)' AND CompanyNm <> '(INTERNAL COSTS)')
+
+						order by counterparty.CompanyNm
+
+				 end
+
+
+
+				 --[dbo].[cw_GetCounterPartyFromLocation] 'invoice',1
+
+
+
+
+
+	
+

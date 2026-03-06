@@ -1,0 +1,80 @@
+
+
+CREATE PROCEDURE [dbo].[cw_GetInttraInquiry] @status int, @FromDT datetime, @ToDT datetime as
+
+
+
+BEGIN
+
+--5/9/2019 alex: Created for InttraInquiry 
+
+--11/14/2022 ZT: Changes date requested to DATE
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	SELECT 
+
+	 inttra_bol.BuySellNo 'Trade No',
+
+	 cast(inttra_bol.CreateDt as date) 'Date Requested',
+
+	 --inttra_bol.CreateDt 'Date Requested',
+
+	 cast(FileSentDate as date) as 'Date Sent',
+
+	 cast(FileSentDate as time) as  'Time Sent',
+
+	  cast(AperakDate as date) as 'Completed Date',
+
+	 cast(AperakDate as time) as  'Completed Time',
+
+	 'BOL' as Type,
+
+	 Inttra_Log.UserID as 'user',
+
+	 inttra_bol.ControlNo as '{LC}ControlNo'
+
+	 --inttra_bol.IsCurrent,
+
+	-- INTTRA_Log.AperakAccepted,
+
+	-- inttra_bol.AperakAccepted
+
+
+
+	FROM [cie-sqlprod01].[cietradeEDI].dbo.inttra_bol
+
+	 --FROM [cie-sqldev04].[cietradeEDI].dbo.inttra_bol as inttra_bol
+
+    inner join  Inttra_Log on Inttra_Log.inttra_COID =inttra_bol.ClientID And inttra_bol.ControlNo = INTTRA_Log.ControlNo
+
+	 WHERE inttra_bol.IsCurrent = 1 
+
+	 AND 
+
+	  ( 
+
+		(@status = 0 And (IsNull(inttra_bol.AperakAccepted,0) = 0 And IsNull(INTTRA_Log.AperakAccepted,0) = 0))
+
+		OR 
+
+		(@status = 1 And (IsNull(inttra_bol.AperakAccepted,0) = 1 Or IsNull(INTTRA_Log.AperakAccepted,0) = 1))
+
+	  )
+
+	 --AND (@FromDt = '' OR (FileSentDate >= @FromDt Or FileSentDate is null))
+
+  --   and (@ToDt = '' OR (FileSentDate <= @ToDt Or FileSentDate is null))
+
+  	  AND (@FromDt = '' OR (FileSentDate >= @FromDt Or FileSentDate is null))
+
+      and (@ToDt = '' OR (FileSentDate <= @ToDt Or FileSentDate is null))
+
+	  AND (@FromDt = '' OR (INTTRA_Log.CreateDt >= @FromDt))
+
+      and (@ToDt = '' OR (INTTRA_Log.CreateDt <= @ToDt))
+
+END
+
+
+

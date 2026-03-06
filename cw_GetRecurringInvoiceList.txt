@@ -1,0 +1,102 @@
+CREATE   PROCEDURE [dbo].[cw_GetRecurringInvoiceList] 
+
+	@RecID varchar(25) = 0,
+
+	@COID CHAR(2) = ''
+
+	--@FromDt datetime, 
+
+	--@ToDt datetime,
+
+	--@Applicant char(12),
+
+	--@PONo varchar(25)
+
+
+
+AS
+
+--10/27/2016: MN CREATED
+
+--07/28/2023 Nick: Added Customer Location, Supplier, Supplier Location
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT
+
+		RecurringInvoice.RecurringInvoiceID As [-Hidden-RecurringInvoiceID],
+
+		CP.CompanyNm As [Customer],
+
+		BaseWksNo As [Base Wks No],
+
+		StartDt As [Start Date],
+
+		IIF(RecurringInvoice.BillingCycle = 'M', 'Monthly', IIF(RecurringInvoice.BillingCycle = 'W', 'Weekly', 'Quarterly')) as [Billing Cycle],
+
+		W.CompanyDesc As [Dept],
+
+		RecurringInvoice.TradeType As [Trade Type],
+
+		[Increment] As Increment,
+
+		[Repeat] AS [Repeats],
+
+		EndsOnDt As [Ends On Date],
+
+		Referrer.Name AS [Sales Rep],
+
+		LastInvDt As [Last Invoice Date],
+
+		NextInvDt As [Next Invoice Date],
+
+
+
+		PaymentTerms As [Payment Terms],
+
+		RecurringInvoice.BillingCycle As [-Hidden-BillingSymbol],
+
+		CP.CpID As [-Hidden-CpID],
+
+		W.COID As [-Hidden-COID],
+
+		SalesRep AS [-Hidden-SalesRepID],
+
+		NeverEnds AS [-Hidden-NeverEnds],
+
+		BuySell.ShipToID as [Customer Location],
+
+		BuySell.ShipFromID as [Supplier Location],
+
+		rtrim(isnull(Supplier.CompanyNm, '')) as Supplier
+
+	FROM RecurringInvoice
+
+	LEFT JOIN CounterParty CP WITH(NOLOCK) On CP.CpID = RecurringInvoice.CustID
+
+	LEFT JOIN Referrer ON Referrer.ReferrerNo = RecurringInvoice.SalesRep
+
+	LEFT JOIN [CompanyInfo] W ON W.COID = RecurringInvoice.COID
+
+	LEFT JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = RecurringInvoice.BaseWksNo
+
+	LEFT JOIN CounterParty Supplier WITH(NOLOCK) ON Supplier.CpID = BuySell.VendorID
+
+	WHERE (@RecID = 0 or RecurringInvoice.RecurringInvoiceID = @RecID)
+
+	AND (@COID = '' OR RecurringInvoice.COID = @COID)
+
+	--	AND (@LCNo = '' OR LCNo = @LCNo)
+
+	--	AND (@Applicant = '' OR ApplicantCPID = @Applicant)
+
+	--	AND (@PONo = '' OR PO.PONumber = @PONo)
+
+	
+

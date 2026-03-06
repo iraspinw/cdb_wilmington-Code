@@ -1,0 +1,38 @@
+CREATE   PROCEDURE [dbo].[cw_GetPublicPriceListDetails] @PLID int = 0, @PDID int = 0 AS
+
+SET NOCOUNT ON
+
+--03/11/2011 MCM: Created for Public Trade feature
+
+--DSH Add Sort by grade
+
+
+
+    SELECT 
+
+		PDID AS [-Hidden-PDID],
+
+		PLID AS [-Hidden-PLID],
+
+		PublicPriceListDetail.GradeID As [-Hidden-GradeID],
+
+		Price AS [-Hidden-Price],
+
+		PriceUOM AS [-Hidden-PriceUOM],
+
+		Grade.Description AS [Product],
+
+		(CAST(CAST(Price as money) AS varchar(12)) + '/' + dbo.CnvUOM_Names(PriceUOM)) AS [Price], 
+
+		'' AS [-Hidden-]
+
+	FROM PublicPriceListDetail WITH(NOLOCK) INNER JOIN Grade ON PublicPriceListDetail.GradeID = GRADE.GradeID
+
+	WHERE (@PLID = 0 OR PLID = @PLID)
+
+	AND (@PDID = 0 OR PDID = @PDID)
+
+	ORDER BY GRADE.[Description]
+
+
+

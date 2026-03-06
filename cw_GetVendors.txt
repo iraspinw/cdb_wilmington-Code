@@ -1,0 +1,26 @@
+CREATE proc [dbo].[cw_GetVendors] as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+select CompanyNm, counterparty.Cpid, ReferenceID, Addr1, addr2, addr3, city, region, postalcd, telephone, Fax, BillingEmail, terms, contact from counterparty 
+
+inner join [address] on [address].cpid = counterparty.cpid 
+
+inner join transactionmanager on transactionmanager.itemid = counterparty.cpid
+
+where [address].InvoiceAddr='Y'
+
+and [role] in('A', 'S', 'V', 'X', 'D', 'P')
+
+and exported=0
+
+order by companynm
+
+
+
+update transactionmanager set exported = 1
+

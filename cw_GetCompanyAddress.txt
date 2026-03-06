@@ -1,0 +1,103 @@
+
+
+
+
+
+
+CREATE FUNCTION [dbo].[cw_GetCompanyAddress] (@COID char(2), @UseCoName bit)
+
+RETURNS varchar(1000) AS
+
+--08/10/2009 RS: Created for PO DOCK RECEIPT xDoc
+
+--09/27/2011 RS: Fixed extra commas if no Region, Postal Code
+
+--12/20/2017 MEC: Copied and altered for company address without dept name
+
+
+
+
+
+BEGIN
+
+
+
+	DECLARE @ReturnAddress varchar(1000)
+
+	SET @ReturnAddress=''
+
+	
+
+	DECLARE @CompanyNm varchar(100)
+
+	DECLARE @Addr1 varchar(100)
+
+	DECLARE @Addr2 varchar(100)
+
+	DECLARE @City varchar(50)
+
+	DECLARE @Region varchar(40)
+
+	DECLARE @PostalCd varchar(25)
+
+	DECLARE @Country varchar(50)
+
+		
+
+	SELECT @companynm = isnull(companynm, ''), @Addr1 = Rtrim(ISNULL(CompanyAddr1,'')), @Addr2 = Rtrim(ISNULL(CompanyAddr2,'')),
+
+	@City = Rtrim(ISNULL(CompanyCity,'')), @Region = Rtrim(ISNULL(CompanyRegion,'')),
+
+	@PostalCd = Rtrim(ISNULL(CompanyPostalCd,'')), @Country = Rtrim(ISNULL(CompanyCtry,''))
+
+	FROM CompanyInfo WITH (NOLOCK)
+
+	where COID = @COID
+
+		
+
+	IF @UseCoName = 1
+
+		SET @ReturnAddress = @CompanyNm
+
+	ELSE
+
+		SET @ReturnAddress = ''
+
+	
+
+	IF @ReturnAddress<>'' SET @ReturnAddress = @ReturnAddress + CHAR(13) + CHAR(10)
+
+	if @Addr1 <> '' And @ReturnAddress<>'' set @ReturnAddress = @ReturnAddress + @Addr1
+
+	if @Addr1 <> '' And @ReturnAddress='' set @ReturnAddress = @ReturnAddress + @Addr1
+
+	IF @Addr2<>'' And @ReturnAddress<>'' SET @ReturnAddress = @ReturnAddress + ' ' + @Addr2 
+
+	IF @Addr2<>'' And @ReturnAddress='' SET @ReturnAddress = @ReturnAddress + @Addr2 
+
+	
+
+	IF @ReturnAddress<>'' SET @ReturnAddress = @ReturnAddress + CHAR(13) + CHAR(10)
+
+	SET @ReturnAddress = @ReturnAddress + @City
+
+	
+
+	IF  @Region<>'' OR @PostalCd<>'' SET @ReturnAddress = @ReturnAddress + ', ' + @Region + ' ' + @PostalCd
+
+	
+
+	IF @Country<>''	SET @ReturnAddress = @ReturnAddress + ', ' + @Country
+
+	
+
+	RETURN @ReturnAddress
+
+	
+
+END
+
+
+
+--select dbo.xDoc_GetCompanyAddress('00')

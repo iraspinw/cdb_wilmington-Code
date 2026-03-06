@@ -1,0 +1,392 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetRegionNexusReport]
+
+	@FromDt as DATETIME, @ToDt as DATETIME, @CustID as varchar(12), @COID as varchar(2), @ExcludeOffsets BIT = 1, @DoSummary BIT = 0
+
+AS
+
+
+
+-- 05/18/2021 Alex Created for Region Nexus Report .net  
+
+
+
+
+
+BEGIN
+
+
+
+	SET NOCOUNT ON;
+
+
+
+	Create Table #OffsetList(
+
+		BuySellNo CHAR(12),
+
+		SourceBuySell CHAR(12),
+
+		CustID CHAR(12),
+
+		ShippingID CHAR(45),
+
+		SalesState CHAR(2),
+
+		Amount MONEY
+
+		)	
+
+	Create Index 	#IEOffsetList ON #OffsetList(BuySellNo)
+
+
+
+	CREATE TABLE #REPORT(
+
+		[BuySellNo] varchar(20),
+
+		[CompanyNm] varchar(65),
+
+		[SPO] char(15),
+
+		[Invoice Sales Amt] money,
+
+		InvoiceDt datetime,
+
+		[Invoice To] varchar(35),
+
+		[Ship From] varchar(35),
+
+		[Ship To] varchar(35),
+
+        [Source] char(1),
+
+		[Dept] varchar(50),
+
+		[Invoice To Country] varchar(35),
+
+		[Ship From Country] varchar(35),
+
+		[Ship To Country] varchar(35),
+
+		[IsChargeBack] BIT,
+
+		[ShipFromID] CHAR(12),
+
+		[ShipFrom] CHAR(45),
+
+		[VendorID] char(15),
+
+         )
+
+
+
+
+
+	INSERT #REPORT 
+
+	SELECT 
+
+		BuySell.BuySellNo, 
+
+		CompanyNm, 
+
+		(SELECT TOP 1 SPO FROM WKSDetail WHERE BuySellNo = BuySell.BuySellNo) OrderNo, 
+
+		ISNULL(Sale,0) AS [Invoice Sales Amt], 
+
+		TradeDt, 
+
+		A.Region AS [Invoice To], 
+
+		B.Region, --ship from
+
+		C.Region, 
+
+		GPLedger.Source, 
+
+		COID, 
+
+		A.Country,
+
+		B.Country,
+
+		C.Country, 
+
+		0,
+
+		BuySell.VendorID,
+
+		BuySell.ShipFromID,
+
+		VendorID
+
+    FROM GPLEDGER
+
+    INNER JOIN BuySell ON GPLedger.BuySellNo = BuySell.BuySellno
+
+	INNER JOiN CounterParty ON CounterParty.CPID = BuySell.CustID
+
+	LEFT JOIN Address AS A ON A.CpID = BuySell.CustID AND InvoiceAddr = 'Y'
+
+	LEFT JOIN Address AS C ON C.[Type] = BuySell.ShipToID AND C.CPID = Buysell.CustID 
+
+	LEFT JOIN Address AS B ON B.[Type] = BuySell.ShipFromID AND B.CPID = BuySell.VendorID 
+
+	WHERE 
+
+        BuySell.Status = 'I' AND
+
+        ((GPLedger.Source = 'B') OR (GPLedger.Source = 'A' and ADJType = 'S') OR Source = 'D')
+
+        AND CustID <> '(INV)' and CustID <> '{C}' And CustID <> '(PLANT)'
+
+        AND((@FromDt = '' OR GPLedger.TradeDt >= @FromDt) AND (@ToDt = '' OR GPLedger.TradeDt <= @ToDt))
+
+        AND (@CustID = '' OR BuySell.CustID = @CustID)
+
+        AND (@COID = '' OR BuySell.COID = @COID)
+
+
+
+
+
+
+
+	--AND BuySell.BuySellno = '512224A'
+
+
+
+	UPDATE #REPORT SET [Dept] = (SELECT CompanyDesc FROM CompanyInfo WHERE COID = #REPORT.Dept)
+
+	DELETE FROM #REPORT WHERE [Invoice Sales Amt] = 0
+
+	
+
+
+
+
+
+
+
+
+
+		
+
+	----INSERT #OffsetList	
+
+	INSERT #OffsetList(BuySellNo,Amount) 
+
+		select	#REPORT.BuySellNo, [Invoice Sales Amt]		
+
+		FROM #REPORT 
+
+		where ShipFromID = '(OTHER)'
+
+		
+
+	UPDATE #OffsetList SET #OffsetList.SourceBuySell = Payables.BuySellno 
+
+		FROM #OffsetList INNER JOIN Payables ON Payables.ChgBackWks = #OffsetList.BuySellNo AND Payables.BuySellNo <> #OffsetList.BuySellNo
+
+	
+
+	DELETE FROM #OffsetList WHERE SourceBuySell IS NULL
+
+
+
+
+
+	IF @ExcludeOffsets = 1 BEGIN
+
+		DELETE #REPORT FROM #REPORT INNER JOIN #OffsetList ON #REPORT.BuySellNo = #OffsetList.BuySellNo WHERE Amount <0
+
+	END
+
+
+
+
+
+	UPDATE #OffsetList SET 
+
+
+
+		ShippingID = Buysell.ShipFromID, 
+
+		CustID = Buysell.VendorID,
+
+		SalesState = [Address].Region
+
+		FROM #OffsetList INNER JOIN BuySell ON #OffsetList.SourceBuySell = BuySell.BuySellno
+
+			INNER JOIN [ADDRESS] ON [Address].CPID = Buysell.VendorID AND [Address].Type =  Buysell.ShipFromID
+
+
+
+	UPDATE #REPORT SET 
+
+		[Invoice To] = SalesState,
+
+		[Ship From]  = SalesState,
+
+		[Ship To]  = SalesState
+
+		FROM #REPORT INNER JOIN #OffsetList ON #REPORT.BuySellno = #OffsetList.BuySellno
+
+
+
+
+
+	-- FOR PLANT SHIPMENTS ASSIGN SHIP-FROM STATE/COUNTRY FROM WAREHOUSE.
+
+	UPDATE #REPORT SET [Ship From] = WhseAddress.Region 
+
+		FROM #REPORT INNER JOIN [Address] ON  [Address].CPID = '(INV)' and [Address].Type = #Report.ShipFrom
+
+		INNER JOIN [ADDRESS] WhseAddress ON [Address].WarehouseID = WhseAddress.CPID AND WhseAddress.InvoiceAddr = 'Y'
+
+	WHERE #REPORT.[ShipFromID] = '(PLANT)'
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+	--IF REGION NULL FILL WITH COUNTRY
+
+	UPDATE #REPORT SET [Invoice To Country] = (SELECT Country FROM BuySell WITH (NOLOCK) INNER JOIN Address WITH (NOLOCK) ON Address.CpID = BuySell.CustID AND InvoiceAddr = 'Y'
+
+		WHERE BuySell.BuySellNo = #REPORT.BuySellNo) WHERE ([Invoice To] is null) OR (LTrim([Invoice To]) = '')
+
+	UPDATE #REPORT SET [Ship From Country] =  (SELECT Country FROM BuySell WITH (NOLOCK) INNER JOIN Address WITH (NOLOCK) ON Address.[Type] = BuySell.ShipFromID AND Address.CPID = BuySell.VendorID 
+
+		WHERE BuySell.BuySellNo = #REPORT.BuySellNo) WHERE [Ship From] is null OR LTrim([Ship From]) = ''
+
+	UPDATE #REPORT SET [Ship To Country] =    (SELECT Country FROM BuySell WITH (NOLOCK) INNER JOIN Address WITH (NOLOCK) ON Address.[Type] = BuySell.ShipToID AND Address.CPID = BuySell.CustID 
+
+		WHERE BuySell.BuySellNo = #REPORT.BuySellNo) WHERE [Ship To] is null OR LTrim([Ship To]) = ''
+
+
+
+	--IF REGION STILL NULL CHECK FOR WAREHOUSE REGION
+
+	UPDATE #REPORT SET [Invoice To] = (SELECT Warehouse.Region FROM BuySell WITH (NOLOCK) INNER JOIN Address WITH (NOLOCK) ON Address.CpID = BuySell.CustID AND InvoiceAddr = 'Y' INNER JOIN Address Warehouse ON Warehouse.CpID = Address.WarehouseID AND Warehou
+se.InvoiceAddr = 'Y' WHERE BuySell.BuySellNo = #REPORT.BuySellNo) WHERE [Invoice To] is null OR [Invoice To] = ''
+
+	UPDATE #REPORT SET [Ship From] =  (SELECT Warehouse.Region FROM BuySell WITH (NOLOCK) INNER JOIN Address WITH (NOLOCK) ON Address.[Type] = BuySell.ShipFromID AND Address.CPID = BuySell.VendorID INNER JOIN Address Warehouse ON Warehouse.CpID = Address.War
+ehouseID AND Warehouse.InvoiceAddr = 'Y' WHERE BuySell.BuySellNo = #REPORT.BuySellNo) WHERE [Ship From] is null OR [Ship From] = ''
+
+	UPDATE #REPORT SET [Ship To] =    (SELECT Warehouse.Region FROM BuySell WITH (NOLOCK) INNER JOIN Address WITH (NOLOCK) ON Address.[Type] = BuySell.ShipToID AND Address.CPID = BuySell.CustID INNER JOIN Address Warehouse ON Warehouse.CpID = Address.Warehou
+seID AND Warehouse.InvoiceAddr = 'Y' WHERE BuySell.BuySellNo = #REPORT.BuySellNo) WHERE [Ship To] is null OR [Ship To] = ''
+
+
+
+	--IF REGION STILL NULL CHECK FOR WAREHOUSE COUNTRY
+
+	UPDATE #REPORT SET [Invoice To Country] = (SELECT Warehouse.Country FROM BuySell WITH (NOLOCK) INNER JOIN Address WITH (NOLOCK) ON Address.CpID = BuySell.CustID AND InvoiceAddr = 'Y' INNER JOIN Address Warehouse ON Warehouse.CpID = Address.WarehouseID AN
+D Warehouse.InvoiceAddr = 'Y' WHERE BuySell.BuySellNo = #REPORT.BuySellNo) WHERE ([Invoice To Country] is null OR LTrim([Invoice To Country]) = '') AND ([Invoice To] is null OR LTrim([Invoice To]) = '')
+
+	UPDATE #REPORT SET [Ship From Country] =  (SELECT Warehouse.Country FROM BuySell WITH (NOLOCK) INNER JOIN Address WITH (NOLOCK) ON Address.[Type] = BuySell.ShipFromID AND Address.CPID = BuySell.VendorID INNER JOIN Address Warehouse ON Warehouse.CpID = Ad
+dress.WarehouseID AND Warehouse.InvoiceAddr = 'Y' WHERE BuySell.BuySellNo = #REPORT.BuySellNo) WHERE ([Ship From Country] is null OR LTrim([Ship From Country]) = '') AND ([Ship From] is null OR LTrim([Ship From]) = '')
+
+	UPDATE #REPORT SET [Ship To Country] =    (SELECT Warehouse.Country FROM BuySell WITH (NOLOCK) INNER JOIN Address WITH (NOLOCK) ON Address.[Type] = BuySell.ShipToID AND Address.CPID = BuySell.CustID INNER JOIN Address Warehouse ON Warehouse.CpID = Addres
+s.WarehouseID AND Warehouse.InvoiceAddr = 'Y' WHERE BuySell.BuySellNo = #REPORT.BuySellNo) WHERE ([Ship To Country] is null OR LTrim([Ship To Country]) = '') AND ([Ship To] is null OR LTrim([Ship To]) = '')
+
+
+
+	--UPDATE COUNTRY TO FULL COUNTRY NAME
+
+	UPDATE #REPORT SET [Invoice To Country] = (SELECT [Name] FROM Country WHERE CountryID = #REPORT.[Invoice To Country]) WHERE EXISTS (SELECT [Name] FROM Country WHERE CountryID = #REPORT.[Invoice To Country])
+
+	UPDATE #REPORT SET [Ship From Country] =  (SELECT [Name] FROM Country WHERE CountryID = #REPORT.[Ship From Country]) WHERE EXISTS  (SELECT [Name] FROM Country WHERE CountryID = #REPORT.[Ship From Country])
+
+	UPDATE #REPORT SET [Ship To Country] =    (SELECT [Name] FROM Country WHERE CountryID = #REPORT.[Ship To Country]) WHERE EXISTS    (SELECT [Name] FROM Country WHERE CountryID = #REPORT.[Ship To Country])
+
+
+
+
+
+
+
+
+
+	-- SET SHIP-FROM = SHIP TO WHEN SHIP FROM is "OTHER"
+
+	UPDATE #REPORT SET [Ship From] = [Ship To] 
+
+		WHERE ShipFromID = '(OTHER)' AND [Ship To] IS NOT NULL AND [Ship From] IS NULL
+
+
+
+
+
+    UPDATE #REPORT SET #REPORT.BuysellNo = RTrim(#REPORT.BuysellNo)+'-Adj' WHERE Source = 'A' 
+
+	UPDATE #REPORT SET #REPORT.BuysellNo = RTrim(#REPORT.BuysellNo)+'-Disc' WHERE Source = 'D' 
+
+
+
+	
+
+	IF @DoSummary = 1
+
+			SELECT	'', CompanyNm, '', SUM([Invoice Sales Amt]), '', [Invoice To],[Ship From], [Ship TO],'',Dept,[Invoice To Country],[Ship From Country],[Ship To Country],0,'',''
+
+				FROM #REPORT GROUP BY [Ship To],[Ship To Country], Dept, CompanyNm,    [Ship From Country],[Ship From],[Invoice To Country],[Invoice To]
+
+				ORDER BY [Ship To],[Ship To Country]
+
+
+
+	ELSE
+
+		SELECT [BuySellNo] as [WorkSheet No],
+
+		[Dept],
+
+		[CompanyNm] as Customer,
+
+		[SPO] as [Order No],
+
+		InvoiceDt as [Invoice Date],
+
+		[Invoice To],
+
+		[Ship From] ,
+
+		[Ship To],
+
+		[Invoice Sales Amt] as [{C}Sales Amt],
+
+		Rtrim([Source]) as [-hidden-Source],
+
+		Rtrim([VendorID]) as [-hidden-VendorID]
+
+		
+
+		 FROM #REPORT
+
+		ORDER BY #REPORT.[Ship To],[Ship To Country],InvoiceDt,BuySellNo 
+
+	
+
+END
+
+
+
+
+
+--GO
+
+--q_GetRegionNexusReport '2/24/2014','2/24/2014','','',1,1
+

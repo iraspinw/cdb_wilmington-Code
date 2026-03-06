@@ -1,0 +1,142 @@
+CREATE PROC [dbo].[cw_GetPackingSlipInquiry_new] 
+
+	@FromDt datetime, 
+
+	@ToDt Datetime,
+
+	@WhseStatus CHAR(10), 
+
+	@WarehouseID CHAR(45)
+
+AS
+
+
+
+--03/31/2017 MEC: Created
+
+--05/10/2017 DSH Revised columns and filters.
+
+-- cw_GetPackingSlipInquiry '', '', '', ''
+
+/*
+
+Statuses:
+
+	SCHEDULED
+
+	OPEN
+
+	CLOSED
+
+*/
+
+
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	CREATE TABLE #PackingSlips(
+
+		PackingSlipNo CHAR(12),
+
+		ShippingDt DATE,
+
+		Customer VARCHAR(100),
+
+		DeliveryTo CHAR(200),
+
+		OrderNo CHAR(15),
+
+		FreightCarrier VARCHAR(100),
+
+		EquipmentNo VARCHAR(25),
+
+		ShipFromWarehouse VARCHAR(100),
+
+		SalesRep VARCHAR(50)
+
+	)
+
+
+
+
+
+	INSERT #PackingSlips	
+
+	SELECT		
+
+		B.BuySellNo, 
+
+		ShippingDt,
+
+		UPPER(C.CompanyNm),
+
+		UPPER(A.City)+', '+UPPER(A.Region)+'  ['+UPPER(RTRIM(B.ShipToID))+']',
+
+		B.RefSONo,
+
+		ISNULL( 
+
+			CASE WHEN B.RefFreightCarrier = '(OTHER)' THEN 
+
+			(SELECT TOP 1 InvoiceDesc From WksDelivery Where BuySellNo = B.BuySellNo And VendorID = '(OTHER)') 
+
+			ELSE 
+
+			(SELECT CompanyNm FROM Counterparty WHERE CPID = B.RefFreightCarrier)
+
+			END,
+
+			''),
+
+		B.RefEquipNo As [Equipment Number],
+
+		B.ShipFromID,
+
+		UPPER(R.[Name])
+
+	
+
+	FROM WksPackingSlip
+
+	INNER JOIN BuySell B ON B.BuySellNo = WksPackingSlip.BuySellNo	
+
+	INNER JOIN Counterparty C ON B.CustID = C.CpID  
+
+	INNER JOIN Address A ON B.ShipToID = A.Type AND B.CustID = A.CPID
+
+	LEFT JOIN Referrer R ON B.ReferrerNo1 = R.ReferrerNo
+
+	
+
+	
+
+	WHERE 
+
+		( (@WhseStatus = '' AND B.WarehouseStatus <> '' ) OR  @WhseStatus = B.WarehouseStatus)
+
+		AND ( (@FromDt = '' OR B.ShippingDt >= @FromDt) AND (@ToDt = '' OR B.ShippingDt <= @ToDt) )
+
+		AND (@WarehouseID= '' OR @WarehouseID = B.ShipFromID)
+
+		AND (B.[Status] <> 'X' AND B.Status <> 'I')
+
+	
+
+--LEFT JOIN Inventory WITH(NOLOCK) ON WksPackingSlip.LotNo = Inventory.LotNo
+
+
+
+
+
+	SELECT * FROM #PackingSlips Order By ShippingDt
+
+
+

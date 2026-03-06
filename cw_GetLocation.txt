@@ -1,0 +1,76 @@
+CREATE   PROCEDURE [dbo].[cw_GetLocation] @Location char(45), @CpID char(12) AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+--1/13/2015 MEC: Created for cieTrade.net
+
+--5/1/2018 MEC: Added support for Contacts
+
+--8/22/2019 Alex: Added Addr4
+
+
+
+
+
+--cw_GetLocation 'Chicago', '84701'
+
+
+
+	DECLARE @FirstName varchar(100) = ''
+
+	DECLARE @LastName varchar(100) = ''
+
+	DECLARE @Telephone varchar(50) = ''
+
+	DECLARE @PhoneMobile varchar(50) = ''
+
+	DECLARE @Email varchar(150) = '' -- field may be deprecated
+
+	SELECT Top 1 @FirstName = FirstNm, @LastName = LastNm, @Telephone = PhoneBusiness, @PhoneMobile = PhoneMobile, @Email = Email From Contact WITH(NOLOCK) 
+
+	LEFT JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	WHERE --IsNull(RoleNm,'') = '' And 
+
+		CpID = @CpID And Location = @Location Order By RoleNm
+
+
+
+    SELECT 
+
+		[Address].[Type] As Location,
+
+		Addr1,Addr2,Addr3,City,Region,PostalCd,Country,
+
+		@FirstName FirstName,
+
+		@LastName LastName,
+
+		@Telephone Telephone, 
+
+		@PhoneMobile PhoneMobile,
+
+		@Email Email, 
+
+		ShipVia, [Address].ShipTerm,
+
+		Instructions,
+
+		[Address].Notes,
+
+		EDI_ShipToCode,AvgBalewtLBS,AllocID,SalesTaxCodeID, 
+
+		PriceRegionID, TaxID, directions, 
+
+		CRVCertType, CRVCertNum, InternalFreightCost, RemitToAddress, UserDefined1, UserDefined2,Addr4
+
+    from [Address] WITH(NOLOCK)
+
+	where [Type] = @Location And CpID = @CpID
+
+
+

@@ -1,0 +1,355 @@
+CREATE Proc [dbo].[cw_GetPOOrderDetails] @PONo char(15)  AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+-- 01/14/2019 DSH: Created With new Tax section for .NET SALES ORDER
+
+--01/21/2019 Alex: Trim the SalesTax.TaxDescription
+
+--01/21/2019 Alex: add column TaxRate in #TaxDetail since should be returned separately
+
+--01/1/2019 Alex: Specifications == CommodityDesc then return CommodityDesc
+
+--05/27/2020 Alex: @CountUnitType, @SumUnitthen, @SumUnitsUnitType
+
+--06/08/2022 Nick: Added UDF Fields 1, 3, 4
+
+--07/12/2022 Nick: Added UDF4 Fields
+
+
+
+    Declare @CountUnitType as Int
+
+	Set @CountUnitType = (select   COUNT(distinct PODetail.UnitType) From PODetail Where PODetail.PONumber =  @PONo and  PODetail.UnitType<>'')
+
+
+
+	Declare @SumUnit as int
+
+	Set @SumUnit = (select  sum(PODetail.Units) From PODetail Where PODetail.PONumber =  @PONo)
+
+
+
+	Declare @SumUnitsUnitType as VARCHAR(50)
+
+	set @SumUnitsUnitType =(select top 1 Case When @SumUnit > 0 Then CONVERT(varchar, @SumUnit)  Else '' End  +' ' +Case When @CountUnitType > 1 Then 'Packages'  Else IsNull(dbo.CnvUnitName(PODetail.UnitType),'') End From PODetail Where PODetail.PONumber=@PO
+No)
+
+
+
+
+
+
+
+	DECLARE @WTUOM char(1)
+
+	SET @WTUOM = ISNULL((SELECT TOP 1 WeightUOM FROM PODetail WITH (NOLOCK) WHERE PONumber = @PONo),'L')
+
+	
+
+	DECLARE @SUM_SWT decimal(18,5)
+
+	SELECT @SUM_SWT = SUM(dbo.CONVERT_TO_UOM(Weight,WeightUOM,@WTUOM))
+
+	FROM PODetail WITH (NOLOCK) 
+
+	WHERE PONumber = @PONo
+
+
+
+	DECLARE @SalesTaxID int
+
+	DECLARE @CpID Char(12)
+
+	DECLARE @CurrencyCd CHAR(3)
+
+
+
+	SELECT @CpID=CpID, @CurrencyCd=ContractCurrency 
+
+		FROM PO WHERE PONumber = @PONo
+
+	SET @SalesTaxID = (SELECT TOP 1 SalesTaxCodeID FROM [Address] WHERE CpID = @CpID)
+
+
+
+
+
+		CREATE TABLE #POPRODUCTS( 
+
+		GradeID			CHAR(15),
+
+		[Description]	VARCHAR(65),
+
+		[PODesc]		CHAR(65),
+
+		[Weight]		DECIMAL(18,5),
+
+		WUOM			CHAR(6),
+
+		Units			INT,
+
+		UnitType		CHAR(30),
+
+		NoSheets		INT,
+
+		Specifications	VARCHAR(5000),
+
+		Price			DECIMAL(22,5),
+
+		PriceUOM		CHAR(6),
+
+		CurrencyCd		CHAR(3),
+
+		Amt				FLOAT,
+
+		TotalUOM		CHAR(6),
+
+		TotalWTInUOM	VARCHAR(34),
+
+        BasisWt        VARCHAR(10),
+
+        BasisWtUOM     VARCHAR(3),
+
+		SheetSize      VARCHAR(25),
+
+		SheetSizeUOM   VARCHAR(2),
+
+		CoreSize     DECIMAL(18,5),
+
+	    CoresizeUOM   VARCHAR(2),
+
+		Diameter    VARCHAR(10),
+
+        DiameterUOM VARCHAR(2),
+
+		SumUnitsUnitType  VARCHAR(50),
+
+		SKU VARCHAR(100),
+
+		ProductCode VARCHAR(100),
+
+		PriceOrIndexPrice VARCHAR(100),
+
+		UserDefined2 VARCHAR(100),
+
+		CommodityDesc VARCHAR(5000),
+
+		UserDefined1 VARCHAR(100),
+
+		UserDefined3 VARCHAR(100),
+
+		UserDefined4 VARCHAR(100),
+
+		UserDefinedFourth8 VARCHAR(100),
+
+		UserDefinedFourth1 VARCHAR(100),
+
+		UserDefinedFourth2 VARCHAR(100),
+
+		UserDefinedFourth3 VARCHAR(100),
+
+		UserDefinedFourth4 VARCHAR(100),
+
+		UserDefinedFourth5 VARCHAR(100),
+
+		UserDefinedFourth7 VARCHAR(100)
+
+	)
+
+
+
+	INSERT #POPRODUCTS
+
+	SELECT PODetail.GradeID,
+
+	Grade.[Description],
+
+	PODetail.PODesc,
+
+	dbo.FormatQty(PODetail.[Weight],PODetail.WeightUOM) as [Weight],
+
+	dbo.CnvUOM_Names(PODetail.WeightUOM) as WUOM,
+
+	PODetail.Units,
+
+	dbo.CnvUnitName(PODetail.UnitType) As UnitType,
+
+	NoSheets, 
+
+CASE WHEN IsNull(ShowCommDescOnDocs,0) = 1 Then Case When Replace(Replace(IsNull(Specifications,''), ' ',''), char(10), '') <> Replace(Replace(IsNull(CommodityDesc,''), ' ',''), char(10), '') Then IsNull(Specifications,'') + ' ' + char(10) + CommodityDesc
+ Else CommodityDesc End Else IsNull(Specifications,'') End  As Specifications,
+
+	--CASE WHEN IsNull(ShowCommDescOnDocs,0) = 1 And (IsNull(Specifications,'') <> IsNull(CommodityDesc,'')) Then IsNull(Specifications,'') + ' ' + IsNull(CommodityDesc,'') Else IsNull(Specifications,'') End As Specifications,
+
+	dbo.RemoveTrailingZeros(ISNULL(Price,0)) AS Price,
+
+	dbo.CnvUOM_Names(PriceUOM) as PriceUOM,
+
+	PODetail.CurrencyCd,
+
+	ISNULL(FxAmount,0) as Amt,
+
+	dbo.CnvUOM_Names(@WTUOM) as TotalUOM,
+
+	dbo.FormatQty(@SUM_SWT,@WTUOM) as TotalWTInUOM,
+
+	BasisWt,
+
+	BasisWtUOM,
+
+	PODetail.SheetSize,
+
+	SheetSizeUOM,
+
+	CoreSize,
+
+	CoresizeUOM,
+
+	Diameter,
+
+	DiameterUOM,
+
+	@SumUnitsUnitType,
+
+	Grade.SKU,
+
+	Grade.ProductCode,
+
+	case when po.MonthlyContract =1 and isnull(Price,0) = 0  then Rtrim(PriceFormula.FormulaDesc) else case when  rtrim(PODetail.CurrencyCd)='USD' then '$ ' else rtrim(PODetail.CurrencyCd) end +  dbo.RemoveTrailingZeros(FORMAT(ISNULL(Price,0), '#,##0.##')) +
+ '/'+ Rtrim(dbo.CnvUOM_Names(PriceUOM))  end as PriceOrIndexPrice,
+
+	rtrim(PODetail.UserDefined2),
+
+	CommodityDesc,
+
+	rtrim(PODetail.UserDefined1),
+
+	rtrim(PODetail.UserDefined3),
+
+	rtrim(PODetail.UserDefined4),
+
+	rtrim(PODetail.UserDefinedFourth8),
+
+	rtrim(PODetail.UserDefinedFourth1),
+
+	rtrim(PODetail.UserDefinedFourth2),
+
+	rtrim(PODetail.UserDefinedFourth3),
+
+	rtrim(PODetail.UserDefinedFourth4),
+
+	rtrim(PODetail.UserDefinedFourth5),
+
+	rtrim(PODetail.UserDefinedFourth7)
+
+	FROM PODetail WITH (NOLOCK) 
+
+	INNER JOIN Grade WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID 
+
+	left join Po on po.PONumber = PODetail.PONumber
+
+	left join PriceFormula on PriceFormula.FormulaID = PODetail.FormulaID
+
+	WHERE PODetail.PONumber = @PONo
+
+	Order by DetailOrderNo
+
+	CREATE TABLE #TaxDetail(
+
+		TaxDescription VARCHAR(65),
+
+		TaxRate   decimal(12,2),
+
+		Currency CHAR(3),
+
+		TaxAmount MONEY
+
+	)
+
+
+
+	IF @SalesTaxID <> 0 BEGIN
+
+
+
+		DECLARE @TotalAmt MONEY
+
+		DECLARE @TotalTax MONEY
+
+		SELECT @TotalAmt = SUM(Amt) FROM #POPRODUCTS
+
+
+
+		
+
+
+
+		INSERT #TaxDetail
+
+			SELECT	LTRIM(RTRIM(SalesTax.TaxDescription)),CAST((SalesTax.TaxRate * 100) as decimal(12,2)) as taxrate, --+ ' ' + CAST(CAST((SalesTax.TaxRate * 100) as decimal(12,2)) as varchar) + '%',
+
+					@CurrencyCd,
+
+					ROUND(@TotalAmt * SalesTax.TaxRate,2)
+
+			FROM SalesTaxcode inner join SalesTax ON SalesTaxcode.SalesTax01 = SalesTax.SalesTaxID  
+
+			WHERE SalesTaxcode.SalesTaxCodeID = @SalesTaxID AND SalesTaxcode.SalesTax01 <> 0 
+
+	
+
+		INSERT #TaxDetail
+
+			SELECT	LTRIM(RTRIM(SalesTax.TaxDescription)),CAST((SalesTax.TaxRate * 100) as decimal(12,2)) as taxrate,-- + ' ' + CAST(CAST((SalesTax.TaxRate * 100) as decimal(12,2)) as varchar) + '%',
+
+					@CurrencyCd,
+
+					ROUND(@TotalAmt * SalesTax.TaxRate,2)
+
+			FROM SalesTaxcode inner join SalesTax ON SalesTaxcode.SalesTax02 = SalesTax.SalesTaxID  
+
+			WHERE SalesTaxcode.SalesTaxCodeID = @SalesTaxID AND SalesTaxcode.SalesTax02 <> 0 
+
+
+
+		INSERT #TaxDetail
+
+			SELECT	LTRIM(RTRIM(SalesTax.TaxDescription)),CAST((SalesTax.TaxRate * 100) as decimal(12,2)) as taxrate,-- + ' ' + CAST(CAST((SalesTax.TaxRate * 100) as decimal(12,2)) as varchar) + '%',
+
+					@CurrencyCd,
+
+					ROUND(@TotalAmt * SalesTax.TaxRate,2)
+
+			FROM SalesTaxcode inner join SalesTax ON SalesTaxcode.SalesTax03 = SalesTax.SalesTaxID  
+
+			WHERE SalesTaxcode.SalesTaxCodeID = @SalesTaxID AND SalesTaxcode.SalesTax03 <> 0 
+
+
+
+		SELECT @TotalTax = SUM(TaxAmount) FROM 	#TaxDetail 
+
+
+
+		If @TotalTax <> 0 
+
+			INSERT #TaxDetail 
+
+				SELECT 'TOTAL WITH TAX',null,@CurrencyCd,@TotalTax+@TotalAmt
+
+
+
+	END
+
+
+
+    SELECT * FROM #POPRODUCTS
+
+	SELECT * FROM #TaxDetail
+
+
+
+
+

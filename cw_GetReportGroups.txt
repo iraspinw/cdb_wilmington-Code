@@ -1,0 +1,18 @@
+CREATE   PROCEDURE [dbo].[cw_GetReportGroups] AS
+
+--4/2/2019 MN: CREATED
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		RTRIM(GroupNm) AS [GroupNm]
+
+	FROM ReportGroup
+
+
+

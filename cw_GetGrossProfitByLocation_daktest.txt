@@ -1,0 +1,359 @@
+CREATE PROC [dbo].[cw_GetGrossProfitByLocation_daktest](
+
+	@FromDt datetime, 
+
+	@ToDt datetime, 
+
+	@CoID char(2), 
+
+	@Customer CHAR(12), 
+
+	@SalesRep varchar(10) = '', 
+
+	@TradeType varchar(25), 
+
+	@ReportUOM CHAR(1) ,
+
+	@DoLocationDrilldown BIT = 0,
+
+	@Drilldown_Location CHAR(45) = '',
+
+	@ReportType char(45) = 'Customer'
+
+	)
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+-- 05/09/2016 DSH Created
+
+-- 05/10/2016 RS: Changed #REPORT to #GP_REPORT
+
+-- 02/07/2016 DSH Added Customer Filter 
+
+-- 09/30/2020 DSH Updated to correct bankfee reporting and adjustment issue. 
+
+--Changed to no lomger call old SP  q_GetGrossProfitByCounterparty
+
+--09/13/2022 DSH Added Drill dowen feature	
+
+--09/14/2022 DSH Added Worksheet Type for drill-down
+
+--10/19/2022 DN: added option to run by supplier.
+
+
+
+
+
+	CREATE TABLE #GPDATA(
+
+		CpID char(12),
+
+		Customer varchar(50),
+
+		TradeDt datetime,		
+
+		Supplier varchar(50), 
+
+		OrderNo char(15),
+
+		BuySellNo varchar(15),
+
+		TradeDesc varchar(25),		
+
+		Quantity decimal(20,4) Default 0, 
+
+		Sales money,
+
+		SupplierCost money,
+
+		Expenses money,
+
+		Cost money,
+
+		GrossProfit money,     
+
+		Margin DECIMAL(22,5),
+
+		MarginPerUom DECIMAL(22,7),
+
+		QuantityUOM CHAR(3),
+
+		WksType CHAR(10),
+
+		Location CHAR(45),
+
+		Loads INT DEFAULT 0	
+
+	) 
+
+
+
+
+
+	CREATE TABLE #GP_REPORT(
+
+		CpID char(12),
+
+		Supplier CHAR(100),
+
+		Location CHAR(45),
+
+		Quantity DECIMAL(22,5) DEFAULT 0,
+
+		Loads INT,
+
+		Sales MONEY,
+
+		Purchases MONEY,
+
+		Expenses MONEY,
+
+		TotalCosts MONEY,
+
+		Margin MONEY DEFAULT 0,
+
+		MarginPerUOM DECIMAL(22,7) DEFAULT 0, 
+
+		Department char(50)
+
+    ) 
+
+
+
+		
+
+	 IF @FromDt = '' SET @FromDt = '1/1/1900'
+
+	 IF @ToDt = '' SET @ToDt = '12/31/2100'
+
+
+
+	 
+
+		INSERT #GPDATA(CpID,Customer,TradeDt,Supplier,OrderNo,BuySellNo,TradeDesc,Quantity,Sales,SupplierCost,Expenses,Cost,GrossProfit,Margin,MarginPerUom,QuantityUOM,WksType)  --          Invoiced,,,_Source,_AdjType,Dept)
+
+		EXEC [cw_GetGrossProfitByCustomer] @FromDt,@ToDt,@CoID, @ForCustCPID=@Customer, @RefID=@SalesRep, @TradeType=@TradeType,@ReportUOM=@ReportUOM
+
+	
+
+
+
+	
+
+
+
+	
+
+
+
+
+
+	UPDATE #GPDATA SET Location = UPPER(ShipToID) FROM Buysell INNER JOIN #GPDATA ON Buysell.BuySellno = #GPDATA.BuySellNo
+
+	UPDATE #GPDATA SEt LOADS = 1 WHERE TradeDesc = 'Brokerage'
+
+	UPDATE #GPDATA SET Quantity = 0 WHERE Quantity IS NULL
+
+	UPDATE #GPDATA SET Customer = '(NA)', Location = '(NA)', Loads = 0, Quantity=0 WHERE Customer = '(OTHER)' OR Customer = '(Plant)' OR Customer = '(Inventory)' 
+
+
+
+
+
+	--DRILLDOWN DETAIL REPORT
+
+	IF @DoLocationDrilldown = 1 BEGIN
+
+
+
+		select 
+
+			#GPDATA.BuysellNo AS [Wks no],
+
+			TradeDT As [Trade Date],  
+
+			TradeDesc AS [Trade Description],
+
+			Sales, 
+
+			SupplierCost AS [Supplier Cost],
+
+			Expenses,
+
+			Cost,
+
+			GrossProfit AS [{C}Gross Profit],
+
+			[-Hidden-WksType] = WksType
+
+		FROM #GPDATA 
+
+		WHERE Location = @Drilldown_Location                           
+
+		ORDER BY TradeDt, #GPDATA.BuySellNo
+
+		RETURN
+
+
+
+
+
+	END
+
+	--10/19/2022: DN, run by customer or supplier
+
+	--========================================
+
+	if @ReportType = 'SUPPLIER' begin
+
+		INSERT #GP_REPORT
+
+		SELECT 	
+
+			CpID,
+
+			UPPER(Supplier), 
+
+			Location,
+
+			SUM(Quantity),
+
+			SUM(Loads),
+
+			SUM(Sales),
+
+			SUM(SupplierCost),
+
+			SUM(Expenses),
+
+			SUM(Expenses+SupplierCost),
+
+			SUM(GrossProfit),0,
+
+			CompanyInfo.CompanyDesc
+
+		FROM #GPDATA
+
+		left join BuySell on #GPDATA.BuySellNo = buysell.BuySellNo
+
+		left join CompanyInfo on buysell.COID = CompanyInfo.COID
+
+		GROUP BY CpID, Supplier, Location, CompanyDesc
+
+
+
+	
+
+		UPDATE #GP_REPORT SET MarginPerUOM = Margin/ Quantity WHERE Quantity <> 0 
+
+
+
+
+
+		SELECT 
+
+			CpId AS [-Hidden-CpID],
+
+			Supplier,
+
+			Location,
+
+			Quantity,
+
+			Loads,
+
+			Sales as [{C}Sales],
+
+			TotalCosts AS [{C}Expenses],
+
+			Margin AS [{C}Gross Profit],
+
+			MarginPerUOM AS [{C}GP Per UOM],
+
+			Department
+
+		FROM #GP_REPORT 
+
+		ORDER BY Supplier, Location,Department
+
+	end
+
+
+
+	if @ReportType = 'CUSTOMER' begin
+
+		INSERT #GP_REPORT
+
+		SELECT 	
+
+			CpID,
+
+			UPPER(Customer), 
+
+			Location,
+
+			SUM(Quantity),
+
+			SUM(Loads),
+
+			SUM(Sales),
+
+			SUM(SupplierCost),
+
+			SUM(Expenses),
+
+			SUM(Expenses+SupplierCost),
+
+			SUM(GrossProfit),0,
+
+			CompanyInfo.CompanyDesc
+
+		FROM #GPDATA
+
+		left join BuySell on #GPDATA.BuySellNo = buysell.BuySellNo
+
+		left join CompanyInfo on buysell.COID = CompanyInfo.COID
+
+		GROUP BY CpID, Customer, Location, CompanyDesc
+
+
+
+	
+
+		UPDATE #GP_REPORT SET MarginPerUOM = Margin/ Quantity WHERE Quantity <> 0 
+
+
+
+
+
+		SELECT 
+
+			CpId AS [-Hidden-CpID],
+
+			Supplier as Customer,
+
+			Location,
+
+			Quantity,
+
+			Loads,
+
+			Sales as[{C}Sales],
+
+			TotalCosts AS [{C}Expenses],
+
+			Margin AS [{C}Gross Profit],
+
+			MarginPerUOM AS [{C}GP Per UOM],
+
+			Department
+
+		FROM #GP_REPORT ORDER BY Customer, Location,Department
+
+	end
+
+	--========================================

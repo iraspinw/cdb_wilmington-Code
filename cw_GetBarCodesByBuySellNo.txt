@@ -1,0 +1,238 @@
+CREATE   PROCEDURE [dbo].[cw_GetBarCodesByBuySellNo] 
+
+
+
+	@BuySellNo varchar(12),
+
+	@UserID char(10) = ''
+
+AS
+
+
+
+--cw_GetBarCodesByBuySellNo 'PR-4601'
+
+
+
+--11/09/2016 MEC: Created
+
+--03/10/2020 Alex: I changed the inventory relationship
+
+--09/13/2021 Alex: Log added
+
+--04/02/2022 MEC: Added PONumber
+
+--07/18/2022 Nick: Added InvClass
+
+--9/29/2022 Dakota: added warehouse location
+
+--10/31/2022 Nick: Added InvoiceDt
+
+--01/17/2023 Nick: Added NetWeightLBS
+
+--06/22/2023 Nick: Added CounterpartyLogo
+
+
+
+	SET NOCOUNT ON
+
+	declare @HideSupplier bit
+
+	select @HideSupplier=optionValue from Options where optionName = 'HideSupplierOnLabel'
+
+	SELECT 
+
+		D.CompanyNm As Dept,
+
+		dbo.xDoc_GetCompanyAddressOnly(D.COID) As DeptAddress,
+
+		case when DB_NAME() = 'cdb_Circulus' then  (select Top 1 F.Item from PO T CROSS APPLY dbo.fnSplit(T.ShipTo, CHAR(13)) F where T.PONumber = PO.PONumber) else C.CompanyNm end as CompanyNm, 
+
+		--C.CompanyNm, 
+
+		ShippingDt As RcvDt, 
+
+		[PWeight] As NetWt, 
+
+		dbo.CnvUOM_Names(PWeightUOM) As WtUOM, 
+
+		IsNull(Inventory.GrossWt, WksDetail.GrossWt) GrossWt, 
+
+		IsNull(Inventory.TareWt, WksDetail.TareWt) TareWt,
+
+		--IsNull(Inventory.LotNo, IsNull(WksDetail.LotNo,0)) As LotNo,
+
+		CAST(IsNull(Inventory.LotNo, IsNull(WksDetail.LotNo,0)) as int) As LotNo, 
+
+		IsNull(InvGrade.[Description], Grade.[Description]) As Grade,
+
+		ShippingNotes,
+
+		dbo.RemoveTrailingZeros(cast(IsNull(Inventory.RollWd, WksDetail.RollWd) as varchar)) + ' ' + IsNull(Inventory.RollWdUOM, WksDetail.RollWdUOM) As RollWidth,
+
+		dbo.RemoveTrailingZeros(cast(IsNull(Inventory.BasisWt, WksDetail.BasisWt) as varchar)) + ' ' + IsNull(Inventory.BasisWtUOM, WksDetail.BasisWtUOM) As BasisWeight,
+
+		dbo.RemoveTrailingZeros(IsNull(Inventory.Caliper, WksDetail.Caliper)) As Caliper,
+
+		dbo.RemoveTrailingZeros(IsNull(Inventory.LinearLen, WksDetail.LinearLen)) As LinearFeet,
+
+		Case When RTrim(UnitType.UnitType) <> '' And IsNull(Inventory.Units, WksDetail.Units) > 0 Then
+
+			RTrim(UnitType.UnitType) + ' - ' + cast(IsNull(Inventory.Units, WksDetail.Units) as varchar)
+
+		Else
+
+			RTrim(UnitType.UnitType)
+
+		End	As UnitType,
+
+		IsNull(Inventory.Comments, WksDetail.Comment) As Notes,
+
+		RTrim(BuySell.BuySellNo) BuySellNo,
+
+		D.LogoImage,
+
+		@HideSupplier as HideSupplier,
+
+		IsNull(Inventory.Color, WksDetail.Color) Color,
+
+		IsNull(Inventory.PlasticForm, WksDetail.PlasticForm) PlasticForm,
+
+		WksDetail.Specifications,
+
+		WksDetail.PlasticMelt,
+
+		WksDetail.SerialNo,
+
+		WksDetail.InvoiceDesc,
+
+		RefPONo,
+
+		WksDetail.UserDefinedFourth1,
+
+		WksDetail.UserDefinedFourth2,
+
+		WksDetail.UserDefinedFourth3,
+
+		WksDetail.UserDefinedFourth4,
+
+		WksDetail.UserDefinedFourth5,
+
+		WksDetail.UserDefinedFourth6,
+
+		WksDetail.UserDefinedFourth7,
+
+		WksDetail.UserDefinedFourth8,
+
+		WksDetail.UserDefinedFourth9,
+
+		WksDetail.UserDefinedFourth10,
+
+		WksDetail.PPrice,
+
+		InvGrade.CommodityDesc,
+
+		BuySell.ShipFromID,
+
+		WksDetail.InvClass,
+
+		WarehouseLocation.LocationName as WarehouseLocation,
+
+		PickupNo,
+
+		buysell.InvoiceDt,
+
+		buysell.ShippingTm,
+
+		dbo.CONVERT_TO_UOM(PWeight, PWeightUOM, 'L') as NetWeightLBS,
+
+		C.CounterpartyLogo
+
+	FROM 
+
+		BuySell WITH(NOLOCK)
+
+		INNER JOIN WksDetail WITH(NOLOCK) ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+		INNER JOIN Counterparty C WITH(NOLOCK) ON C.CpID = BuySell.VendorID
+
+		INNER JOIN CompanyInfo D WITH(NOLOCK) ON D.COID = BuySell.COID
+
+		INNER JOIN Grade WITH (NOLOCK) ON Grade.GradeID = WksDetail.GradeID
+
+		LEFT JOIN UnitType WITH (NOLOCK) ON UnitType.TypeID = WKSDetail.UnitType
+
+		LEFT JOIN Inventory WITH(NOLOCK) ON Inventory.LotNo=WksDetail.LotNo
+
+		LEFT JOIN Grade InvGrade WITH(NOLOCK) ON InvGrade.GradeID = Inventory.GradeID
+
+		left join PO on PO.PONumber = BuySell.RefPONo
+
+		left join WarehouseLocation on WKSDetail.WarehouseLocation = WarehouseLocation.ID
+
+	WHERE BuySell.BuySellNo = @BuySellNo
+
+	Order By Inventory.LotNo
+
+
+
+--Log 
+
+	declare @Status varchar(25)=''
+
+	declare @StatusText varchar(25)=''
+
+	declare @Comment varchar(150) =''
+
+	declare @AppUserName varchar(50) =''
+
+
+
+	select @AppUserName = UserDef.UserNm from UserDef where USERID= @UserID
+
+
+
+	SELECT 		
+
+		@Status=[Status]		
+
+	From BuySell WITH (NOLOCK)
+
+	WHERE BuySell.BuySellNo = @BuySellNo
+
+
+
+	if @Status = 'W' 
+
+	   set @StatusText ='WORK'
+
+	else if  @Status = 'I' 
+
+	  set @StatusText ='POSTED'
+
+	else if  @Status = 'C' 
+
+	  set @StatusText ='COMPLETED'
+
+	else if  @Status = 'X' 
+
+	  set @StatusText ='CANCELLED'
+
+
+
+
+
+	set @Comment = 'User '  + @AppUserName + ' Printed All Label No on ' +  convert(varchar, getdate(), 22)
+
+
+
+	exec cw_LOGEVENT @UserID,'RECEIVING',@BuySellNo,'PRINT',@Comment,@StatusText
+
+	
+
+-- end log
+
+
+
+	SELECT 'SecondHeader'
+

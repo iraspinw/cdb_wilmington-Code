@@ -1,0 +1,168 @@
+CREATE   PROCEDURE [dbo].[cw_GetBookingContainersShipped_OLD_NOV2021] 
+
+	
+
+	@BookingNo char(25),
+
+	@UOM varchar(3) = 'L'
+
+
+
+AS
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+Declare @BookSheetID int
+
+Set @BookSheetID = -1
+
+
+
+	Select @BookSheetID = BookSheetID From BookSheet where BookingNo = @BookingNo
+
+
+
+--07/18/2013 MCM: Added Grade.Description for Product column on booksheet
+
+--10/28/2015 MEC: Completed for cieTrade.net
+
+
+
+--cw_GetBookingContainersShipped '334324', 'L'
+
+
+
+-- GET CONTAINER WEIGHTS.
+
+	SELECT 
+
+		BuySell.BuySellNo, 
+
+		Sum(dbo.CALCLBS(WksDetail.SWeight,WksDetail.SWeightUOM)) AS WT,
+
+		IsNull(Container.ContainerNo,RefEquipNo) ContainerNo,
+
+		IsNull(Container.SealNo,RefSealNo) SealNo,
+
+		BuySell.ShippingDt,
+
+		Counterparty.CompanyNm,
+
+		BuySell.ShipFromID,
+
+		(Select Top 1 WksDetail.PPo From WksDetail Where WksDetail.BuySellNo = BuySell.BuySellNo) PPo,
+
+		(Select Top 1 Grade.[Description] From Grade INNER JOIN WksDetail ON WksDetail.GradeID = Grade.GradeID Where WksDetail.BuySellNo = BuySell.BuySellNo) Product,
+
+		(Select Top 1 Case When wksdtl.Units > 0 Then Convert(varchar, wksdtl.Units) + ' ' Else '' End + IsNull(dbo.CnvUnitName(wksdtl.UnitType), '') From WksDetail wksdtl Where wksdtl.BuySellNo = BuySell.BuySellNo) Packaging,
+
+		dbo.CnvWksStatus_Name(BuySell.[Status], '') [Status],
+
+		BuySell.CustID,
+
+		BuySell.VendorID,
+
+		Buysell.RelNo
+
+	INTO #TEMP
+
+	FROM BuySell WITH(NOLOCK) 
+
+	INNER JOIN WksDetail WITH(NOLOCK) ON WksDetail.BuySellNo = BuySell.BuySellNo
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON BuySell.VendorID = Counterparty.CpID
+
+	LEFT JOIN Container WITH(NOLOCK) ON BuySell.BuySellNo = Container.SaleBuySellNo
+
+	LEFT JOIN ContainerContents WITH(NOLOCK) ON ContainerContents.ContainerID = Container.ContainerID
+
+	WHERE BuySell.BookingNo = @BookingNo AND BuySell.[Status] <> 'X'
+
+--	and buysell.buysellno not in(select salebuysellno from container)
+
+	Group By
+
+		BuySell.BuySellNo,
+
+		BuySell.ShippingDt,
+
+		Counterparty.CompanyNm,
+
+		BuySell.ShipFromID,
+
+		BuySell.[Status],
+
+		RefEquipNo,
+
+		RefSealNo,
+
+		CustID,
+
+		VendorID,
+
+		BuySell.RelNo,
+
+		Container.ContainerNo,
+
+		Container.SealNo
+
+
+
+
+
+
+
+
+
+	SELECT 
+
+	BuySellNo [Wks No],
+
+	CompanyNm Supplier,
+
+	ShipFromID [Location],
+
+	ShippingDt [Ship Date],
+
+	PPo [PO No],
+
+	ContainerNo [Container No],
+
+	SealNo [Seal No],
+
+	RelNo As [Release No],
+
+	Product,
+
+	Packaging,
+
+	dbo.RemoveTrailingZeros(dbo.ConvertFromLbs(WT, @UOM)) As [Net Weight],
+
+	[Status],
+
+	CustID [-Hidden-CustID],
+
+	VendorID [-Hidden-VendorID]
+
+	FROM #TEMP
+
+	Order By ShippingDt
+
+
+
+	SELECT Count(Distinct ContainerNo) ShippedCount From #TEMP WHERE 
+
+		(#TEMP.CustID = '(INV)') OR (IsNull(ContainerNo,'') <> '' AND IsNull(SealNo,'') <> '')
+
+
+
+	SELECT dbo.RemoveTrailingZeros(Sum(dbo.ConvertFromLbs(WT, @UOM))) TotalWeight From #TEMP WHERE #TEMP.CustID = '(INV)'
+
+
+

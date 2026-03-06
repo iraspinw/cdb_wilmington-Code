@@ -1,0 +1,58 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetFXContract] @FxContractNo varchar(20) AS
+
+--5/13/2019 Alex Created for Exchange Contranct  . copy from  q_GetFXContrac
+
+	SET NOCOUNT ON
+
+    
+
+	DECLARE @ContractType varchar(20)
+
+
+
+	select @ContractType=ContractType   FROM FXContracts WITH(NOLOCK) 	WHERE  ContractNo = @FxContractNo
+
+
+
+    SELECT ContractNo, 
+
+	 [dbo].[cw_RemoveTrailingZeros](FORMAT(ExchRate, 'N14', 'en-us'),2) AS ExchRate,
+
+	--ExchRate
+
+	 RefNo, ExpirationDt, IsActive, FXContracts.UserID ,Adjustment,
+
+
+
+	 case when @ContractType = 'S' then 
+
+		ContractValue-(SELECT isnull(sum(SFxAmount),0) From WKSDetail with(nolock)  inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.SFxContractNo=ContractNo) --+ (SELECT isnull(sum(FxAmount),0) From PODetail with(nolock) inner join P
+O on PO.PONumber = PODetail.PONumber WHERE PO.ContractNo=FXContracts.ContractNo)) 
+
+	ELSE 
+
+		ContractValue-(SELECT isnull(sum(PFxAmount),0) From WKSDetail with(nolock) inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.PFxContractNo=ContractNo) --+ (SELECT isnull(sum(FxAmount),0) From PODetail with(nolock) inner join PO
+ on PO.PONumber = PODetail.PONumber WHERE PO.ContractNo=FXContracts.ContractNo)) 
+
+	END as ContractValue
+
+	 --(ContractValue -(SELECT isnull(sum(SFxAmount),0) From WKSDetail with(nolock)  inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.SFxContractNo=@FxContractNo or BuySell.SFxContractNo=@FxContractNo))  as ContractValue
+
+	 ,
+
+	 CurrencyCd,ContractType,ContractDate,ContractValue as ContractValueInitial
+
+    FROM FXContracts WITH(NOLOCK)
+
+	--LEFT JOIN cieTrade_sys.dbo.Users WITH(NOLOCK) ON FxContracts.UserID = cieTrade_sys.dbo.Users.UserID	
+
+	WHERE  ContractNo = @FxContractNo
+
+
+
+
+
+
+

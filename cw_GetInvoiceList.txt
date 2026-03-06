@@ -1,0 +1,11 @@
+CREATE proc [dbo].[cw_GetInvoiceList] @SupplierID varchar(15) as
+
+
+
+declare @OffsetAcct varchar(12)
+
+select @OffsetAcct = isnull(Glacct,'') from glaccount where cat='OFFSET'
+
+
+
+select distinct invoiceno from payables where cpid = @Supplierid and posted=1 and invoiceno <> 'AP-OFFSET'

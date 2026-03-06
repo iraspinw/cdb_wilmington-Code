@@ -1,0 +1,16 @@
+CREATE proc [dbo].[cw_GetDefaultEmailTemplate]
+
+@TemplateType varchar(50),
+
+@CreatedFrom varchar(50) = ''
+
+as
+
+--07/25/2022 Nick: added @CreatedFrom
+
+
+
+select EmailCC, EmailBCC, EmailFrom, EmailSubject, EmailBody, TemplateName, TemplateID,isnull(EmailTO,'') as EmailTO  from EmailTemplates 
+
+where upper(TemplateType)=upper(@TemplateType) and IsDefault=1 and (@CreatedFrom = '' OR upper(OriginType)=upper(@CreatedFrom))
+

@@ -1,0 +1,64 @@
+CREATE   PROCEDURE [dbo].[cw_GetReserveInvPO]  @PONO varchar(35),
+
+	@UOM char(2) = 'S' as
+
+-- 1/20/12021 Alex: Created
+
+
+
+-- [dbo].[cw_GetReserveInvPO] '100096'
+
+select 
+
+Inventory.LotNo [Item No],
+
+Inventory.SerialNo [Serial No],
+
+Grade.[Description] [Product Name],
+
+inventory.SpecString as [Specification],
+
+Inventory.WarehouseNm AS [Warehouse Name], 
+
+dbo.CnvUnitName(Inventory.[UnitType]) [Packaging Type],
+
+Inventory.Units, 
+
+FORMAT(CAST(dbo.formatweightuom(Inventory.[Weight], inventory.weightuom)as  DECIMAL(18,5)),'0.###') + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Qty],
+
+Inventory.ReserveDate,
+
+IsNull(WksInventory.LotNo, '') SoldLot
+
+from Inventory
+
+inner join po on po.PONumber = Inventory.ReservePONumber
+
+INNER JOIN GRADE ON Inventory.GradeID = Grade.GradeID
+
+LEFT JOIN WksInventory ON Inventory.LotNo = WksInventory.LotNo
+
+where po.PONumber = @PONO
+
+
+
+
+
+
+
+ select
+
+ sum(dbo.COnvert_to_UOM( dbo.Convert_To_UOM(Inventory.QtyOnHand, Inventory.WeightUOM,'L'),'L',@UOM)) TotalWeight,
+
+ dbo.CnvUOM_Names(@UOM) TotalUOM  ,
+
+ sum(Units) as TotalUnits
+
+from Inventory
+
+inner join po on po.PONumber = Inventory.ReservePONumber
+
+INNER JOIN GRADE ON Inventory.GradeID = Grade.GradeID	
+
+where po.PONumber = @PONO
+

@@ -1,0 +1,670 @@
+
+
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetInvPackingList] @BuySellNo char(12), @ShowUOM varchar(4), 
+
+											   @ShowProduct bit = 0 
+
+AS
+
+SET NOCOUNT ON
+
+--06/08/2016 RS: Created from [q_ContainerPackingList]
+
+
+
+-- cw_GetInvPackingList '230708','ST',1
+
+-- cw_GetProductDetails '230708'
+
+-- xDoc_SaveCustomInvoiceValues '230708'
+
+
+
+-- select RefGradeID, * from buysell where buysellno = '230604'
+
+-- select * from WksDetail where buysellno = '230604'
+
+
+
+Declare @TotalSalesWtInUom decimal(22,10)
+
+Declare @TotalSalesWtInUom2 decimal(22,10)
+
+Declare @WtInUom decimal(22,10)
+
+Declare @Wt2 decimal(22,10)
+
+Declare @TotalWtInUOM decimal(22,3)		
+
+Declare @TotalWt2 decimal(22,3)	
+
+Declare @ShowInUomRnd int
+
+
+
+
+
+	
+
+	-- SET REPORT UNIT OF MEASURE CODE Lbs/Kgs.
+
+	IF rtrim(@ShowUOM) = ''  
+
+		SET @ShowUOM = dbo.GetWksInvoiceQtyUOM(@BuySellNo)
+
+	ELSE
+
+		SET @ShowUOM = dbo.CnvUOM_ID(@ShowUOM)
+
+	
+
+	SET @ShowInUomRnd = 3
+
+	IF @ShowUOM = 'L' OR @ShowUOM = 'K'
+
+		SET @ShowInUomRnd = 0
+
+
+
+
+
+
+
+	declare @InvoiceQtyFormat int	
+
+	SELECT @InvoiceQtyFormat= optionValue FROM Options WITH(NOLOCK) WHERE OptionName = 'InvoiceWeight'
+
+
+
+	declare @TotSalesWtShowUOM decimal(18,4)
+
+	SELECT @TotSalesWtShowUOM = sum(round(dbo.CONVERT_TO_UOM(SWeight, SWeightUOM, @ShowUOM),3)) 
+
+	FROM WksDetail WITH(NOLOCK) WHERE BuySellNo = @BuySellNo
+
+
+
+	declare @DefSPriceUOM char(1)
+
+	SET @DefSPriceUOM = 'M'
+
+	IF @InvoiceQtyFormat = 0 
+
+		SELECT @TotSalesWtShowUOM = dbo.CONVERT_TO_UOM(sum(round(dbo.CONVERT_TO_UOM(SWeight, SWeightUOM, 'S'),3)), 'S', @ShowUOM)
+
+		FROM WksDetail WITH(NOLOCK) WHERE BuySellNo = @BuySellNo
+
+	IF @InvoiceQtyFormat = 2 BEGIN
+
+		SELECT @TotSalesWtShowUOM = dbo.CONVERT_TO_UOM(sum(round(dbo.CONVERT_TO_UOM(SWeight, SWeightUOM, SPriceUOM),3)), min(SPriceUOM), @ShowUOM)
+
+		FROM WksDetail WITH(NOLOCK) WHERE BuySellNo = @BuySellNo
+
+		
+
+		-- IF CREATED FROM CNT MGT AND SPriceUOM IS BLANK
+
+		IF @TotSalesWtShowUOM = 0
+
+			SELECT @TotSalesWtShowUOM = dbo.CONVERT_TO_UOM(sum(round(dbo.CONVERT_TO_UOM(SWeight, SWeightUOM, @DefSPriceUOM),3)),@DefSPriceUOM, @ShowUOM)
+
+			FROM WksDetail WITH(NOLOCK) WHERE BuySellNo = @BuySellNo
+
+	END
+
+
+
+
+
+	-- CHECK FOR SALES AND PURCHASE WEIGHT SPREAD
+
+	declare @TotSalesWtLBS decimal(18,4)
+
+    declare @TotPurchaseWtLBS decimal(18,4)
+
+    declare @TotPurchaseWtLBS_ decimal(18,4)
+
+	declare @SpreadLBS decimal(18,4)
+
+	declare @SalesWtUOM char(1)
+
+	declare @TotGrossWtLBS decimal(18,4)
+
+	Declare @TotalGrossWtInUOM decimal(22,3)		
+
+	Declare @TotalGrossWksWtInUOM decimal(22,3)	
+
+	declare @GrossWtInUOM decimal(18,4)
+
+
+
+	-- GET TOTAL SALES WEIGHT FROM WORKSHEET.
+
+    SELECT @TotSalesWtLBS = SUM(dbo.calclbs(sweight,sweightuom)) 
+
+        FROM WksDetail WITH(NOLOCK) WHERE buysellno = @BuySellNo    
+
+    
+
+	-- GET TOTAL GROSS WEIGHT FROM WORKSHEET.
+
+    SELECT @TotGrossWtLBS = SUM(dbo.calclbs(GrossWt,sweightuom)) 
+
+        FROM WksDetail WITH(NOLOCK) WHERE buysellno = @BuySellNo  
+
+        
+
+    IF ISNULL(@TotGrossWtLBS,0) = 0   
+
+		SELECT @TotGrossWtLBS = SUM(dbo.calclbs(Inventory.GrossWt,Inventory.WeightUOM))						
+
+		FROM wksInventory WITH (NOLOCK) 
+
+		INNER JOIN Inventory WITH (NOLOCK) ON wksInventory.LotNo = Inventory.LotNo
+
+		INNER JOIN Buysell WITH (NOLOCK) ON wksInventory.BuySellNo = Buysell.BuySellNo
+
+		--LEFT JOIN Container WITH (NOLOCK) ON (Container.WksInvID = WksInventory.WksInvID and createdfrom = 'S') OR (Container.LotNo = WksInventory.Lotno and createdfrom = 'P' ) 
+
+		WHERE wksInventory.BuySellNo = @BuySellNo
+
+              
+
+
+
+	-- GET SALES WEIGHT UOM FROM WORKSHEET.
+
+	SELECT TOP 1 @SalesWtUOM = SWeightUOM FROM wksDetail WITH(NOLOCK) WHERE BuySellNo = @BuySellNo
+
+        
+
+	-- GET TOTAL PURCHASE WEIGHT FROM WORKSHEET.        
+
+    SELECT @TotPurchaseWtLBS = SUM(dbo.calclbs(pweight,pweightuom)) 
+
+        FROM WksDetail WITH(NOLOCK) WHERE buysellno = @BuySellNo
+
+	SET @TotPurchaseWtLBS_ = @TotPurchaseWtLBS
+
+
+
+
+
+	-- GET WEIGHT SPREAD BETWEEN SALE AND PURCHASE.
+
+	SELECT @SpreadLbs = @TotSalesWtLBS - @TotPurchaseWtLBS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	Create Table #InvPackingList(
+
+		ItemNo int identity(1,1),
+
+		WksDetailID int,
+
+		ContainerNo char(30),
+
+		SealNo char(30),
+
+		Units int,
+
+		InvType char(1),
+
+		[Weight] decimal(18,5),
+
+		UOM char(1),
+
+		BookingNo char(15),
+
+		SubWtInUom decimal(22,12),
+
+		SubWt2 decimal(22,12),
+
+		WtLbs  decimal(22,0),
+
+		WtKg  decimal(22,0),
+
+		WtMT decimal(22,3),
+
+		InvoiceDesc varchar(85),
+
+		GrossWtMT decimal(22,3)				
+
+		)
+
+
+
+
+
+	Create Table #ContainerList(
+
+		BookingNo char(15),
+
+		ContainerNo char(30),
+
+		SealNo char(30),		
+
+		InvType char(1),		
+
+		Units int,		
+
+		SubWtInUom decimal(22,12),	
+
+		WtMT decimal(22,3),
+
+		InvoiceDesc varchar(85),
+
+		GrossWtMT decimal(22,3)
+
+		)
+
+
+
+
+
+	INSERT INTO #InvPackingList 
+
+		(WksDetailID,
+
+		ContainerNo,
+
+		SealNo,
+
+		Units,
+
+		InvType,
+
+		[Weight],
+
+		UOM,
+
+		BookingNo,
+
+		SubWtInUom,
+
+		SubWt2,
+
+		WtLbs,
+
+		WtKg,
+
+		WtMT,
+
+		InvoiceDesc,GrossWtMT)
+
+		SELECT --(From Inventory.)
+
+			WksInventory.DetailID,	
+
+			Buysell.RefEquipNo, 
+
+			Buysell.RefSealNo, 
+
+			WksInventory.Units, 
+
+			Inventory.UnitType, 
+
+			WksInventory.Weight, 
+
+			WksInventory.UOM, 
+
+			Buysell.BookingNo,
+
+			Round(dbo.CnvFromBaseQtyUOM(dbo.CnvtoBaseQtyUOM(wksInventory.Weight,wksInventory.UOM), @ShowUOM),@ShowInUomRnd )  SubWtInUom,   --(1)
+
+			Round(dbo.CnvFromBaseQtyUOM(dbo.CnvtoBaseQtyUOM(wksInventory.Weight,wksInventory.UOM), 'M'),3) SubWt2,
+
+			Round(dbo.CnvtoBaseQtyUOM(wksInventory.Weight,wksInventory.UOM),@ShowInUomRnd ) WtLbs,
+
+			0,0,' ',
+
+			Round(dbo.CnvFromBaseQtyUOM(dbo.CnvtoBaseQtyUOM(Inventory.GrossWt,Inventory.WeightUOM), 'M'),3) GrossWtMT						
+
+		FROM wksInventory WITH (NOLOCK) 
+
+		INNER JOIN Inventory WITH (NOLOCK) ON wksInventory.LotNo = Inventory.LotNo
+
+		INNER JOIN Buysell WITH (NOLOCK) ON wksInventory.BuySellNo = Buysell.BuySellNo
+
+		--LEFT JOIN Container WITH (NOLOCK) ON (Container.WksInvID = WksInventory.WksInvID and createdfrom = 'S') OR (Container.LotNo = WksInventory.Lotno and createdfrom = 'P' ) 
+
+		WHERE wksInventory.BuySellNo = @BuySellNo
+
+		ORDER BY BookingNo, RefEquipNo		--09/24/2010 RS: Added to take last record
+
+
+
+		--Get Total Number of Containers.
+
+		Declare @ContainerCnt int
+
+		SELECT @ContainerCnt  = COUNT(Itemno) FROM #InvPackingList
+
+
+
+		--Get Last Item in the Packing List.
+
+		Declare @AdjItemNo int
+
+		SELECT @AdjItemNo = ItemNo FROM #InvPackingList WHERE ItemNo = @ContainerCnt
+
+
+
+
+
+
+
+
+
+		---- ADJUST PACKING LIST WEIGHTS FOR MOISTURE DEDUCTION. --		
+
+		IF @TotPurchaseWtLBS_ <> 0 AND @SpreadLbs <> 0 BEGIN
+
+			Declare @Factor Decimal(22,10)
+
+			Declare @Alloc Decimal(22,10)
+
+			Declare @WtLbs decimal(22,0)
+
+			Declare @ItemPtr int
+
+			Set @ItemPtr = 1
+
+			WHILE (@ItemPtr <= @ContainerCnt) BEGIN
+
+				
+
+				SELECT @WtLbs = WtLbs FROM #InvPackingList WHERE ItemNo = @ItemPtr								
+
+				SET @Factor = @WtLbs / @TotPurchaseWtLBS_
+
+				SET @Alloc = Round(@SpreadLbs * @Factor,@ShowInUomRnd )				
+
+				SET @TotPurchaseWtLBS_ = @TotPurchaseWtLBS_ - @WtLbs
+
+				SET @SpreadLbs = @SpreadLbs - @Alloc
+
+				SET @WtLbs = @WtLbs + @Alloc
+
+				
+
+				UPDATE #InvPackingList SET
+
+					SubWtInUom = Round(dbo.CnvFromBaseQtyUOM(@WtLbs, @ShowUOM),@ShowInUomRnd ),
+
+					SubWt2 = Round(dbo.CnvFromBaseQtyUOM(@WtLbs, 'M'),3),
+
+					WtLbs = @WtLbs
+
+					WHERE ItemNo = @ItemPtr	
+
+
+
+				SET @ItemPtr = @ItemPtr + 1
+
+			END
+
+		END
+
+
+
+	
+
+		----------------------------------------------------------
+
+	
+
+
+
+
+
+		
+
+		
+
+		--Get Last Container Adjustment (SHOW-UOM).
+
+		SELECT @TotalWtInUOM = ISNULL(SUM(Round(SubWtInUom,@ShowInUomRnd)),0) FROM #InvPackingList where ItemNo <> @AdjItemNo 	
+
+		SELECT @TotalSalesWtInUom = dbo.CnvFromBaseQtyUOM(@TotSalesWtLBS,@ShowUOM)
+
+		SELECT @WtInUom = Round(@TotalSalesWtInUom - @TotalWtInUOM,@ShowInUomRnd )
+
+		
+
+		--Get Last Container Gross Wt Adjustment (SHOW-UOM).
+
+		SELECT @TotalGrossWtInUOM = ISNULL(SUM(Round(dbo.CONVERT_TO_UOM(GrossWtMT,'M',@ShowUOM),@ShowInUomRnd)),0) FROM #InvPackingList where ItemNo <> @AdjItemNo 	
+
+		SELECT @TotalGrossWksWtInUom = dbo.CnvFromBaseQtyUOM(@TotGrossWtLBS,@ShowUOM)
+
+		SELECT @GrossWtInUom = Round(@TotalGrossWksWtInUom - @TotalGrossWtInUOM,@ShowInUomRnd )
+
+		
+
+		
+
+		--Get Last Container Adjustment (MT)
+
+		SELECT @TotalWt2 = ISNULL(SUM(SubWt2),0) FROM #InvPackingList where ItemNo <> @AdjItemNo 				
+
+		SELECT @TotalSalesWtInUom2 = dbo.CnvFromBaseQtyUOM(@TotSalesWtLBS,'M')		
+
+		SELECT @Wt2 = Round(@TotalSalesWtInUom2 - @TotalWt2, 3)
+
+		
+
+		
+
+		--True-Up Last Container.
+
+		UPDATE #InvPackingList SET
+
+			SubWtInUom = @WtInUom,
+
+			SubWt2 = @Wt2,
+
+			GrossWtMT = dbo.CONVERT_TO_UOM(@GrossWtInUom,@ShowUOM,'M')
+
+			WHERE ItemNo = @AdjItemNo 
+
+
+
+		--Update ST/MT Weight to fixed decimal columns for report.
+
+		UPDATE #InvPackingList
+
+			SET WtMT = SubWt2,
+
+				WtKg = SubWtInUom
+
+				
+
+				
+
+		-- Get Product Descriptions.
+
+		IF @ShowProduct = 1 BEGIN
+
+			UPDATE #InvPackingList SET #InvPackingList.InvoiceDesc = WksDetail.InvoiceDesc 
+
+				FROM #InvPackingList 
+
+				INNER JOIN WksDetail ON #InvPackingList.WksDetailID = Wksdetail.DetailID
+
+				
+
+			UPDATE #InvPackingList SET #InvPackingList.InvoiceDesc = Grade.Description
+
+				FROM #InvPackingList 
+
+				INNER JOIN WksDetail ON #InvPackingList.WksDetailID = Wksdetail.DetailID
+
+				INNER JOIN Grade ON WksDetail.GradeID = Grade.GradeID
+
+				WHERE RTRIM(ISNULL(#InvPackingList.InvoiceDesc,'')) = ''
+
+		END
+
+				
+
+				
+
+		-- Consolidate Containerization Data.			
+
+		INSERT #ContainerList(BookingNo,ContainerNo,SealNo,InvType,InvoiceDesc,Units,SubWtInUom,WtMT,GrossWtMT)
+
+		SELECT 	
+
+			BookingNo,
+
+			ContainerNo,
+
+			SealNo,			
+
+			InvType,
+
+			InvoiceDesc,				
+
+			SUM(Units),
+
+			SUM(SubWtInUom),					
+
+			SUM(WtMT),
+
+			SUM(ISNULL(GrossWtMT,0))
+
+			FROM #InvPackingList 
+
+			GROUP BY BookingNo,ContainerNo,SealNo,InvType,InvoiceDesc				
+
+				
+
+
+
+	-- FINAL PACKING LIST.
+
+	----------------------
+
+	SELECT 	
+
+		BookingNo,
+
+		ContainerNo,
+
+		SealNo,
+
+		Units,
+
+		ISNULL(dbo.CnvUnitName(InvType),'') as UnitType,				
+
+		dbo.FormatQty2( round(SubWtInUom,@ShowInUomRnd),@ShowUOM) WtInShowUOM,		
+
+		dbo.CnvUOM_Names(@ShowUOM) AS WtShowUOM,		
+
+		WtMT,
+
+		InvoiceDesc,
+
+		GrossWtMT,
+
+		dbo.FormatQty2(round(dbo.CONVERT_TO_UOM(GrossWtMT,'M',@ShowUOM),@ShowInUomRnd),@ShowUOM) GrossWtInShowUOM
+
+		FROM #ContainerList 
+
+
+
+	UNION ALL	
+
+	
+
+	SELECT 
+
+		BuySell.BookingNo, 
+
+		ContainerNo,
+
+		SealNo, 
+
+		sum(Units) AS Units, 
+
+		ISNULL(dbo.CnvUnitName(min(UnitType)),'') as UnitType,
+
+		dbo.FormatQty(dbo.CONVERT_TO_UOM(sum(SWeight), SWeightUOM, @ShowUOM), @ShowUOM) AS WtInShowUOM, 
+
+		dbo.CnvUOM_Names(@ShowUOM) AS WtShowUOM,  
+
+		dbo.FormatQty(dbo.CONVERT_TO_UOM(sum(SWeight), SWeightUOM, 'M'), 'M')  AS WtMT,
+
+		CASE WHEN RTRIM(WksDetail.InvoiceDesc) = '' THEN Grade.Description ELSE WksDetail.InvoiceDesc END as InvoiceDesc,
+
+		dbo.FormatQty(dbo.CONVERT_TO_UOM(sum(WKsDetail.GrossWt), 'L', 'M'), 'M') as GrossWtMT,
+
+		dbo.FormatQty(dbo.CONVERT_TO_UOM(sum(WKsDetail.GrossWt), 'L', @ShowUOM), @ShowUOM) AS GrossWtInShowUOM 
+
+	FROM WksDetail WITH(NOLOCK)  
+
+	INNER JOIN BuySell WITH(NOLOCK) ON WksDetail.BuySellNO = BuySell.Buysellno
+
+	INNER JOIN Grade ON WksDetail.GradeID = Grade.GradeID
+
+	WHERE WKsDetail.buySellno = @buysellno
+
+	AND Not Exists(SELECT LotNo FROM WKSInventory WHERE wksInventory.BuySellNo = @buysellno)
+
+	GROUP BY BookingNo, ContainerNo, SealNo ,SWeightUOM, InvoiceDesc ,Grade.Description	
+
+	ORDER BY BookingNo, ContainerNo
+
+
+
+
+
+ -- RETURN TOTAL CONTAINERS COUNT
+
+	SELECT ContainerNo
+
+	INTO #CntContainers
+
+	FROM #ContainerList 
+
+UNION ALL	
+
+	SELECT ContainerNo
+
+	FROM WksDetail WITH(NOLOCK) 
+
+	INNER JOIN BuySell WITH(NOLOCK) ON WksDetail.BuySellNO = BuySell.Buysellno
+
+	WHERE WKsDetail.buySellno = @buysellno
+
+	AND Not Exists(SELECT LotNo FROM WKSInventory WHERE wksInventory.BuySellNo = @buysellno)
+
+	
+
+	
+
+	--SELECT  Count(DISTINCT ContainerNo) FROM #CntContainers
+
+
+
+
+
+
+

@@ -1,0 +1,110 @@
+CREATE proc [dbo].[cw_GetConvertingDocuments] 
+
+	@JobNo varchar(12), @Source char(1) = 'J'
+
+
+
+--06/15/2017 RS: Created
+
+--04/07/2021 MEC: Added Timezone Assignment to EmailDt
+
+
+
+-- cw_GetConvertingDocuments '1800', 'J'
+
+
+
+as
+
+		
+
+		SELECT		
+
+			'' as ' ',
+
+			DocID as '-Hidden-DocumentID', 	
+
+			Desc1 as 'Description',
+
+			Case When TimeZone.TimeZoneNm is null Then createddt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), createddt) End as 'Created',
+
+			userdef.UserNm as 'User',
+
+			FileExt as '-Hidden-FileExt',
+
+			'IMG' as '-Hidden-Type',
+
+			'' as '-Hidden-FormID',
+
+			'' as '-Hidden-DocFormID',
+
+			Desc1 as '-Hidden-DocTitle',
+
+			EmailAddr + '   ' + convert(nvarchar(500), Case When TimeZone.TimeZoneNm is null Then EmailDt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), EmailDt) End, 0) as 'Email Sent',
+
+			IsNull((SELECT TOP 1 Email FROM Contact WITH (NOLOCK) WHERE CpID = [address].cpid AND IsPrimary = 1),'') As '-Hidden-DefaultEmail'
+
+		FROM DocumentImage 
+
+			left JOIN userdef ON DocumentImage.Createdby = UserDef.userid
+
+			left join buysell on buysell.buysellno = documentimage.refid
+
+			left join [address] on [address].cpid = buysell.CustID and invoiceaddr='Y'
+
+			left join TimeZone on UserDef.TimeZoneNm = TimeZone.TimeZoneNm
+
+			AND (RefType=@Source)
+
+		WHERE RefID = @JobNo
+
+		
+
+		UNION ALL
+
+		SELECT 
+
+			'' as ' ',
+
+			DocID, 
+
+			DocTitle, 					
+
+			convert(char(10),Case When TimeZone.TimeZoneNm is null Then createddt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), createddt) End,101) AS CreatedDt, 
+
+			userdef.usernm, 					
+
+			'.ctdoc',
+
+			'DOC' as '-Hidden-Type',
+
+			xDocForm.FormID,
+
+			xdocform.docformid as '-Hidden-DocFormID',
+
+			xdocform.title as '-Hidden-DocTitle',
+
+			EmailAddr + '   ' + convert(nvarchar(500), Case When TimeZone.TimeZoneNm is null Then EmailDt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), EmailDt) End, 0) as 'Email Sent',
+
+			'' As '-Hidden-DefaultEmail'
+
+		FROM xDocHeader 
+
+		INNER JOIN xDocForm ON xDocHeader.DocFormID = xDocForm.DocFormID
+
+		INNER JOIN xDocMaster ON xDocForm.FormID = xDocMaster.FormID				
+
+		LEFT JOIN userdef ON xDocHeader.CreatedBy = userdef.UserID 
+
+		left join TimeZone on UserDef.TimeZoneNm = TimeZone.TimeZoneNm
+
+		WHERE  xDocForm.FormID <> 'DOCIMG'	
+
+		AND (FormSource = @Source)
+
+		AND (SourceID = @JobNo)
+
+				
+
+
+

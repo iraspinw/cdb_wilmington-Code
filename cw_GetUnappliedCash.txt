@@ -1,0 +1,18 @@
+CREATE proc [dbo].[cw_GetUnappliedCash] @CPID varchar(12), @COID char(2) = '' as
+
+		select ledgerid, EntryDt as [Date Received],CheckNo as [Check No], Reference, FxBalance, CompanyDesc
+
+		from UACashLedger
+
+		LEFT JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.CoID = UACashLedger.COID
+
+		where CustID = @cpid
+
+
+
+		and FxBalance > 0
+
+		and (@COID = '' or @COID=UACashLedger.COID)
+
+		
+

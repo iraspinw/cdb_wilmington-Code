@@ -1,0 +1,276 @@
+CREATE   PROCEDURE [dbo].[cw_GetLocationCounterParty] @Location char(45)='', @CpID char(12) AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+
+
+--9/24/2019 Alex: copped from  cw_GetLocation for the CounterPartyLocation.aspx new web form(converting the location pop up form to web form) 
+
+--12/17/2019 Alex: added [Address].DistributionMode,[Address].IsInvoiceAddress
+
+ --2/28/2020 Alex: added @CT_ID in both datasets
+
+ --07/26/2023 DN: added inactive to selecte statement.
+
+				 
+
+--cw_GetLocation 'Chicago', '84701'
+
+
+
+	DECLARE @CT_ID int = 0
+
+	DECLARE @FirstName varchar(100) = ''
+
+	DECLARE @LastName varchar(100) = ''
+
+	DECLARE @Telephone varchar(50) = ''
+
+	DECLARE @PhoneMobile varchar(50) = ''
+
+	DECLARE @Email varchar(150) = '' -- field may be deprecated
+
+
+
+	DECLARE @PrimaryFirstName varchar(100) = ''
+
+	DECLARE @PrimaryLastName varchar(100) = ''
+
+	DECLARE @PrimaryTelephone varchar(50) = ''
+
+	DECLARE @PrimaryPhoneMobile varchar(50) = ''
+
+	DECLARE @PrimaryEmail varchar(150) = '' -- field may be deprecated
+
+
+
+	SELECT Top 1 @CT_ID = isnull(Contact.CT_ID,0), @FirstName = FirstNm, @LastName = LastNm, @Telephone = PhoneBusiness, @PhoneMobile = PhoneMobile, @Email = Email From Contact WITH(NOLOCK) 
+
+	LEFT JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	WHERE --IsNull(RoleNm,'') = '' And 
+
+    CpID = @CpID And Location = @Location Order By RoleNm
+
+
+
+
+
+	SELECT @PrimaryFirstName=FirstNm ,@PrimaryLastName=LastNm,@PrimaryTelephone=PhoneBusiness,@PrimaryPhoneMobile=PhoneMobile,@PrimaryEmail=Email
+
+	FROM Address WITH(NOLOCK)
+
+	left  join Contact on Contact.CpID= Address.CpID
+
+	where Address.CpID =  @CpID  AND InvoiceAddr = 'Y'   AND IsPrimary=1
+
+
+
+
+
+		-- CHECK IS CUSTOMTER
+
+	declare @IsCustomer bit
+
+	SET @IsCustomer = 0
+
+	IF EXISTS(SELECT CpID From Counterparty WHERE CpID = @CpID and [Role] in ('A', 'C', 'P', 'X'))
+
+		SET @IsCustomer = 1
+
+
+
+	-- CHECK IS SUPPLIER
+
+	declare @IsSupplier bit
+
+	SET @IsSupplier = 0
+
+	IF EXISTS(SELECT CpID From Counterparty WHERE CpID = @CpID and [Role] in ('S', 'A', 'P', 'V'))
+
+		SET @IsSupplier = 1
+
+
+
+	-- CHECK IS FREIGHT/OTHER
+
+	declare @IsFreightOther bit
+
+	SET @IsFreightOther = 0
+
+	IF EXISTS(SELECT CpID From Counterparty WHERE CpID = @CpID and [Role] in ('D', 'A', 'V', 'X'))
+
+		SET @IsFreightOther = 1
+
+
+
+	if @Location =''
+
+	begin
+
+		SELECT 
+
+				@PrimaryFirstName as PrimaryFirstName,
+
+				@PrimaryLastName as PrimaryLastName,
+
+				@PrimaryTelephone as PrimaryTelephone,
+
+				@PrimaryPhoneMobile as PrimaryPhoneMobile,
+
+				@PrimaryEmail as PrimaryEmail,
+
+				@IsCustomer As IsCustomer,
+
+				@IsSupplier As IsSupplier,
+
+				@IsFreightOther As IsExpense,
+
+			    (Select AcctingIDVendor FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as AcctingIDVendor,
+
+				(Select Website FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as Website,
+
+				(Select Terms FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as Terms,
+
+				(SELECT Addr1 FROM Address WITH(NOLOCK) 
+
+					Left Join SalesTaxCode With(NoLock) On SalesTaxCode.SalesTaxCodeID = [Address].SalesTaxCodeID
+
+					LEFT JOIN Country With(NoLock) On Address.Country = Country.CountryID
+
+					where Address.CpID =  @CpID  AND InvoiceAddr = 'Y' ) as Addr1CoRpTitle,
+
+				(Select CurrCode  FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as CurrCode,
+
+				(Select CompanyNm FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as CompanyNm,
+
+				(Select AcctingIDCust FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as AcctingIDCust,
+
+				 (Select ActiveStatus FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) AS ActiveStatus,
+
+				 (Select CustomsCode FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) AS CustomsCode,
+
+				 @CT_ID As [CT_ID]
+
+		end
+
+
+
+	else
+
+
+
+		begin
+
+
+
+
+
+
+
+			SELECT 
+
+				[Address].[Type] As Location,
+
+				Addr1,Addr2,Addr3,City,Region,PostalCd,Country,
+
+				@CT_ID As [CT_ID],
+
+				@FirstName FirstName,
+
+				@LastName LastName,
+
+				@Telephone Telephone, 
+
+				@PhoneMobile PhoneMobile,
+
+				@Email Email, 
+
+				ShipVia, [Address].ShipTerm,
+
+				Instructions,
+
+				[Address].Notes,
+
+				EDI_ShipToCode,AvgBalewtLBS,AllocID,SalesTaxCodeID, 
+
+				PriceRegionID, TaxID, directions, 
+
+				CRVCertType, CRVCertNum, InternalFreightCost, RemitToAddress, UserDefined1, UserDefined2,UserDefined3, UserDefined4,Addr4,
+
+				ISNULL(CustomsCode, '') AS CustomsCode,
+
+				@PrimaryFirstName as PrimaryFirstName,
+
+				@PrimaryLastName as PrimaryLastName,
+
+				@PrimaryTelephone as PrimaryTelephone,
+
+				@PrimaryPhoneMobile as PrimaryPhoneMobile,
+
+				@PrimaryEmail as PrimaryEmail,
+
+
+
+				@IsCustomer As IsCustomer,
+
+				@IsSupplier As IsSupplier,
+
+				@IsFreightOther As IsExpense,
+
+				(Select AcctingIDVendor FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as AcctingIDVendor,
+
+				(Select Website FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as Website,
+
+				(Select Terms FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as Terms,
+
+				(SELECT Addr1 FROM Address WITH(NOLOCK) 
+
+					Left Join SalesTaxCode With(NoLock) On SalesTaxCode.SalesTaxCodeID = [Address].SalesTaxCodeID
+
+					LEFT JOIN Country With(NoLock) On Address.Country = Country.CountryID
+
+					where Address.CpID =  @CpID  AND InvoiceAddr = 'Y' ) as Addr1CoRpTitle,
+
+				(Select CurrCode  FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as CurrCode,
+
+				(Select CompanyNm FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as CompanyNm,
+
+				 (Select AcctingIDCust FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) as AcctingIDCust,
+
+				 (Select ActiveStatus FROM COUNTERPARTY WITH(NOLOCK) WHERE CPID = @CpID) AS ActiveStatus,
+
+				 [Address].DistributionMode,
+
+				 [Address].IsInvoiceAddress,
+
+				 dbo.RemoveTrailingZeros( isnull(FuelSurChgSellRate,0)) as FuelSurChgSellRate,
+
+				 dbo.RemoveTrailingZeros(  isnull(FuelSurChgBuyRate,0)) as FuelSurChgBuyRate,
+
+				 dbo.RemoveTrailingZeros( isnull(SharedSavPercent,0)) as SharedSavPercent,
+
+				 Geocode,
+
+				 isnull(isBillingAddressOnly,0) as isBillingAddressOnly,
+
+				 isnull(BillingAddressType,'') as BillingAddressType,
+
+				 isnull(Inactive,0) as [Inactive]
+
+				from [Address] WITH(NOLOCK)
+
+			where [Type] = @Location And CpID = @CpID
+
+		end
+
+
+
+
+
+
+

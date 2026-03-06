@@ -1,0 +1,380 @@
+CREATE PROC [dbo].[cw_GetScheduleWhInquiry] 
+
+	@BuySellNo varchar(12) = '',
+
+	@FromDt datetime, 
+
+	@ToDt Datetime,
+
+	@WhseStatus varchar(300) = '', 
+
+	@WarehouseID CHAR(45) = '',
+
+	@Type varchar(30) = '',
+
+	@COID char(2) = '',
+
+	@EngOrSp char(5) = 'en-US'
+
+AS
+
+
+
+--03/31/2017 MEC: Created
+
+--02/02/2019 DSH; Revised
+
+--06/13/2022 ZT: Replaced "[Status] <> 'X' AND [Status] <> 'I'" filter with "Status IN ( '', 'W')"
+
+--10/18/2022 Nick: Added RelNo
+
+--11/18/2022 ZT: Put Date params in ISNULL brackets
+
+--04/18/2023 Nick: Added UserDefined1
+
+-- cw_GetScheduleWhInquiry '', '', '', 'SCHEDULED', '', 'Processing'
+
+
+
+/*
+
+Statuses:
+
+	SCHEDULED
+
+	OPEN
+
+	CLOSED
+
+*/
+
+
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	CREATE TABLE #Tickets(
+
+		PackingSlipNo CHAR(12),
+
+		ShippingDt DATE,
+
+		Customer VARCHAR(100),
+
+		DeliveryTo CHAR(200),
+
+		OrderNo CHAR(15),
+
+		FreightCarrier VARCHAR(100),
+
+		EquipmentNo VARCHAR(25),
+
+		ShipFromWarehouse VARCHAR(100),
+
+		SalesRep VARCHAR(50),
+
+		WarehouseStatus VARCHAR(10),
+
+		PONo char(15),
+
+		SlipType VARCHAR(30),
+
+		RelNo varchar(50),
+
+		UserDefined1 varchar(50)
+
+	)
+
+
+
+	INSERT #Tickets	
+
+	SELECT		
+
+		B.BuySellNo, 
+
+		ShippingDt,
+
+		UPPER(C.CompanyNm),
+
+		UPPER(A.City)+', '+UPPER(A.Region)+'  ['+UPPER(RTRIM(B.ShipToID))+']',
+
+		B.RefSONo,
+
+		ISNULL( 
+
+			CASE WHEN B.RefFreightCarrier = '(OTHER)' THEN 
+
+			(SELECT TOP 1 InvoiceDesc From WksDelivery Where BuySellNo = B.BuySellNo And VendorID = '(OTHER)') 
+
+			ELSE 
+
+			(SELECT CompanyNm FROM Counterparty WHERE CPID = B.RefFreightCarrier)
+
+			END,
+
+			''),
+
+		B.RefEquipNo As [Equipment Number],
+
+		B.ShipFromID,
+
+		UPPER(R.[Name]),
+
+		B.WarehouseStatus,
+
+		RefSONo,
+
+		'Packing',
+
+		B.RelNo,
+
+		B.UserDefined1
+
+	FROM BuySell B 
+
+		INNER JOIN Counterparty C ON B.CustID = C.CpID  
+
+		LEFT JOIN [Address] A ON B.ShipToID = A.Type AND B.CustID = A.CPID
+
+		LEFT JOIN Referrer R ON B.ReferrerNo1 = R.ReferrerNo
+
+	WHERE 
+
+		(ISNULL(@FromDt, '') = '' OR B.ShippingDt >= @FromDt) AND (ISNULL(@ToDt, '') = '' OR B.ShippingDt <= @ToDt)
+
+		AND ( (@WhseStatus = '' AND B.WarehouseStatus <> '' ) OR  @WhseStatus = B.WarehouseStatus)
+
+		AND (@WarehouseID= '' OR @WarehouseID = B.ShipFromID)
+
+		AND B.status IN ( '', 'W') --AND (B.Status <> 'X' AND B.Status <> 'I')
+
+		AND (VendorID = '(INV)')
+
+		AND (@COID = '' OR B.COID = @COID)
+
+
+
+
+
+
+
+
+
+	INSERT #Tickets
+
+	SELECT		
+
+		B.BuySellNo, 
+
+		ShippingDt,
+
+		UPPER(C.CompanyNm),
+
+		UPPER(A.City)+', '+UPPER(A.Region)+'  ['+UPPER(RTRIM(B.ShipFromID))+']',
+
+		B.RefSONo,
+
+		ISNULL( 
+
+			CASE WHEN B.RefFreightCarrier = '(OTHER)' THEN 
+
+			(SELECT TOP 1 InvoiceDesc From WksDelivery Where BuySellNo = B.BuySellNo And VendorID = '(OTHER)') 
+
+			ELSE 
+
+			(SELECT CompanyNm FROM Counterparty WHERE CPID = B.RefFreightCarrier)
+
+			END,
+
+			''),
+
+		B.RefEquipNo As [Equipment Number],
+
+		B.ShipToID,
+
+		UPPER(R.[Name]),
+
+		--Warehouse.Type,
+
+		B.WarehouseStatus,
+
+		RefPONo AS [PO No],
+
+		'Unloading',
+
+		B.RelNo,
+
+		B.UserDefined1
+
+	FROM BuySell B	
+
+		INNER JOIN Counterparty C ON B.VendorID = C.CpID  
+
+		INNER JOIN [Address] A ON B.ShipFromID = A.[Type] AND B.VendorID = A.CPID
+
+		INNER JOIN [Address] Warehouse ON B.ShipToID = Warehouse.[Type] AND Warehouse.CpID = '(INV)'
+
+		LEFT JOIN Referrer R ON B.ReferrerNo1 = R.ReferrerNo
+
+	WHERE 
+
+		( (@WhseStatus = '' AND B.WarehouseStatus IN ('SCHEDULED','IN PROCESS','COMPLETED') ) OR  (@WhseStatus = B.WarehouseStatus))
+
+		AND ( (ISNULL(@FromDt, '') = '' OR B.ShippingDt >= @FromDt) AND (ISNULL(@ToDt, '') = '' OR B.ShippingDt <= @ToDt) )
+
+		AND (@WarehouseID= '' OR @WarehouseID = B.ShipToID)
+
+		AND B.status IN ( '', 'W')--AND (B.[Status] <> 'X' AND B.[Status] <> 'I')
+
+		AND (Upper(CustID) = '(INV)')
+
+		AND IsNull(B.WarehouseStatus, '') <> ''
+
+		AND (@COID = '' OR B.COID = @COID)
+
+
+
+	INSERT #Tickets	
+
+	SELECT		
+
+		CJ.JobNo, 
+
+		CJ.JobDate,
+
+		UPPER(C.CompanyNm),
+
+		DeliveryAddress,
+
+		'',
+
+		ISNULL((SELECT CompanyNm FROM Counterparty WHERE CPID = CJ.RefCarrierCpID),''),
+
+		Equipment As [Equipment Number],
+
+		WarehouseNm,
+
+		UserDef.UserNm,
+
+		CJ.WarehouseStatus,
+
+		'',
+
+		'Processing',
+
+		'',
+
+		''
+
+	FROM ConvertingJob CJ
+
+		LEFT JOIN Counterparty C ON CJ.RefConvertingCpID = C.CpID
+
+		LEFT JOIN UserDef ON UserDef.UserID = OperatorNm
+
+	WHERE 
+
+		CJ.[Status] <> 'I' --And ((SELECT IsNull(SUM(IsNull([Weight],0)),0) FROM ConvertingJob_Source CS WHERE CS.JobNo = CJ.JobNo) = 0)
+
+		AND ((@WhseStatus = '' AND CJ.WarehouseStatus IN ('SCHEDULED','IN PROCESS','COMPLETED')) OR (@WhseStatus = CJ.WarehouseStatus))
+
+		AND ((ISNULL(@FromDt, '') = '' OR CJ.JobDate >= @FromDt) AND (ISNULL(@ToDt, '') = '' OR CJ.JobDate <= @ToDt)) AND IsNull(CJ.WarehouseStatus, '') <> ''
+
+		AND (@WarehouseID= '' OR @WarehouseID = CJ.WarehouseNm)
+
+		AND (@COID = '' OR CJ.COID = @COID)
+
+	
+
+		--IF(@EngOrSp = 'en-US')
+
+			SELECT 
+
+				PackingSlipNo As [Job#],
+
+				ShippingDt As [Date],
+
+				Customer,
+
+				DeliveryTo As [Delivery-To],
+
+				FreightCarrier As Carrier,
+
+				EquipmentNo As [Equipment No],
+
+				ShipFromWarehouse As [Ship From Whse],
+
+				SalesRep As [Sales Rep],
+
+				WarehouseStatus As [Warehouse-Status],
+
+				PONo As [Order No],
+
+				SlipType As [Type],
+
+				RelNo as [Release No],
+
+				UserDefined1 as [Door Number]
+
+			FROM #Tickets 
+
+			WHERE (@Type = '' OR SlipType = @Type)
+
+			AND (@BuySellNo = '' OR (PackingSlipNo LIKE '%' + @BuySellNo + '%' OR RelNo LIKE '%' + @BuySellNo + '%'))
+
+			Order By [Type], ShippingDt
+
+
+
+		--IF(@EngOrSp = 'es')
+
+		--BEGIN
+
+		--	SELECT 
+
+		--		PackingSlipNo As [Trabajo#],
+
+		--		ShippingDt As [Fecha],
+
+		--		Customer AS [Cliente],
+
+		--		DeliveryTo As [Entrega A],
+
+		--		FreightCarrier As [Transportista],
+
+		--		EquipmentNo As [Equipment No],
+
+		--		ShipFromWarehouse As [Envío Desde],
+
+		--		SalesRep As [Representante],
+
+		--		WarehouseStatus As [Estatus de la Bodega],
+
+		--		PONo As [Núm de orden],
+
+		--		SlipType As [Tipo],
+
+		--		RelNo as [Release No],
+
+		--		UserDefined1
+
+		--	FROM #Tickets 
+
+		--	WHERE (@Type = '' OR SlipType = @Type)
+
+		--	AND (@BuySellNo = '' OR (PackingSlipNo LIKE '%' + @BuySellNo + '%' OR RelNo LIKE '%' + @BuySellNo + '%'))
+
+		--	Order By [Tipo], ShippingDt
+
+		--END
+
+		
+

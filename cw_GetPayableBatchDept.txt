@@ -1,0 +1,10 @@
+create proc [dbo].[cw_GetPayableBatchDept] @APBatchNo int as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+select coid from PayablesBatch where apbatchno = @apbatchno
+

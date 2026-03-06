@@ -1,0 +1,34 @@
+CREATE   PROCEDURE [dbo].[cw_GetInvAddress] 
+
+	@CpID varchar(12),
+
+	@AddrType varchar(45)
+
+
+
+AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+select 
+
+	Address.Addr1, Address.Addr2, Address.Addr3, City, Region, PostalCd, Country, '' as SpcInstruc, 
+
+	ISNULL(Country.UseAltAddrFormat,0),ForeignLang_CompanyNm,ForeignLang_AddressBlock 
+
+FROM 
+
+	Address WITH(NOLOCK) 
+
+	INNER JOIN Counterparty WITH(NOLOCK) On Address.CpID = Counterparty.CpID 
+
+	LEFT JOIN COUNTRY WITH(NOLOCK) ON Address.Country = Country.CountryID 
+
+where Address.CpID = @CpID AND Type = @AddrType
+

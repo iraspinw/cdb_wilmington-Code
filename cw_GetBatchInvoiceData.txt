@@ -1,0 +1,52 @@
+CREATE PROC [dbo].[cw_GetBatchInvoiceData] 
+
+	@BatchNo Int,
+
+	@DistMode char(1) = ''
+
+
+
+AS
+
+
+
+--2/26/2022 MEC: Created
+
+--2/24/2023 Nick: EmailSent no longer ambiguous
+
+
+
+--cw_GetBatchInvoiceData 1620
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	select 
+
+		BS.BuySellNo, IB.UserID, C.CpID, C.CompanyNm, 
+
+		C.DistributionMode, IsNull(IsAutoGroupInv,0) IsGrouped, IB.EmailSent, 
+
+		IB.Terms, IB.SetInvoiceToShip, IB.DueDt, IB.InvDt, IB.IsPosted, IB.IsExecuted
+
+	from 
+
+		InvoiceBatch IB
+
+		INNER JOIN BuySell BS ON IB.BuySellNo = BS.BuySellNo
+
+		INNER JOIN CounterParty C ON BS.CustID = C.CpID
+
+	where 
+
+		BatchNo = @BatchNo
+
+		AND (@DistMode = '' OR C.DistributionMode = @DistMode)
+
+
+

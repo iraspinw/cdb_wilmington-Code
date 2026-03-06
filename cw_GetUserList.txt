@@ -1,0 +1,16 @@
+CREATE   PROCEDURE [dbo].[cw_GetUserList] AS
+
+-- 02/07/2005 (JW) - modified reference to userdef to cietrade_sys.dbo.users
+
+--01/15/2010 MCM: Added ISNULL To Active
+
+
+
+	SELECT UserID, UserNm, '1' AS Active
+
+	FROM UserDef WITH(NOLOCK)
+
+	ORDER BY UserNm, UserID
+
+
+

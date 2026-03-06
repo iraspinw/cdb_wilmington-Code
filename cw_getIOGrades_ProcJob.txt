@@ -1,0 +1,56 @@
+CREATE proc [dbo].[cw_getIOGrades_ProcJob] @SONO varchar(15) = '', @IOType char(1) as
+
+			SELECT 
+
+				Grade.Description, 
+
+				PODetail.GradeID,
+
+				UnitType,
+
+				Specifications,
+
+				Price,
+
+				PriceUOM, 
+
+				CurrencyCd, 
+
+				100 As Factor, 
+
+				PODesc, 
+
+				PO_ID,
+
+				po.Terms,
+
+				po.PriceBasis,
+
+				Grade.InventoryType
+
+			FROM PO WITH(NOLOCK) 
+
+			
+
+			inner join podetail on po.PONumber = podetail.PONumber
+
+			left JOIN Grade WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID	
+
+			WHERE PO.PONumber = @SONO
+
+			
+
+		SELECT
+
+				Grade.Description, 
+
+				Grade.GradeID							
+
+			FROM Grade WITH(NOLOCK) 
+
+			WHERE Grade.WhProductType = @IOType
+
+			ORDER BY Description
+
+
+

@@ -1,0 +1,10 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetOpenPeriodDate] AS
+
+    SELECT OpenMonth FROM SYSTEMINFO WITH (NOLOCK) WHERE ID = '00'
+
+    
+

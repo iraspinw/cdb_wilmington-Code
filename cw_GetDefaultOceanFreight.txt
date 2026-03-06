@@ -1,0 +1,90 @@
+CREATE   PROCEDURE [dbo].[cw_GetDefaultOceanFreight] 
+
+
+
+	@Carrier char(12),
+
+	@POL varchar(25),
+
+	@POD varchar(25),
+
+	@IncludeExpired bit = 0
+
+AS
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	--cw_GetDefaultOceanFreight '84702', 'Ambarli', 'Algeciras'
+
+	--02/27/2023: DN added forwarder information,EqType,notes, no longer including expired rates
+
+
+
+	SELECT
+
+		RateID,
+
+		ReferenceNo,
+
+		Charge,
+
+		PerUOM,
+
+		ChargeCurCode,
+
+		Notes,
+
+		POL,
+
+		POD,
+
+		PlOfRcpt,
+
+		PlOfDeliv,
+
+		ExpiryDate,
+
+		Carrier.CompanyNm [Ocean Carrier],
+
+		RateDate [Date],
+
+		isnull(Forwarder.CompanyNm,'') [Forwarder],
+
+		cast(Charge as varchar(10)) + '/ ' + PerUOM as ChargeText,
+
+		EqType,
+
+		Notes
+
+	FROM
+
+		FreightRate_Ocean
+
+		INNER JOIN CounterParty Carrier ON CarrierID = CpID
+
+		left join CounterParty Forwarder on FreightRate_Ocean.FreightFwdr = Forwarder.CpID
+
+	WHERE
+
+		CarrierID = @Carrier
+
+		AND (POL = @POL or @POL = '')
+
+		AND (POD = @POD or @POD = '')
+
+		and ExpiryDate > GETDATE()
+
+	ORDER BY Charge
+
+
+
+
+
+
+

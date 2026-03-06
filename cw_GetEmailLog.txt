@@ -1,0 +1,50 @@
+CREATE proc [dbo].[cw_GetEmailLog] @FromDt datetime = '', @ToDt datetime = '', @User varchar(30) = '', @Object varchar(30) = '', @ObjectID varchar(30) = '' as
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SET NOCOUNT ON;
+
+--02/16/17 MN: CREATED
+
+--04/07/2021 MEC: Added Timezone Assignment to datestamp
+
+--11/17/2022 ZT: Seperated time and date cols
+
+
+
+	SELECT 
+
+		EmailTo As [Recipient],
+
+		Case When TimeZone.TimeZoneNm is null Then [Date] Else CAST(DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), [Date]) as DATE) End AS [Date], 
+
+		Case When TimeZone.TimeZoneNm is null Then '' Else Case When cast([Date] as time) = '00:00:00' Then Null ELSE  FORMAT([Date], 'hh:mm tt') END End AS [Time], 
+
+		RTRIM([Object]) AS [Object], 
+
+		ObjectID AS [ObjectID], 
+
+		UserNm AS [User Name],
+
+		DocTitle As [Description]
+
+		FROM EmailLog e
+
+		inner join userdef on userdef.userid= e.userid
+
+		left join TimeZone on UserDef.TimeZoneNm = TimeZone.TimeZoneNm
+
+		WHERE (e.UserID = @User OR @User = '')
+
+		AND ([Date] >= @FromDt OR @FromDt = '')
+
+		AND ([Date] <= @ToDt OR @ToDt = '')
+
+		AND (ObjectID = @ObjectID OR @ObjectID = '')
+
+		AND ([Object] = @Object OR @Object = '')
+
+		order by [Date] desc
+
+
+

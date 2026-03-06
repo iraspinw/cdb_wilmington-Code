@@ -1,0 +1,148 @@
+CREATE Proc [dbo].[cw_GetExpAllocPayables] @TransNo int, @IncludeReversed bit As
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+--10/17/2016 MEC: Added for cieTrade.net for Expense Allocation expense
+
+--08/01/2017 DSH: Added AP posting adjustments.
+
+Begin
+
+declare @SYSCURRENCY varchar(5)
+
+select @SYSCURRENCY = CurrCode from SystemInfo
+
+
+
+	DECLARE @BSNO CHAR(12)
+
+	SET @BSNO = 'EA-' + RTRIM(CONVERT(VARCHAR(12),@TransNo))
+
+
+
+
+
+	CREATE TABLE #ExpensesList(
+
+		Vendor VARCHAR(100),
+
+		[Expense Account] VARCHAR(100),
+
+		Amount VARCHAR(45),
+
+		[Amount USD] VARCHAR(45),
+
+		[-Hidden-Amount] MONEY,
+
+		[Open-Date] DATE,
+
+		[Posted-Date] DATE,
+
+		Invoice# VARCHAR(25),
+
+		Batch# VARCHAR(25),
+
+		[-Hidden-PayableID] INT
+
+	)
+
+
+
+	-- EXPENSE ALLOCATION EXPENSES.
+
+	INSERT #ExpensesList
+
+    SELECT 
+
+		CounterParty.CompanyNm as [Vendor],
+
+		RTRIM(payables.GLAcct) + '-' + GLAccount.Name as [Expense Account],
+
+		Payables.CurrencyCd + ' ' + dbo.cw_RemoveTrailingZeros(Payables.FxAmount,2) as Amount, 
+
+		dbo.cw_RemoveTrailingZeros(Payables.Amount, 2) as [Amount USD],
+
+		dbo.cw_RemoveTrailingZeros(Payables.Amount, 2) as [-Hidden-Amount],
+
+		ExpenseAllocation.PostingDt as [Open-Date],
+
+		convert(char(10),InvoiceDt,101) as [Posted-Date],
+
+		InvoiceNo as Invoice#,
+
+		payables.APBatchNo as Batch#, 
+
+		payables.PayableID as [-Hidden-PayableID]
+
+
+
+    from Payables WITH (NOLOCK) 
+
+		INNER JOIN ExpenseAlloc_Detail WITH(NOLOCK) ON Payables.ItemID = ExpenseAlloc_Detail.ID
+
+		INNER JOIN ExpenseAllocation WITH(NOLOCK) ON ExpenseAllocation.TransNo = ExpenseAlloc_Detail.TransNo
+
+		INNER JOIN CounterParty WITH (NOLOCK) ON Payables.CpID = CounterParty.CpID
+
+		inner join glaccount on glaccount.GLAcct = payables.GLAcct
+
+    where ExpenseAlloc_Detail.TransNo = convert(varchar, @TransNo) 
+
+    AND Payables.ItemIDSource = 'E'  
+
+    AND IsNull(Reversed,0) = 0 --OR convert(varchar(1), @IncludeReversed) = 1)
+
+    
+
+
+
+	-- EXPENSE ALLOCATION ADJUSTMENTS.
+
+	INSERT #ExpensesList
+
+	SELECT  
+
+		CounterParty.CompanyNm as [Vendor],
+
+		RTRIM(payables.GLAcct) + '-' + GLAccount.Name as [Expense Account],
+
+		Payables.CurrencyCd + ' ' + dbo.cw_RemoveTrailingZeros(Payables.FxAmount,2) as Amount, 
+
+		dbo.cw_RemoveTrailingZeros(Payables.Amount, 2) as [Amount USD],
+
+		dbo.cw_RemoveTrailingZeros(Payables.Amount, 2) as [-Hidden-Amount],
+
+		convert(char(10),InvoiceDt,101) as [Open-Date],
+
+		convert(char(10),InvoiceDt,101) as [Posted-Date],
+
+		payables.InvoiceNo as Invoice#,
+
+		payables.APBatchNo as Batch#, 
+
+		payables.PayableID as [-Hidden-PayableID]
+
+	from GPLEDGER 
+
+		INNER JOIN Payables ON GPLEDGER.LedgerID = Payables.ItemID AND GPLEDGER.BuySellNo = Payables.BuySellNo
+
+		INNER JOIN CounterParty WITH (NOLOCK) ON Payables.CpID = CounterParty.CpID
+
+		inner join glaccount on glaccount.GLAcct = payables.GLAcct
+
+	WHERE GPLEDGER.BuySellno = @BSNO AND GPLEDGER.Source = 'A' AND GPLEDGER.Reversed = 0
+
+	
+
+
+
+	SELECT * FROM #ExpensesList Order by [Posted-Date] DESC, [Batch#]
+
+		
+
+
+
+End
+

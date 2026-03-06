@@ -1,0 +1,28 @@
+CREATE   PROCEDURE [dbo].[cw_GetCheckSetup] AS
+
+--4/2/2019 MN: CREATED
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		[ID],
+
+		COID,
+
+		[NextCheckNo],
+
+		RTRIM(BankAcctNo) AS [BankAcctNo],
+
+		RTRIM(BankRoutingNo) AS [BankRoutingNo]
+
+		FROM CheckSetup 
+
+		ORDER BY [ID]
+
+
+

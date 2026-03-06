@@ -1,0 +1,48 @@
+CREATE   PROCEDURE [dbo].[cw_GetExpPackingListBrokerage] @BuySellNo char(12)
+
+ AS
+
+--02/12/2019 DSH cieTrade.NET ExPort Packing List (Brokerage)
+
+SET NOCOUNT ON
+
+
+
+	
+
+	--GET REPORT UNIT OF MEASURE
+
+	DECLARE @RUOM CHAR(1)
+
+	--SET @RUOM = (SELECT ScaleWtUOM FROM systeminfo)
+
+	SET @RUOM = (SELECT TOP 1 SWeightUOM FROM WksDetail WHERE BuySellNo = @BuySellNo)
+
+
+
+
+
+	SELECT 
+
+		CASE WHEN WksDetail.InvoiceDesc <> '' THEN WksDetail.InvoiceDesc  ELSE Grade.[Description] END Product, 		
+
+		ISNULL(RTRIM(dbo.CnvUnitName(UnitType)),'') + ' '+ (CASE WHEN Units = 0 THEN '' ELSE CONVERT(VARCHAR(12),Units) END)Packaging, 
+
+		--dbo.FormatQty(dbo.convert_to_uom(GrossWt, @RUOM, @RUOM),@RUOM) GrossWt, 
+
+		dbo.FormatQty(GrossWt, @RUOM) GrossWt, 
+
+		dbo.FormatQty(dbo.convert_to_uom(SWeight, SWeightUOM, @RUOM),@RUOM) NetWt,
+
+		dbo.cnvuom_names(@RUOM) WtUom 
+
+		
+
+		FROM wksDetail  WITH(NOLOCK) 
+
+		INNER JOIN Grade WITH(NOLOCK) ON wksDetail.GradeID = Grade.GradeID
+
+		WHERE wksDetail.BuySellNo = @BuySellNo
+
+
+

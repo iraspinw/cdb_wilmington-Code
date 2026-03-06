@@ -1,0 +1,36 @@
+CREATE   PROCEDURE [dbo].[cw_GetBookingsForSO] 
+
+	@OrderNo varchar(15)
+
+
+
+AS
+
+--10/28/2016: MN CREATED
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT
+
+		BK.BookSheetID,
+
+		BK.BookingNo,
+
+		BK.CutOffDate
+
+	FROM PO
+
+	INNER JOIN BookSheet BK WITH(NOLOCK) ON BK.PONumber = @OrderNo
+
+	WHERE PO.PONumber = @OrderNo
+
+	ORDER BY BK.BookDate DESC
+
+
+

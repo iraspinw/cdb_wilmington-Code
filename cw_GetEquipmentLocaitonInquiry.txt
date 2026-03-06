@@ -1,0 +1,122 @@
+CREATE PROC [dbo].[cw_GetEquipmentLocaitonInquiry]
+
+	@ContainerNo char(30),
+
+	@ContainerType char(30),
+
+	@TareWt decimal(18,5),
+
+	@Status char(10),
+
+	@Description varchar(100),
+
+	@Customer char(12),
+
+	@Location char(45),
+
+	@WarehouseID char(45),
+
+	@DeliveryDt datetime,
+
+	@TruckNo varchar(25),
+
+	@Driver char(50),
+
+	@PickupDt datetime
+
+AS
+
+--03/12/2011 MCM: Created for Public Trading
+
+--03/28/2011 MCM: Added ReceiveDt
+
+--05/23/2013 MCM: Added PublicTrade.Status, PublicTradeDetail.[Paid],PublicTradeDetail.[PaidDt],PublicTradeDetail.[PaidUser] and PublicTradeDetail.[BuySellNo]
+
+--					Removed PublicTrade.BuySellNo and PublicTrade.Paid
+
+--07/26/2017 MCM: ATMAdjustment
+
+--09/08/2017 DSH Renamed AND added fields for Public Trade POS
+
+--11/20/2017 DSH Added Customer Inactive Flag
+
+--01/15/2018 DSH Added Cash Paid column to help identify ATM payments in code.
+
+--07/12/2019 DSH Added Void status
+
+SET NOCOUNT ON
+
+
+
+		SELECT 
+
+		EquipmentID,
+
+		ContainerNo,
+
+		ContainerType,
+
+		TareWt,
+
+		[Status],
+
+		[Description],
+
+		Customer,
+
+		C.CompanyNm,
+
+		Location,
+
+		WarehouseID,
+
+		DeliveryDt,
+
+		TruckNo,
+
+		Driver,
+
+		PickupDt,
+
+		Notes,
+
+		ContainerImg,
+
+		ContainerImgSize,
+
+		WarehouseID
+
+	FROM EquipmentContainer
+
+	LEFT JOIN CounterParty C ON C.CpID = Customer
+
+	WHERE 
+
+		(@ContainerNo = '' OR ContainerNo = @ContainerNo)
+
+
+
+	--WHERE (@Status = '' OR [Status] = @Status)
+
+	--	AND (@FromDt = '' OR [PublicTrade].[ReceiveDt] >= @FromDt)
+
+	--	AND (@ToDt = '' OR [PublicTrade].[ReceiveDt] <= @ToDt)
+
+	--	AND (@PTCustID = '' OR @PTCustID = [PublicTrade].[PTCustID])
+
+	--	AND (@WarehouseID = '' OR @WarehouseID = [PublicTrade].[WarehouseID])
+
+	--	AND (@GradeID = '' OR @GradeID = [PublicTradeDetail].[GradeID])
+
+
+
+	--	AND (@TagNo = '' OR [PublicTrade].[TagNo] LIKE '%' + @TagNo + '%')
+
+	--	AND (@TagState = '' OR [PublicTrade].[TagState] LIKE '%' + @TagState + '%')
+
+	--	AND (@VehicleMake = '' OR [PublicTrade].[VehicleMake] LIKE '%' + @VehicleMake + '%')
+
+	--	AND (@VehicleModel = '' OR [PublicTrade].[VehicleModel] LIKE '%' + @VehicleModel + '%' )
+
+
+

@@ -1,0 +1,124 @@
+CREATE   PROCEDURE [dbo].[cw_GetUnappliedCashFilter] 
+
+
+
+	@CpID char(12), 
+
+	@BalanceFilter int, 
+
+	@COID char(2) = ''
+
+	--, @FactorID INT 
+
+
+
+AS
+
+
+
+-- 01/17/2018 MEC: Copied from q_GetUnappliedCashFilter for cieTrade.net
+
+
+
+--cw_GetUnappliedCashFilter '', 2, ''
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT 
+
+		LedgerID [-Hidden-LedgerID], 
+
+		Counterparty.CompanyNm [Customer], 
+
+		EntryDt [Date], 
+
+		OriginalAmount [{C}HC Amount], 
+
+		BankFees [{C}HC Fees], 
+
+		(OriginalAmount - Balance) [{C}HC Applied],
+
+		Balance [{C}HC Balance], 
+
+		CurrencyCd [Currency], 
+
+		FxAmount [{C}Amount], 
+
+		FxBankFees [{C}Fees], 
+
+		(FxAmount - FxBalance) [{C}Applied],
+
+		FxBalance [{C}Balance], 
+
+		Reference [Reference], 
+
+		CompanyInfo.CompanyDesc [Dept],
+
+		CheckNo [Payment No], 
+
+		ARBatchNo [Batch No], 
+
+		UACashLedger.GLAcct [-Hidden-GLAcct], 
+
+		Counterparty.CpID [-Hidden-CpID], 
+
+		UACashLedger.COID [-Hidden-COID], 
+
+		Reversed [-Hidden-Reversed], 
+
+		Reversed_LedgerID [-Hidden-LedgerID], 
+
+		convert(int, LastEdit) [-Hidden-LastEdit], 
+
+		UACashLedger.FxRate [-Hidden-Rate],
+
+		PONumber as [Sales Order]
+
+		--UACashLedger.FactorID, 
+
+		--UACashLedger.FactorGLAcct,
+
+		--FactorName,
+
+	FROM UACashLedger
+
+	INNER JOIN Counterparty ON UACashLedger.CustID = Counterparty.CpID
+
+	LEFT JOIN CompanyInfo ON UACashLedger.COID = CompanyInfo.COID
+
+	--LEFT JOIN Factor ON UACashLedger.FactorID = Factor.FactorID
+
+	WHERE (@CpID = '' OR UACashLedger.CustID = @CpID) 
+
+	AND (@COID = '' OR @COID = UACashLedger.COID)
+
+	--AND (@FactorID = 0 OR @FactorID = UACashLedger.FactorID)
+
+	AND ( 
+
+			( @BalanceFilter = 0 AND (round(Balance,2) > 0 OR round(Balance,2) <-.5) AND (IsNull(Reversed,0) <> 1) ) 
+
+			OR (@BalanceFilter = 1 AND round(Balance,2) < .001 AND (IsNull(Reversed,0) <> 1)) 
+
+			OR @BalanceFilter = 2
+
+        )
+
+	and isnull(Reversed_LedgerID,0) = 0
+
+	ORDER BY Counterparty.CompanyNm, EntryDt
+
+
+
+
+
+
+
+	--select * From UACashLedger
+

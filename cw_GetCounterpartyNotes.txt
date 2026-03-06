@@ -1,0 +1,24 @@
+
+
+--03/10/2006 (BF) created for business inquiry
+
+
+
+
+
+
+
+
+
+
+
+
+
+Create             PROCEDURE [dbo].[cw_GetCounterpartyNotes]  @CpID char(12) AS
+
+
+
+SELECT UserNotes from Counterparty where cpid = @CpID
+
+
+

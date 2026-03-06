@@ -1,0 +1,220 @@
+CREATE   PROCEDURE [dbo].[cw_GetPOTrades] @PONO Char(15), @Source varchar(2), @UOM char(2) = 'L' As
+
+--11/21/2014 MEC: Copied from q_GetPOTrades
+
+--08/05/2022 Nick: Added 2 decimal places to STR(displaywt). Initial conversion no longer rounds
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+declare @Filler char(30)
+
+set @Filler = ''
+
+
+
+--declare @UOM char(1) = 'L'
+
+
+
+--Select @UOM = ScaleWtUOM From SystemInfo
+
+
+
+--FORCES SPACE OF 30 IN BLANK TEMP TABLE FIELDS THAT ARE LATER UPDATED:
+
+
+
+	SELECT 
+
+		wksDetail.BuySellNo, BuySell.ShippingDt, BuySell.CustID, CounterParty.CompanyNm, WksDetail.GradeID, Grade.[Description], 
+
+		SWeight, SWeightUOM, SAmount, wksDetail.SPo, wksDetail.PPo, PWeight, PWeightUOM, wksDetail.SealNo, PAmount, BasisWt, 
+
+		BasisWtUOM, Diameter, DiameterUOM, RollWd, RollWdUOM, CoreSize, Caliper, wksDetail.LinearLen, SheetSize, SheetSizeUOM, SheetGrain, 
+
+		wksDetail.MWeight, wksDetail.UnitType, wksDetail.Units, BuySell.BookingNo, 
+
+		wksDetail.ContainerNo, wksDetail.SPrice, wksDetail.SPriceUOM, 
+
+		wksDetail.IsMSF, wksDetail.SCurrencyCd, WksDetail.InvoiceDesc, 
+
+		wksDetail.CoreSizeUOM,BuySell.RelNo,@Filler as trailerno,@Filler as freighttype, --WksDelivery.TrailerNo,Carrier.FreightType
+
+		wksDetail.LengthUOM, SPO_ID, Invoiced, Approved, Completed, Problem, BuySell.[Status], BuySell.PickupNo,
+
+		dbo.CONVERT_TO_UOM_NOT_ROUND(SWeight, SWeightUOM, @UOM) as DisplayWt,  dbo.CnvUOM_Names(@UOM) as DisplayUOM,
+
+		BuySell.ShipToID, BuySell.ShipFromID, 0 as cntCont, refequipno, refsealno,
+
+		CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END as WksType,
+
+		Case WHEN IsNull(GpLedger.FP_DetailID,0) > 0 And IsNull(GPLedger.AdjPosted,'') = 'Y' THEN FORMAT(GPLedger.AdjPostDt,'MMM-dd-yyy') Else '' END IsFixed
+
+		,ETA, ETS AS [ETD], Vessel, MillRcvNo
+
+	INTO #temp
+
+        FROM WksDetail WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK)  ON WksDetail.BuySellNo = BuySell.BuySellNo 
+
+	    INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.VendorID = CounterParty.CpID
+
+        INNER JOIN Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+		left join GPLedger ON GPLedger.FP_DetailID = WKSDetail.DetailID
+
+		LEFT JOIN BookSheet ON BookSheet.BookingNo = BuySell.BookingNo
+
+    WHERE 
+
+		wksDetail.SPO = @PONO and @Source = 'SO'
+
+	
+
+	UNION ALL
+
+	
+
+	SELECT 
+
+		wksDetail.BuySellNo, BuySell.ShippingDt, BuySell.CustID, CounterParty.CompanyNm, WksDetail.GradeID, Grade.[Description], 
+
+		SWeight, SWeightUOM, SAmount, wksDetail.SPo, wksDetail.PPo, PWeight, PWeightUOM, wksDetail.SealNo, PAmount, BasisWt, 
+
+		BasisWtUOM, Diameter, DiameterUOM, RollWd, RollWdUOM, CoreSize, Caliper, wksDetail.LinearLen, SheetSize, SheetSizeUOM, SheetGrain, 
+
+		wksDetail.MWeight, wksDetail.UnitType, wksDetail.Units, BuySell.BookingNo, 
+
+		wksDetail.ContainerNo, wksDetail.PPrice, wksDetail.PUOM, wksDetail.IsPMSF, 
+
+		wksDetail.PCurrencyCd, WksDetail.InvoiceDesc, wksDetail.CoreSizeUOM,BuySell.RelNo,@Filler as trailerno,@Filler as freighttype, --WksDelivery.TrailerNo,Carrier.FreightType
+
+		wksDetail.LengthUOM, PPO_ID, Invoiced, Approved, Completed, Problem, BuySell.[Status], BuySell.PickupNo,
+
+		dbo.CONVERT_TO_UOM_NOT_ROUND(SWeight, SWeightUOM, @UOM) as DisplayWt,  dbo.CnvUOM_Names(@UOM) as DisplayUOM,
+
+		BuySell.ShipFromID, BuySell.ShipToID, 0 as cntCont, refequipno, refsealno,
+
+		CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END as WksType,
+
+		'' IsFixed
+
+		,ETA, ETS AS [ETD], Vessel, MillRcvNo
+
+        FROM WksDetail WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK)  ON WksDetail.BuySellNo = BuySell.BuySellNo  	
+
+        INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID
+
+        INNER JOIN Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+		LEFT JOIN BookSheet ON BookSheet.BookingNo = BuySell.BookingNo
+
+    WHERE wksDetail.PPO = @PONO and @Source = 'PO'
+
+	ORDER BY wksDetail.GradeID, BasisWt, BasisWtUOM, Diameter, DiameterUOM, RollWd, RollWdUOM, CoreSize, Caliper, 
+
+    	     wksDetail.LinearLen, SheetSize, SheetSizeUOM, SheetGrain, wksDetail.MWeight
+
+
+
+	
+
+	--FINAL REPORT
+
+	If @Source = 'SO' Begin
+
+		Select 
+
+		BuySellNo As [Wks No],
+
+		ShippingDt As [Ship Date],
+
+		--CustID,
+
+		CompanyNm As [Purchased from Supplier],
+
+		--GradeID,
+
+		[Description] As Product,
+
+		dbo.RemoveTrailingZeros(SPrice) + ' /' + dbo.CnvUOM_Names(SPriceUOM) As [Price],
+
+		IsFixed As [Is Fixed?],
+
+		dbo.RemoveTrailingZeros(DisplayWt) As [Quantity],
+
+		dbo.CnvUOM_Names(DisplayUOM) As [Qty UOM],
+
+		MillRcvNo As [Mill-Rcv No],
+
+		RelNo As [Release-No],
+
+		PickupNo As [Pickup-No],
+
+		refequipno As[Equipment-No],
+
+		refsealno As [Seal-No],
+
+		[dbo].[CnvWksStatus_Name](ISNULL([Status],''), '') As [Status],
+
+		WksType as [-Hidden-WksType],
+
+		#temp.BookingNo as [Booking No],
+
+		ETA,ETD,Vessel As [Vessel Name]
+
+		from #temp
+
+		
+
+		ORDER BY ShippingDt
+
+	End
+
+	Else Begin
+
+		Select 
+
+		BuySellNo As [Wks No],
+
+		ShippingDt As [Ship Date],
+
+		--CustID,
+
+		CompanyNm As [Sold To Customer],
+
+		--GradeID,
+
+		[Description] As Product,
+
+		MillRcvNo As [Mill-Rcv No],
+
+		RelNo As [Release-No],
+
+		PickupNo As [Pickup-No],
+
+		refequipno As[Equipment-No],
+
+		refsealno As [Seal-No],
+
+		dbo.RemoveTrailingZeros(STR(DisplayWt,10,2)) + ' ' + dbo.CnvUOM_Names(DisplayUOM) As [Weight],
+
+		[dbo].[CnvWksStatus_Name](ISNULL([Status],''), '') As [Status],
+
+		WksType as [-Hidden-WksType],
+
+		#temp.BookingNo as [Booking No]
+
+		from #temp ORDER BY ShippingDt
+
+	End
+
+
+
+Return
+

@@ -1,0 +1,32 @@
+CREATE proc [dbo].[cw_GetCertValsBySupplier]
+
+@CpID char(12),
+
+@PONo char(15)
+
+ as
+
+	
+
+--2/19/2020 MN: Created
+
+
+
+--cw_GetCertValsBySupplier '84698', '100579'
+
+
+
+	SELECT 
+
+		Counterparty_Certification.CertificationTypeID, Rtrim(Certification.Organization)+' - '+ CertificationType AS [CertRegType] --CertificationType + ' ' + RegistrationNo AS [CertRegType]
+
+	FROM Counterparty_Certification 
+
+	INNER JOIN Certification WITH(NOLOCK) ON Certification.CertificationID = Counterparty_Certification.CertificationTypeID
+
+	WHERE CpID = @CpID 
+
+
+
+	SELECT CertifiedTypeID FROM PO WHERE PONumber = @PONo
+

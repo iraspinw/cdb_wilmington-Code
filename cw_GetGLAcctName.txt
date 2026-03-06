@@ -1,0 +1,26 @@
+CREATE proc [dbo].[cw_GetGLAcctName] @GLAcct varchar(25), @GLAcctNm varchar(65) OUTPUT as
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+--11/27/2009 DSH (SALES-TAX-PRJ) Added No-lock and changed to return value.
+
+--3/23/2017 BF: return blank if glacct is blank
+
+
+
+	if @GLAcct = '' begin
+
+		select @GLAcctNm='' 
+
+		return
+
+	end
+
+	
+
+	SELECT @GLAcctNm = [name] from GLAccount WITH (NOLOCK) WHERE GLAcct=@GLAcct
+
+
+

@@ -1,0 +1,58 @@
+CREATE   PROCEDURE [dbo].[cw_GetInvoiceRemitDelete] @RemitToID varchar(30), @Outmessage  varchar(70) ='' output AS
+
+--02/21/2019 Alex: Created 
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+      SET NOCOUNT ON;
+
+
+
+	  declare @count int =0
+
+	  declare @RemitToName varchar(60)=''
+
+	  select @count=count(*) from CounterParty where RemitID =@RemitToID
+
+	 select @RemitToName=RemitNm from InvoiceRemit where RemitID =@RemitToID
+
+
+
+	  if @count=0
+
+		  begin 
+
+			  delete from InvoiceRemit 
+
+			  where RemitID=@RemitToID
+
+
+
+			  set @Outmessage ='The Exchange Contract "'+@RemitToName+ '" has been deleted successfully'
+
+			   select  @Outmessage 
+
+		  end
+
+	  else
+
+	    begin
+
+		     set @Outmessage ='The Exchange Contract "'+@RemitToName+ '" is used. Can not be deleted'
+
+			select  @Outmessage 
+
+	  
+
+	    end
+
+	  
+
+	
+
+
+
+	
+

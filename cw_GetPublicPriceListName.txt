@@ -1,0 +1,14 @@
+CREATE   PROCEDURE [dbo].[cw_GetPublicPriceListName] @PLID int = 0 AS
+
+SET NOCOUNT ON
+
+--03/11/2011 MCM: Created for Public Trade feature
+
+
+
+    SELECT PLID,PublicPriceListName,WarehouseID FROM PublicPriceList WITH(NOLOCK) 
+
+		WHERE (@PLID = 0 OR PLID = @PLID)
+
+		ORDER BY PublicPriceListName
+

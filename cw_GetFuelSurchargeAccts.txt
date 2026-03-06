@@ -1,0 +1,12 @@
+CREATE proc [dbo].[cw_GetFuelSurchargeAccts] as
+
+
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+select glacct From glaccount where [name] = 'FUEL SURCHARGE' and cat = 'EXPENSES'
+
+select glacct From glaccount where [name] = 'FUEL SURCHARGE' and cat = 'SALES'
+

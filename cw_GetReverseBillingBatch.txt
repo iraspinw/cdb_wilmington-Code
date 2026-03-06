@@ -1,0 +1,78 @@
+
+
+CREATE  PROCEDURE [dbo].[cw_GetReverseBillingBatch] 
+
+
+
+	@BatchNo int
+
+
+
+AS
+
+
+
+--08/01/2019 MEC: Created for Reverse Billing Show in cieTrade.net
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	SELECT ReverseBatchNo,
+
+		BatchDescription,
+
+		FromDt,
+
+		ToDt,
+
+		InvoiceNo,
+
+		InvoiceDt,
+
+		PostingDt,
+
+		ReportType,
+
+		COID,
+
+		UOM,
+
+		BillingCycle,
+
+		SalesRep,
+
+		AllAdjustments,
+
+		BatchDescription,
+
+		IsPosted
+
+	FROM ReverseBillingBatch WITH (NOLOCK) 
+
+	WHERE ReverseBatchNo = @BatchNo
+
+
+
+
+
+	SELECT Count(distinct CpID)
+
+	FROM ReverseBillingStatement WITH (NOLOCK) 
+
+	WHERE ReverseBatchNo = @BatchNo
+
+	
+
+
+
+	SELECT Count(*) As HasPrintedChecks
+
+	FROM ReverseBillingStatement WITH (NOLOCK) 
+
+	WHERE ReverseBatchNo = @BatchNo AND IsNull(CheckPrinted,0) = 1
+

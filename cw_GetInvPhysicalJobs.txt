@@ -1,0 +1,21 @@
+CREATE Proc [dbo].[cw_GetInvPhysicalJobs] AS 
+
+--09/28/2018 DSH Inventory Physical Check
+
+--11/18/2022 Nick: Added LocationName
+
+SET NOCOUNT ON
+
+	select	RTRIM(Convert(VARCHAR(12),JobID)) + '-' + rtrim([Description]) JobDescription,
+
+			JobID,
+
+			rtrim([WarehouseCPID]) AS [Warehouse],
+
+			rtrim(Inventory_PhysicalJob.WarehouseLocation) AS [Location],
+
+			rtrim(WarehouseLocation.LocationName) as [LocationName]
+
+	from inventory_physicaljob WITH (NOLOCK)
+
+	LEFT JOIN WarehouseLocation ON Inventory_PhysicalJob.WarehouseLocation = WarehouseLocation.ID

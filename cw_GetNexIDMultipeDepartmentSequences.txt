@@ -1,0 +1,34 @@
+
+
+CREATE  PROCEDURE [dbo].[cw_GetNexIDMultipeDepartmentSequences] @COID char(2), @Result varchar(15) OUTPUT
+
+--10/24/2006 JW: added WITH(NOLOCK) for IFPs continuing deadlock issue
+
+--11/01/2006 JW: modified above change to READPAST FOR IFPs deadlock issue
+
+--05/01/2007 BF: changed @ReturnID to varchar for PO/SO/WKS with non-numeric IDs
+
+--01/05/2009 DSH: Added Transaction to help with concurrency issue that occured at KCI
+
+--05/30/2013 MCM: Increased TableNm parameter
+
+AS
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+--BEGIN TRANSACTION
+
+    UPDATE CompanyInfo SET DepartmentSeqID = DepartmentSeqID + 1
+
+    WHERE COID = @COID
+
+	set @Result =  (select InvoicePrefix + ''+ CAST(DepartmentSeqID aS varchar)  FROM CompanyInfo   WHERE  COID = @COID)
+
+--COMMIT TRANSACTION
+
+return 1
+
+
+

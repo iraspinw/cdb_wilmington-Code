@@ -1,0 +1,40 @@
+CREATE proc [dbo].[cw_GetWksBatchEdits] 
+
+
+
+	@SessionID int
+
+
+
+AS
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+	SELECT 
+
+		GenerateWorksheet_Wrk.BuySellNo,
+
+		BuySell.ShippingDt,
+
+		BuySell.RefEquipNo,
+
+		BuySell.EqType,
+
+		BuySell.UserDefined1,
+
+		BuySell.UserDefined2
+
+	FROM GenerateWorksheet_Wrk WITH (NOLOCK) 
+
+	INNER JOIN BuySell WITH (NOLOCK) ON BuySell.BuySellNo = GenerateWorksheet_Wrk.BuySellNo
+
+	WHERE SessionID = @SessionID
+
+	ORDER BY GenerateWorksheet_Wrk.BuySellNo
+

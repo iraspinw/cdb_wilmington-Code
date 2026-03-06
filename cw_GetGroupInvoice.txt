@@ -1,0 +1,254 @@
+CREATE  Proc [dbo].[cw_GetGroupInvoice] @StatementNo int
+
+AS
+
+SET NOCOUNT ON
+
+
+
+-- 05/30/2014 MEC: Copied for cieTrade.net Group Invoice Document Details 
+
+	
+
+--cw_GetGroupInvoice 10108
+
+
+
+	DECLARE @ReportUOM char(1), @TtlWt decimal(18,5)
+
+	
+
+	SELECT BuySell.BuysellNo,dbo.FormatDate(BuySell.ShippingDt) as ShippingDt,
+
+	Grade.Description,InvoiceDesc,
+
+	WksDetail.Specifications,
+
+	--dbo.formatweight(SWeight,0) as SWeight,
+
+	SWeight,
+
+	RTRIM(CAST(dbo.CnvUOM_Names(SWeightUOM)as char(30))) as SWeightUOM,
+
+	SPrice, 
+
+	dbo.CnvUOM_Names(SPriceUOM) as SPriceUOM,
+
+	--Case When ISNULL(WksDetail.SFxAmount,0) = 0 Then BUYSELL.FxInvoiceAmt Else WksDetail.SFxAmount End As SFxAmount, 
+
+	BUYSELL.FxInvoiceAmt As SFxAmount,
+
+	dbo.RemoveTrailingZeros(WksDetail.Units) as Units,dbo.CnvUnitName(WksDetail.UnitType) As UnitType,
+
+	WksDetail.TareWt,WksDetail.GrossWt,
+
+	Case When ISNULL(WksDetail.SCurrencyCd,'') = '' Then BUYSELL.CurrencyCd Else WksDetail.SCurrencyCd End As CurrencyCd,
+
+	--ISNULL(BuySell.FXSalesTaxAmt,0) as FXSalesTaxAmt,
+
+	CAST(0 as decimal(18,2)) as FXSalesTaxAmt,
+
+	BuySell.PickupNo,
+
+	BUYSELL.ShipFromID, Address.City, Address.Region, Address.EDI_ShipToCode as Store,
+
+	dbo.CONVERT_TO_UOM(SWeight,SWeightUOM,'S') as WtST,
+
+	dbo.CONVERT_TO_UOM(SWeight,SWeightUOM,'L') as WtLBS,
+
+	WksDetail.DetailID, BUYSELL.RelNo,	1 as SeqOrder,
+
+	ISNULL(WksDetail.ContainerNo,'') as ContainerNo, ISNULL(BuySell.RefSealNo,'') as SealNo, 
+
+	BuySell.BookingNo, BuySell.RefEquipNo, BuySell.RefSONo as SONo, Space(25) as SORefNo,
+
+	BUYSELL.ShipToID, Vessel.VesselName, '' as TerminalPort,
+
+	IsMSF,SMSFPrice
+
+	INTO #REPORT
+
+	FROM BUYSELL WITH (NOLOCK)
+
+		LEFT JOIN Address WITH (NOLOCK) ON Address.CpID = BUYSELL.VendorID  AND Address.Type =  BUYSELL.ShipFromID
+
+		INNER JOIN WksDetail WITH (NOLOCK) ON WksDetail.Buysellno = BUYSELL.Buysellno
+
+		LEFT JOIN Grade WITH(NOLOCK) ON WKSDetail.GradeID = Grade.GradeID 
+
+		--LEFT JOIN Terminal WITH(NOLOCK) ON Terminal.TerminalID = BUYSELL.TerminalID
+
+		LEFT JOIN Vessel WITH(NOLOCK) ON Vessel.VesselID = BUYSELL.VesselID
+
+		WHERE BUYSELL.StatementNo = @StatementNo
+
+		
+
+UNION ALL
+
+	-- CHARGE BACK 	
+
+	SELECT  BuySell.BuysellNo,dbo.FormatDate(BuySell.ShippingDt) as ShippingDt,
+
+	Case When RTRIM(InvoiceDesc) = '' Then CounterParty.CompanyNm Else InvoiceDesc End ,
+
+	InvoiceDesc, '',0,'',
+
+	dbo.RemoveTrailingZeros(PriceCust), dbo.CnvUOM_Names(PricePerCust) as PricePerCust,FxAmountCust,0,'',0,0,CurrencyCdCust,
+
+	0,BuySell.PickupNo,'','','','',0,0,
+
+	0, BUYSELL.RelNo, 2 as SeqOrder,'','','', '', BuySell.RefSONo as SONo, Space(25) as SORefNo,
+
+	BUYSELL.ShipToID, Vessel.VesselName, '' as TerminalPort,
+
+	'',0
+
+	FROM BUYSELL WITH (NOLOCK)
+
+	INNER JOIN WKSDelivery WITH (NOLOCK) ON WKSDelivery.Buysellno = BUYSELL.Buysellno
+
+	INNER JOIN Counterparty WITH (NOLOCK) ON WKSDelivery.VendorID = CounterParty.CpID
+
+	--LEFT JOIN Terminal WITH(NOLOCK) ON Terminal.TerminalID = BUYSELL.TerminalID
+
+	LEFT JOIN Vessel WITH(NOLOCK) ON Vessel.VesselID = BUYSELL.VesselID
+
+    WHERE BUYSELL.StatementNo = @StatementNo
+
+    AND (ChgToCustAmt<>0 OR DB_NAME() = 'cdb_Wasteology')
+
+
+
+    
+
+UNION ALL
+
+	-- SALES TAXES
+
+	SELECT  BuySell.BuysellNo,dbo.FormatDate(BuySell.ShippingDt) as ShippingDt,
+
+	(Rtrim(SalesTaxCodeDescription) + ' ' + RTRIM(TaxDescription) + ' # ' + SalesTaxCode) as [Description], 
+
+	(Rtrim(SalesTaxCodeDescription) + ' ' + RTRIM(TaxDescription) + ' # ' + SalesTaxCode) as InvoiceDesc, 
+
+	'',0,'',
+
+	0, '',ISNULL(FxTaxAmount,0),0,'',0,0,PmtCurCode,
+
+	0,BuySell.PickupNo,'','','','',0,0,
+
+	0, BUYSELL.RelNo,3 as SeqOrder,'','','','', BuySell.RefSONo as SONo, Space(25) as SORefNo,
+
+	BUYSELL.ShipToID, Vessel.VesselName, '' as TerminalPort,
+
+	'',0
+
+	FROM BUYSELL WITH (NOLOCK)
+
+    INNER JOIN WksSalesTax WITH (NOLOCK) ON BUYSELL.BuySellNo = WksSalesTax.BuySellNo 
+
+    INNER JOIN salestax WITH (NOLOCK) ON WksSalesTax.SalesTaxID = SalesTax.SalesTaxID 
+
+    LEFT JOIN salestaxcode WITH (NOLOCK) On BUYSELL.salestaxcodeid = salestaxcode.salestaxcodeid 
+
+	--LEFT JOIN Terminal WITH(NOLOCK) ON Terminal.TerminalID = BUYSELL.TerminalID
+
+	LEFT JOIN Vessel WITH(NOLOCK) ON Vessel.VesselID = BUYSELL.VesselID
+
+    WHERE BUYSELL.StatementNo = @StatementNo
+
+    AND WksSalesTax.Source='B'
+
+    
+
+    UPDATE #REPORT SET SORefNo = PO.POReference
+
+	FROM #REPORT
+
+    INNER JOIN PO WITH (NOLOCK) ON PO.PONumber = #REPORT.SONo
+
+    WHERE ISNULL(#REPORT.SONo,'') <> ''
+
+	
+
+	UPDATE #REPORT SET SFxAmount = ISNULL(WksDetail.SFxAmount,0)
+
+	FROM #REPORT
+
+	INNER JOIN WksDetail On WksDetail.DetailID = #REPORT.DetailID
+
+	
+
+	
+
+	UPDATE #REPORT SET ShipFromID = 'KLT', City = '', Region = '' WHERE Store = 'KLT'
+
+	
+
+	UPDATE #REPORT SET SPriceUOM = '' WHERE SPriceUOM = '(na)'
+
+
+
+	-- GET REPORT UOM
+
+	SELECT TOP 1 @ReportUOM = SWeightUOM FROM #REPORT WHERE ISNULL(SWeightUOM,'') <> '' ORDER BY BuysellNo, SeqOrder
+
+	IF ISNULL(@ReportUOM,'') = '' 
+
+		SET @ReportUOM = 'L'
+
+	
+
+	
+
+	DECLARE @TotalInvAmount money
+
+	SELECT @TotalInvAmount = SUM(ISNULL(SFxAmount,0)) --+ ISNULL(@FXSalesTaxAmt,0) 
+
+		,@TtlWt = SUM([dbo].[CONVERT_TO_UOM] (SWeight,SWeightUOM,@ReportUOM))
+
+	FROM #REPORT
+
+	
+
+	--GET MSF PRICE
+
+	UPDATE #REPORT 
+
+	SET SPrice = dbo.RemoveTrailingZeros(SMSFPrice),SPriceUOM = 'MSF' 
+
+	WHERE ISNULL(IsMSF,'') = 'T' 
+
+	
+
+
+
+	--UPDATE #REPORT SET SPriceUOM = UnitType WHERE SWeightUOM = 'EA' AND ISNULL(UnitType,'') <> 'Pieces' AND ISNULL(UnitType,'') <> '' 
+
+	--UPDATE #REPORT SET SWeightUOM = UnitType WHERE SWeightUOM = 'EA' AND ISNULL(UnitType,'') <> 'Pieces' AND ISNULL(UnitType,'') <> ''
+
+	--UPDATE #REPORT SET SPriceUOM = SWeightUOM WHERE SWeightUOM = 'EA' AND ISNULL(UnitType,'') = ''
+
+
+
+	UPDATE #REPORT SET SPrice = dbo.RemoveTrailingZeros(SPrice)
+
+	
+
+	--FINAL REPORT
+
+	SELECT *, @TotalInvAmount as TotalInvAmount, 0 as TotalFXTaxAmt --, @FXSalesTaxAmt as TotalFXTaxAmt
+
+		,@TtlWt AS TotalWeight, CAST(dbo.CnvUOM_Names(@ReportUOM)as char(30)) AS TotalUOM
+
+	FROM #REPORT ORDER BY BuysellNo, SeqOrder
+
+	
+
+
+
+-- cw_GetGroupInvoice '10101'
+
+
+

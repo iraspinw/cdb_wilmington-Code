@@ -1,0 +1,334 @@
+
+
+CREATE PROCEDURE [dbo].[cw_GetWksPackingList] @BuySellNo char(12)  AS
+
+SET NOCOUNT ON
+
+SET TRANSACTIOn ISOLATION LEVEL READ UNCOMMITTED
+
+--[q_GetWksPackingList]
+
+--[q_SellInventoryXP]
+
+--[q_InventoryReturn]
+
+--
+
+--04/21/2016 BF: Copied to use in cieTrade.net
+
+
+
+	-- INVENTORY ITEMS (NOT CONTAINERS)
+
+	SELECT DISTINCT 
+
+		WksInventory.LotNo, 
+
+		b.[Description], 
+
+		wksInventory.ForGradeID, 
+
+		WksInventory.[Weight], 
+
+		WksInventory.UOM, 
+
+		WksInventory.UnitCost*Inventory.FxRate HcPrice, 
+
+		WksInventory.UnitCostUOM PriceUOM, 
+
+		WksInventory.Units, 
+
+		Inventory.[WarehouseNm], 
+
+		Inventory.SerialNo, 
+
+		'' AS BookingNo, 
+
+		CONVERT(CHAR(10),Inventory.RcvDt,101) AS RcvDt, 
+
+		wksInventory.NoSheets,
+
+		Inventory.Caliper, Inventory.RollWd, Inventory.RollWdUOM, Inventory.LinearLen, '' AS SealNo,
+
+		Inventory.[BasisWt], Inventory.[BasisWtUOM], Inventory.[Diameter], Inventory.[DiameterUOM], 
+
+		Inventory.[CoreSize],
+
+		Inventory.[SheetSize], Inventory.[SheetSizeUOM], Inventory.[MWeight],
+
+		Inventory.[SheetGrain], Inventory.[Color], Inventory.[Acid_Alkaline], Inventory.[InvClass],
+
+		Inventory.[Finish], Inventory.[Mill], Inventory.[Brand], wksInventory.DetailID, 
+
+		'' AS ContainerNo, Inventory.CoreSizeUOM, '' AS CreatedFrom,
+
+		Supplier.CompanyNm,
+
+		WKSDetail.PPO AS SourcePO,    
+
+		Inventory.LengthUOM,
+
+		WksInventory.WksInvID, 
+
+		ISNULL(WksInventory.IsReturned,0) as IsReturned, 
+
+		WksInventory.ReturnedAsLotNo,
+
+		isnull(wksInventory.IsStored, 0) as IsStored,
+
+		Inventory.WarehouseLocation, 
+
+		WksInventory.wksInvValue, 
+
+		convert(int,Inventory.LastEdit) AS LastEdit,
+
+		POReference	AS SORef,
+
+		Inventory.GrossMT, 
+
+		Inventory.AirDryPct, 
+
+		Inventory.MoisturePct,
+
+		b.GSM, 
+
+		Inventory.Comment,
+
+		Inventory.RefID As BuyReferrer,
+
+		'' AS ContainerNoX,
+
+		Inventory.TareWt,
+
+		Inventory.GrossWt
+
+		INTO #REPORT
+
+		FROM WksInventory 
+
+			INNER JOIN Inventory ON WksInventory.LotNo = Inventory.LotNo
+
+			INNER JOIN Counterparty Supplier ON Inventory.VendorID = Supplier.CpID
+
+			LEFT JOIN Grade b ON wksInventory.ForGradeID = b.GradeID
+
+			LEFT JOIN WKSDetail ON WksDetail.Lotno = Inventory.LotNo
+
+			LEFT JOIN PO ON Inventory.ReservePoNumber = PO.PoNumber
+
+		WHERE WksInventory.BuySellNo = @BuySellNo
+
+		AND NOT EXISTS(SELECT ContainerNo FROM Container WHERE Container.WksInvID = WksInventory.WksInvID AND Container.CreatedFrom = 'S')
+
+		AND NOT EXISTS(SELECT ContainerNo FROM Container WHERE Container.LotNo = WksInventory.LotNo AND Container.CreatedFrom = 'P')
+
+	-- CONTAINERS CREATED ON SALES (WKS PACKING LIST)
+
+UNION ALL
+
+	SELECT DISTINCT 
+
+		WksInventory.LotNo, 
+
+		b.[Description], 
+
+		wksInventory.ForGradeID, 
+
+		WksInventory.[Weight], 
+
+		WksInventory.UOM, 
+
+		WksInventory.UnitCost*Inventory.FxRate HcPrice, 
+
+		WksInventory.UnitCostUOM PriceUOM, 
+
+		WksInventory.Units, 
+
+		Inventory.WarehouseNm, 
+
+		Inventory.SerialNo, 
+
+		Container.BookingNo, 
+
+		CONVERT(CHAR(10),Inventory.RcvDt,101), 
+
+		wksInventory.NoSheets,
+
+		Inventory.Caliper, Inventory.RollWd, Inventory.RollWdUOM, Inventory.LinearLen, Container.SealNo,
+
+		Inventory.[BasisWt], Inventory.[BasisWtUOM], Inventory.[Diameter], Inventory.[DiameterUOM], 
+
+		Inventory.[CoreSize],
+
+		Inventory.[SheetSize], Inventory.[SheetSizeUOM], Inventory.[MWeight],
+
+		Inventory.[SheetGrain], Inventory.[Color], Inventory.[Acid_Alkaline], Inventory.[InvClass],
+
+		Inventory.[Finish], Inventory.[Mill], Inventory.[Brand], wksInventory.DetailID, 
+
+		isnull(Container.ContainerNo,'') AS ContainerNo, Inventory.CoreSizeUOM, Container.CreatedFrom,    
+
+		Supplier.CompanyNm,
+
+		WKSDetail.PPO AS SourcePO,    
+
+		Inventory.LengthUOM,
+
+		WksInventory.WksInvID, 
+
+		ISNULL(WksInventory.IsReturned,0) as IsReturned, 
+
+		WksInventory.ReturnedAsLotNo,
+
+		isnull(wksInventory.IsStored, 0) as IsStored,
+
+		Inventory.WarehouseLocation, 
+
+		WksInventory.wksInvValue, 
+
+		convert(int,Inventory.LastEdit),
+
+		POReference	AS SORef,
+
+		Inventory.GrossMT, 
+
+		Inventory.AirDryPct, 
+
+		Inventory.MoisturePct,
+
+		b.GSM, 
+
+		Inventory.Comment,
+
+		Inventory.RefID As BuyReferrer,
+
+		Container.ContainerNo,
+
+		Inventory.TareWt,
+
+		Inventory.GrossWt
+
+		FROM WksInventory 
+
+			INNER JOIN Inventory ON WksInventory.LotNo = Inventory.LotNo
+
+			INNER JOIN Counterparty Supplier ON Inventory.VendorID = Supplier.CpID
+
+			LEFT JOIN Grade b ON wksInventory.ForGradeID = b.GradeID
+
+			INNER JOIN Container ON Container.WksInvID = WksInventory.WksInvID AND Container.CreatedFrom = 'S'
+
+			LEFT JOIN WKSDetail ON WksDetail.Lotno = Inventory.LotNo
+
+			LEFT JOIN PO ON Inventory.ReservePoNumber = PO.PoNumber
+
+		WHERE WksInventory.BuySellNo = @BuySellNo
+
+	-- CONTAINERS PURCHASED (THROUGH WKBK, ETC)
+
+UNION ALL
+
+	SELECT DISTINCT 
+
+		WksInventory.LotNo, 
+
+		b.[Description], 
+
+		wksInventory.ForGradeID, 
+
+		WksInventory.[Weight], 
+
+		WksInventory.UOM, 
+
+		WksInventory.UnitCost*Inventory.FxRate HcPrice, 
+
+		WksInventory.UnitCostUOM PriceUOM, 
+
+		WksInventory.Units, 
+
+		Inventory.WarehouseNm, 
+
+		Inventory.SerialNo, 
+
+		Container.BookingNo, 
+
+		CONVERT(CHAR(10),Inventory.RcvDt,101), 
+
+		wksInventory.NoSheets,
+
+		Inventory.Caliper, Inventory.RollWd, Inventory.RollWdUOM, Inventory.LinearLen, Container.SealNo,
+
+		Inventory.[BasisWt], Inventory.[BasisWtUOM], Inventory.[Diameter], Inventory.[DiameterUOM], 
+
+		Inventory.[CoreSize],
+
+		Inventory.[SheetSize], Inventory.[SheetSizeUOM], Inventory.[MWeight],
+
+		Inventory.[SheetGrain], Inventory.[Color], Inventory.[Acid_Alkaline], Inventory.[InvClass],
+
+		Inventory.[Finish], Inventory.[Mill], Inventory.[Brand], wksInventory.DetailID, 
+
+		isnull(Container.ContainerNo,'') AS ContainerNo, Inventory.CoreSizeUOM, Container.CreatedFrom,    
+
+		Supplier.CompanyNm,
+
+		WKSDetail.PPO AS SourcePO,    
+
+		Inventory.LengthUOM,
+
+		WksInventory.WksInvID, 
+
+		ISNULL(WksInventory.IsReturned,0) as IsReturned, 
+
+		WksInventory.ReturnedAsLotNo,
+
+		isnull(wksInventory.IsStored, 0) as IsStored,
+
+		Inventory.WarehouseLocation, 
+
+		WksInventory.wksInvValue, 
+
+		convert(int,Inventory.LastEdit),
+
+		POReference	AS SORef,
+
+		Inventory.GrossMT, 
+
+		Inventory.AirDryPct, 
+
+		Inventory.MoisturePct,
+
+		b.GSM, 
+
+		Inventory.Comment,
+
+		Inventory.RefID As BuyReferrer,
+
+		Container.ContainerNo,
+
+		Inventory.TareWt,
+
+		Inventory.GrossWt
+
+		FROM WksInventory 
+
+			INNER JOIN Inventory ON WksInventory.LotNo = Inventory.LotNo
+
+			INNER JOIN Counterparty Supplier ON Inventory.VendorID = Supplier.CpID
+
+			LEFT JOIN Grade b ON wksInventory.ForGradeID = b.GradeID
+
+			INNER JOIN Container ON Container.LotNo = WksInventory.LotNo AND Container.CreatedFrom = 'P'
+
+			LEFT JOIN WKSDetail ON WksDetail.Lotno = Inventory.LotNo
+
+			LEFT JOIN PO ON Inventory.ReservePoNumber = PO.PoNumber
+
+		WHERE WksInventory.BuySellNo = @BuySellNo
+
+
+
+
+
+	SELECT * FROM #REPORT ORDER BY BookingNo, ContainerNo, LotNo
+

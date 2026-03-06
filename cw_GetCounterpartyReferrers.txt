@@ -1,0 +1,34 @@
+CREATE   PROCEDURE [dbo].[cw_GetCounterpartyReferrers] 
+
+(
+
+	@CpID char(12),
+
+	@GetSecondResult bit = 0
+
+)
+
+As
+
+set nocount on
+
+
+
+--07/28/2010 RS: WITH (NOLOCK) added
+
+
+
+SELECT name, Counterparty_Referrer.ReferrerNo, Rate, Charge, IsDefault  
+
+FROM Counterparty_Referrer  WITH (NOLOCK)
+
+LEFT JOIN referrer WITH (NOLOCK) ON Counterparty_Referrer.ReferrerNo = referrer.ReferrerNo
+
+WHERE CpID = @CpID AND (@GetSecondResult = 0 AND IsDefault = 1 OR @GetSecondResult = 1 AND IsDefault = 0) AND Active = 1
+
+
+
+RETURN
+
+
+

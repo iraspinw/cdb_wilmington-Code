@@ -1,0 +1,1166 @@
+CREATE   PROCEDURE [dbo].[cw_GetInventoryInquiry] 
+
+	@WhseID varchar(300),
+
+	@Class varchar(50),
+
+	@RcvFromDt datetime,
+
+	@RcvToDt datetime,
+
+	@InFromDt datetime,
+
+	@InToDt datetime,
+
+	@GradeID char(15),
+
+	@GradeGroup char(20) = '',
+
+	@SupplierID char(12),
+
+	@SalesRep char(10),
+
+	@ForSale bit = 0,
+
+	@PONO varchar(15) = '',
+
+	@ItemNo varchar(20) = '',
+
+	@ShipFromID varchar(65) = '',
+
+	@COID char(2) = '',
+
+	@InvClassID varchar(40) = '',
+
+	@BasisWtUOM varchar(3) = 'LB',
+
+	@BasisWtFrom Decimal(22,3) = 0.0,
+
+	@BasisWtTo Decimal(22,3) = 0.0,
+
+	@CaliperFrom Decimal(22,3) = 0.0,
+
+	@CaliperTo Decimal(22,3) = 0.0,
+
+	@RollWdUOM varchar(3) = 'CM', 
+
+	@RollWdFrom Decimal(22,3) = 0.0,
+
+	@RollWdTo Decimal(22,3) = 0.0,
+
+	@DiameterUOM varchar(3) = 'CM',
+
+	@DiameterFrom Decimal(22,3) = 0.0,
+
+	@DiameterTo Decimal(22,3) = 0.0,
+
+	@TypeGrade varchar(25) = '',
+
+	@MeltFlow varchar(25) = '',
+
+	@Form varchar(25) = '',
+
+	@Color varchar(48) = '',
+
+	@WhLocation int = '',
+
+	@InclDepleted BIT = 0,
+
+	@UOM char(2) = 'S',
+
+	@SerialNo char(18) = '',
+
+	@Reserve char(2) = '',
+
+	@ReserveCust varchar(75)= '',
+
+	@ReserveOrder varchar(75)= '',
+
+	@ReserveSalesRep varchar(100)= '',
+
+	@Condition varchar(15)= '',
+
+	@DetailUDF1 varchar(50)= '',
+
+    @DetailUDF2 varchar(50)= '',
+
+    @DetailUDF3 varchar(50)= '',
+
+    @DetailUDF4 varchar(50)= '',
+
+    @DetailUDF5 varchar(50)= '',
+
+	@DetailUDFSecond1 varchar(50)= '',
+
+    @DetailUDFSecond2 varchar(50)= '',
+
+    @DetailUDFSecond3 varchar(50)= '',
+
+    @DetailUDFSecond4 varchar(50)= '',
+
+    @DetailUDFSecond5 varchar(50)= '',
+
+    @DetailUDFThird1 varchar(50)= '',
+
+    @DetailUDFThird2 varchar(50)= '',
+
+    @DetailUDFThird3 varchar(50)= '',
+
+    @DetailUDFThird4 varchar(50)= '',
+
+    @DetailUDFThird5 varchar(50)= '',
+
+	@DetailUDFFourth1 varchar(50)= '',
+
+	@DetailUDFFourth2 varchar(50)= '',
+
+	@DetailUDFFourth3 varchar(50)= '',
+
+	@DetailUDFFourth4 varchar(50)= '',
+
+	@DetailUDFFourth5 varchar(50)= '',
+
+	@DetailUDFFourth6 varchar(50)= '',
+
+	@DetailUDFFourth7 varchar(50)= '',
+
+	@DetailUDFFourth8 varchar(50)= '',
+
+	@DetailUDFFourth9 varchar(50)= '',
+
+	@DetailUDFFourth10 varchar(50)= '',
+
+	@ExcludeBulkInv BIT = 0 
+
+	AS
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--01/26/2016 MEC: Created for cieTrade.net Inventory Manager
+
+--06/27/2016 DSH: Updated for Attribute Filters
+
+--07/01/2016 DSH: Updated to fix attribuet bugs and wksdetail join not needed.
+
+--04/1/2017  DSH: Added Bulk Inventory --04/20/2017 Removed
+
+--06/13/2017 DSH Added back/revised bulk inv support
+
+--06/26/2017 DSH Added total cost & weight as return value.
+
+--01/22/2019 DSH Fixed Warehouse Location
+
+--08/10/2021 Alex Alternate Name
+
+--05/26/2022 DSH Replaced InventoryBalance Table with cw_InventoryBalance PROC
+
+	
+
+
+
+	IF @Itemno <> '' BEGIN
+
+		SET @RcvFromDt = '' 
+
+		SET @InFromDt = '' 
+
+		SET @InToDt = ''
+
+		SET @WhseID = '' 
+
+		SET @GradeID = ''
+
+		SET @SupplierID = ''
+
+		SET @SalesRep = '' 
+
+		SET @Class = '' 
+
+		SET @PONo = '' 
+
+		SET @COID = '' 
+
+		SET @InvClassID = ''
+
+		SET @ShipFromID = ''
+
+		SET @BasisWtFrom = 0
+
+		SET @BasisWtTo = 0
+
+		SET @CaliperFrom = 0
+
+		SET @CaliperTo = 0
+
+		SET @RollWdFrom = 0
+
+		SET @RollWdTo = 0
+
+		SET @DiameterFrom = 0
+
+		SET @DiameterTo = 0
+
+		set @TypeGrade = ''
+
+		set @MeltFlow = ''
+
+		set @Form = ''
+
+		set @Color = ''
+
+	END
+
+
+
+	CREATE TABLE #InventoryRpt(
+
+		[Item No]			VARCHAR(12),
+
+		[Product Name]		VARCHAR(65), 
+
+		[Serial No]			VARCHAR(18),		
+
+		[Qty On Hand]		VARCHAR(25),
+
+		[-Hidden-QtyOnHand] DECIMAL(18,5),  --
+
+		[Original Qty]		VARCHAR(25),
+
+		[Original Tare Qty] VARCHAR(25),
+
+		[Original Gross Qty]VARCHAR(25),
+
+		[-Hidden-Weight]	DECIMAL(18,5),		
+
+		Units				INT,
+
+		[Packaging Type]	VARCHAR(50),
+
+		[Condition]			VARCHAR(50),
+
+		[{C}Inv Value]			MONEY,
+
+		[Currency]			CHAR(3),
+
+		[{C}Extension]			MONEY,
+
+		[Received]			DATE,
+
+		[Posted]			DATE,
+
+		[Rcv-No]			VARCHAR(12),
+
+		[Supplier]			VARCHAR(130),
+
+		[Warehouse Name]	VARCHAR(45),
+
+		[Warhouse Location] varchar(30),
+
+		[Inventory Class]	CHAR(40),
+
+		[Dept Name]			VARCHAR(50),
+
+		[Product Group]		VARCHAR(100),
+
+		[Product Category]	VARCHAR(100),
+
+		[PO Number]			VARCHAR(15),
+
+		[Equipment No]		VARCHAR(50),
+
+		[Buy Rep]			VARCHAR(50),	
+
+		[Aging]				INT,
+
+		[Tare Weight]		  nvarchar(50), 
+
+		[Gross Weight]		  nvarchar(50),	
+
+		[-Hidden-WeightInLbs] DECIMAL(18,5),
+
+		[GradeID]			CHAR(15),
+
+		[Specifications]	VARCHAR(1000),
+
+		[CALIPER]			nvarchar(50),
+
+		[BW]				nvarchar(50),
+
+		[BW-UOM]			char(3),
+
+		[RW]				nvarchar(50),
+
+		[RW-UOM]			char(2),
+
+		[CORE]				nvarchar(50),
+
+		[CORE-UOM]			char(2),
+
+		[DIA]				nvarchar(50),
+
+		[DIA-UOM]			char(2),
+
+		[ROLL-LENGTH]		nvarchar(50),
+
+		[Type-Grade]		varchar(30),
+
+		[Form]				varchar(30),
+
+		[MFI]				varchar(30),
+
+		[COLOR]				varchar(48),
+
+		[Wh Loc]			varchar(25),
+
+		[Unit Cost]			VARCHAR(25),
+
+		[Actual Cost]		VARCHAR(25),
+
+		[Comments]			VARCHAR(1024),
+
+		IsReserved          bit,
+
+		IsComingInvBalnce   bit,
+
+		InvoiceDesc		    VARCHAR(150),
+
+		UserDefined1		VARCHAR(50),
+
+		UserDefined2	    VARCHAR(50),
+
+		UserDefined3        VARCHAR(50),
+
+		UserDefined4        VARCHAR(50),
+
+		UserDefined5        VARCHAR(50),
+
+		UserDefinedFourth1		VARCHAR(50),
+
+		UserDefinedFourth2	    VARCHAR(50),
+
+		UserDefinedFourth3        VARCHAR(50),
+
+		UserDefinedFourth4        VARCHAR(50),
+
+		UserDefinedFourth5        VARCHAR(50),
+
+		UserDefinedFourth6		VARCHAR(50),
+
+		UserDefinedFourth7	    VARCHAR(50),
+
+		UserDefinedFourth8        VARCHAR(50),
+
+		UserDefinedFourth9        VARCHAR(50),
+
+		UserDefinedFourth10        VARCHAR(50),
+
+		Location			VARCHAR(25),
+
+	    [Quantity On Hand]           VARCHAR(40)
+
+		)
+
+		
+
+
+
+
+
+	-- SERIAL (LOT) INVENTORY		
+
+	INSERT #InventoryRpt
+
+	SELECT
+
+		Inventory.LotNo [Item No],
+
+		Grade.[Description] [Product Name], 
+
+		Inventory.SerialNo [Serial No],				
+
+		FORMAT(CAST(dbo.formatweightuom(Inventory.QtyOnHand, inventory.weightuom)as DECIMAL(18,5)),'0.###') + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM)[Qty On Hand],
+
+		Inventory.QtyOnHand [-Hidden-QtyOnHand],
+
+		FORMAT(CAST(dbo.formatweightuom(Inventory.[Weight], inventory.weightuom)as  DECIMAL(18,5)),'0.###') + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Original Qty],
+
+		FORMAT(CAST(dbo.formatweightuom(Inventory.TareWt, inventory.weightuom)as  DECIMAL(18,5)),'0.###') + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Original Tare Qty],
+
+		FORMAT(CAST(dbo.formatweightuom(Inventory.GrossWt, inventory.weightuom)as  DECIMAL(18,5)),'0.###') + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Original Gross Qty],
+
+		Inventory.[Weight] [-Hidden-Weight],
+
+		Inventory.Units, 
+
+		dbo.CnvUnitName(Inventory.[UnitType]) [Packaging Type],
+
+		Inventory.Condition [Condition],
+
+		CONVERT(FLOAT,round(InvValue / (CASE WHEN IsNull(Inventory.FxRate,0) = 0 THEN 1 ELSE Inventory.FxRate END),2)) as [{C}Inv Value],
+
+		Inventory.CurrencyCd [Currency],
+
+		CONVERT(FLOAT,ISNULL(InvValue, 0)) as [{C}Extension],
+
+		InDate [Received],
+
+		RcvDt [Posted],
+
+		Inventory.BuySellNo [Rcv-No], 
+
+		Supplier.CompanyNm AS Supplier, 		
+
+		Inventory.WarehouseNm AS [Warehouse Name], 
+
+		Inventory.WarehouseLocation As [Warehouse Location],
+
+		Inventory.InvClass [Inventory Class], 
+
+		Dept.CompanyDesc [Dept Name],		
+
+		Grade.ProductGroupID [Product Group],
+
+		Grade.ProductCategoryID [Product Category],
+
+		PONumber [PO Number], 
+
+		BuySell.RefEquipNo [Equipment No],
+
+		Referrer.Name [Buy Rep],  		
+
+		Datediff(day,InDate, getdate()) AS Aging,
+
+		dbo.RemoveTrailingZeros(Inventory.TareWt) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Tare Weight],
+
+		dbo.RemoveTrailingZeros(Inventory.TareWt) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Gross Weight],
+
+		dbo.Convert_To_UOM(Inventory.QtyOnHand, Inventory.WeightUOM,'L') [-Hidden-WeightInLbs],
+
+		inventory.GradeID,
+
+		inventory.SpecString as Specifications, 
+
+		dbo.cw_removeTrailingZeros(Inventory.Caliper,0) as CALIPER,
+
+		dbo.cw_RemoveTrailingZeros(Inventory.BasisWt, 0) As [BW],
+
+		Inventory.BasisWtUOM As [BW-UOM],
+
+		dbo.cw_removeTrailingZeros(Inventory.RollWd,0) As [RW],
+
+		Inventory.RollWdUOM As [RW-UOM],
+
+		dbo.cw_removeTrailingZeros(Inventory.CoreSize,0) As [CORE],
+
+		Inventory.CoreSizeUOM As [CORE-UOM],
+
+		dbo.cw_removeTrailingZeros(Inventory.Diameter,0) as DIA,
+
+		Inventory.DiameterUOM As [DIA-UOM],
+
+		dbo.cw_removeTrailingZeros(Inventory.LinearLen,0) AS [ROLL-LENGTH],
+
+		Inventory.PlasticType As [Type-Grade],
+
+		Inventory.PlasticForm As [Form],
+
+		Inventory.PlasticMelt AS [MFI],
+
+		Inventory.Color COLOR,
+
+		ISNULL(WarehouseLocation.LocationName,'') As [Wh Loc],		
+
+		Case When Inventory.Price <> 0 Then  CAST(  Cast(Inventory.Price  as float) AS VARCHAR(25)  )  + '/' + dbo.CnvUOM_Names(PriceUOM)  ELSE '' End as [Unit Cost],
+
+		RTRIM(Case When (Inventory.InvValue <> 0 AND (dbo.CONVERT_TO_UOM(QtyOnHand,WeightUOM,PriceUOM)) <> 0) Then  CAST(  Cast( (Inventory.InvValue / (dbo.CONVERT_TO_UOM(QtyOnHand,WeightUOM,PriceUOM))) as float) AS VARCHAR(25)  )  + '/' + dbo.CnvUOM_Names(Pric
+eUOM)  ELSE '' End)  AS [Actual Cost],
+
+		Inventory.Comments,
+
+		Inventory.IsReserved,
+
+		0,
+
+		WKSDetail.InvoiceDesc,
+
+		Inventory.UserDefined1,
+
+		Inventory.UserDefined2,
+
+		Inventory.UserDefined3,
+
+		Inventory.UserDefined4,
+
+		Inventory.UserDefined5,
+
+		Inventory.UserDefinedFourth1,
+
+		Inventory.UserDefinedFourth2,
+
+		Inventory.UserDefinedFourth3,
+
+		Inventory.UserDefinedFourth4,
+
+		Inventory.UserDefinedFourth5,
+
+		Inventory.UserDefinedFourth6,
+
+		Inventory.UserDefinedFourth7,
+
+		Inventory.UserDefinedFourth8,
+
+		Inventory.UserDefinedFourth9,
+
+		Inventory.UserDefinedFourth10,
+
+		Inventory.WarehouseLocation,
+
+		FORMAT(CAST(dbo.formatweightuom(Inventory.QtyOnHand, inventory.weightuom)as DECIMAL(18,5)),'0.###')
+
+		
+
+	FROM 
+
+		Inventory 
+
+		INNER JOIN Counterparty Supplier ON Inventory.VendorID = Supplier.CpID
+
+		INNER JOIN GRADE ON Inventory.GradeID = Grade.GradeID		
+
+		LEFT JOIN BuySell WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo
+
+		LEFT JOIN Counterparty Customer  WITH(NOLOCK) ON Customer.CpID = Inventory.DesignatedCpID 
+
+		LEFT JOIN CompanyInfo Dept WITH (NOLOCK) ON Dept.COID = Inventory.COID
+
+		LEFT JOIN Referrer WITH(NOLOCK) ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+		LEFT JOIN WarehouseLocation ON Inventory.warehouselocation = WarehouseLocation.ID
+
+		LEFT JOIN WKSDetail WITH(NOLOCK) ON Inventory.BuySellNo = WKSDetail.BuySellNo 	and Inventory.LotNo=WKSDetail.LotNo
+
+		
+
+		
+
+	WHERE
+
+		((Inventory.QtyOnHand <> 0 AND @InclDepleted = 0) OR @InclDepleted = 1)
+
+		AND (@Itemno = '' OR @ItemNo = inventory.LotNo) 		
+
+		AND (@SerialNo = '' OR RTRIM(inventory.SerialNo) like RTRIM(@SerialNo) + '%') 		
+
+		AND (@RcvFromDt = '' OR (Inventory.RcvDt >= @RcvFromDt AND Inventory.RcvDt <= @RcvToDt))
+
+		AND (@InFromDt = '' OR (Inventory.InDate >= @InFromDt AND Inventory.InDate <= @InToDt))
+
+		AND (@WhseID = '' OR @WhseID = inventory.warehousenm)
+
+		AND (@GradeID = '' OR @GradeID = Inventory.GradeID)
+
+		AND (@GradeGroup = '' OR @GradeGroup = GRADE.ProductGroupID)
+
+		AND (@SupplierID = '' OR @SupplierID = Inventory.VendorID)
+
+		AND (@SalesRep = '' OR @SalesRep = buysell.ReferrerNo2)
+
+		AND (@Class = '' OR @Class = Inventory.InvClass)
+
+		AND (@PONO= '' OR @PONO = Inventory.PONumber)		
+
+		AND (@COID = '' OR Inventory.COID = @COID)		
+
+		AND (@InvClassID = '' OR Inventory.InvClass = @InvClassID)
+
+		AND (@ShipFromID = '' or BuySell.ShipFromID = @ShipFromID)	
+
+		AND (@BasisWtFrom = 0 OR Inventory.BasisWt >= @BasisWtFrom) 
+
+		AND (@BasisWtTo = 0 OR Inventory.BasisWt <= @BasisWtTo) 
+
+		AND (@CaliperFrom = 0 OR Inventory.Caliper >= @CaliperFrom) 
+
+		AND (@CaliperTo = 0 OR Inventory.Caliper <= @CaliperTo) 
+
+		AND (@RollWdFrom = 0 OR Inventory.RollWd >= @RollWdFrom) 
+
+		AND (@RollWdTo = 0 OR Inventory.RollWd <= @RollWdTo) 
+
+		AND (@DiameterFrom = 0 OR Inventory.Diameter >= @DiameterFrom) 
+
+		AND (@DiameterTo = 0 OR Inventory.Diameter <= @DiameterTo) 
+
+		and (@Color = '' or inventory.Color = @Color)
+
+		and (@TypeGrade = '' or inventory.plasticType = @TypeGrade)
+
+		and (@MeltFlow= '' or inventory.PlasticMelt = @MeltFlow)
+
+		and (@Form = '' or Inventory.plasticForm = @Form)
+
+		and (@WhLocation = '' or Inventory.WarehouseLocation = @WhLocation)
+
+		and (IsNull(WarehouseNm,'') <> '(CONTAINER)')
+
+		and (@ReserveCust = '' or Inventory.ReserveCustID = @ReserveCust)
+
+	    and (@ReserveOrder = '' or Inventory.ReservePONumber = @ReserveOrder)
+
+		and (@ReserveSalesRep = '' or Inventory.ReserveSalesRep = @ReserveSalesRep)
+
+		and (@Reserve = 'I' or (isnull(Inventory.IsReserved,0) = 0 and @Reserve = 'E') or (isnull(Inventory.IsReserved,0) = 1 and @Reserve = 'S'))
+
+		and (@Condition = '' or Inventory.Condition = @Condition)
+
+
+
+		and (@DetailUDF1 = '' or isnull(Inventory.UserDefined1,'') = @DetailUDF1)
+
+		and (@DetailUDF2 = '' or Inventory.UserDefined2 = @DetailUDF2)
+
+		and (@DetailUDF3 = '' or Inventory.UserDefined3 = @DetailUDF3)
+
+		and (@DetailUDF4 = '' or Inventory.UserDefined4 = @DetailUDF4)
+
+		and (@DetailUDF5 = '' or Inventory.UserDefined5 = @DetailUDF5)
+
+	    
+
+		and (@DetailUDFSecond1 = '' or Inventory.UserDefinedSecond1 = @DetailUDFSecond1)
+
+		and (@DetailUDFSecond2 = '' or Inventory.UserDefinedSecond2 = @DetailUDFSecond2)  
+
+		and (@DetailUDFSecond3 = '' or Inventory.UserDefinedSecond3 = @DetailUDFSecond3)  
+
+		and (@DetailUDFSecond4 = '' or Inventory.UserDefinedSecond4 = @DetailUDFSecond4)  
+
+		and (@DetailUDFSecond5 = '' or Inventory.UserDefinedSecond5 = @DetailUDFSecond5)  
+
+
+
+		and (@DetailUDFThird1 = '' or Inventory.UserDefinedThird1 = @DetailUDFThird1)
+
+		and (@DetailUDFThird2 = '' or Inventory.UserDefinedThird2 = @DetailUDFThird2)
+
+		and (@DetailUDFThird3 = '' or Inventory.UserDefinedThird3 = @DetailUDFThird3)
+
+		and (@DetailUDFThird4 = '' or Inventory.UserDefinedThird4 = @DetailUDFThird4)
+
+		and (@DetailUDFThird5 = '' or Inventory.UserDefinedThird5 = @DetailUDFThird5)
+
+
+
+		and (@DetailUDFFourth1 = '' or Inventory.UserDefinedfourth1 = @DetailUDFFourth1)
+
+		and (@DetailUDFFourth2 = '' or Inventory.UserDefinedfourth2 = @DetailUDFFourth2)
+
+		and (@DetailUDFFourth3 = '' or Inventory.UserDefinedfourth3 = @DetailUDFFourth3)
+
+		and (@DetailUDFFourth4 = '' or Inventory.UserDefinedfourth4 = @DetailUDFFourth4)
+
+		and (@DetailUDFFourth5 = '' or Inventory.UserDefinedfourth5 = @DetailUDFFourth5)
+
+		and (@DetailUDFFourth6 = '' or Inventory.UserDefinedfourth6 = @DetailUDFFourth6)
+
+		and (@DetailUDFFourth7 = '' or Inventory.UserDefinedfourth7 = @DetailUDFFourth7)
+
+		and (@DetailUDFFourth8 = '' or Inventory.UserDefinedfourth8 = @DetailUDFFourth8)
+
+		and (@DetailUDFFourth9 = '' or Inventory.UserDefinedfourth9 = @DetailUDFFourth9)
+
+		and (@DetailUDFFourth10 = ''or Inventory.UserDefinedfourth10 = @DetailUDFFourth10)
+
+
+
+
+
+
+
+
+
+		
+
+	-- AVG BULK INVENTORY
+
+	IF @ExcludeBulkInv = 0 BEGIN
+
+		DECLARE @ScaleWeightUOM CHAR(3)
+
+		DECLARE @HomeCurrency CHAR(3)
+
+		SELECT @HomeCurrency = CurrCode from SystemInfo
+
+		SELECT @ScaleWeightUOM  = ScaleWtUOM from systeminfo WHERE ID = '00'
+
+
+
+
+
+
+
+		-------------------------------------------------
+
+		-- GET INVENTORY BALANCE TABLE OR BULK-P GRADES	
+
+		CREATE TABLE #InventoryBalance(		
+
+			BalanceID INT,
+
+			WarehouseNm CHAR(45),
+
+			GradeID CHAR(15),
+
+			InvClass CHAR(10),
+
+			Location CHAR(25),
+
+			Supplier CHAr(12),
+
+			Quantity DECIMAL(24,5),
+
+			Value MONEY,
+
+			UnitCost DECIMAL(24,5)
+
+		)
+
+		INSERT #InventoryBalance
+
+			EXEC cw_InventoryBalance
+
+		-------------------------------------------------
+
+
+
+
+
+			INSERT #InventoryRpt(
+
+				[Item No],[Product Name],[Qty On Hand],[-Hidden-QtyOnHand],[-Hidden-Weight],[{C}Inv Value],[Currency],[{C}Extension],
+
+				[Supplier],[Warehouse Name],[Inventory Class],[Wh Loc],[Product Category],[Product Group],[-Hidden-WeightInLbs],
+
+				[GradeID],[Unit Cost],[Actual Cost],[Dept Name],IsComingInvBalnce
+
+				)
+
+
+
+			SELECT  
+
+				'',
+
+				Grade.[Description],
+
+				dbo.FormatQty((#InventoryBalance.Quantity), @ScaleWeightUOM) + ' ' + dbo.CnvUOM_Names(@ScaleWeightUOM) [Qty On Hand],
+
+				#InventoryBalance.Quantity [-Hidden-QtyOnHand],		
+
+				#InventoryBalance.Quantity  [-Hidden-Weight],
+
+				[Value],@HomeCurrency,[Value],
+
+				Counterparty.CompanyNm,
+
+				WarehouseNm,
+
+				InvClass,
+
+				Location,
+
+				ProductCategoryID,
+
+				ProductGroupID,
+
+				Quantity,
+
+				#InventoryBalance.GradeID,
+
+				Case When UnitCost <> 0 Then  CAST(  Cast(UnitCost  as float) AS VARCHAR(25)  )  + '/' + dbo.CnvUOM_Names(@ScaleWeightUOM)  ELSE '' End as [Unit Cost],
+
+				'',
+
+				CompanyInfo.CompanyDesc ,1
+
+ 
+
+			FROM #InventoryBalance 
+
+				INNER JOIN Grade ON #InventoryBalance.GradeID = Grade.GradeID
+
+				INNER JOIN Address Warehouse ON Warehouse.[Type] = #InventoryBalance.WarehouseNm AND Warehouse.CPID = '(INV)'
+
+				LEFT JOIN CompanyInfo ON Warehouse.WarehouseCOID = CompanyInfo.COID
+
+				LEFT JOIN Counterparty ON Counterparty.CPID = #InventoryBalance.Supplier
+
+			WHERE 
+
+				(@WhseID = '' OR @WhseID = #InventoryBalance.warehousenm)
+
+				AND (@GradeID = '' OR @GradeID = #InventoryBalance.GradeID)
+
+				AND (@GradeGroup = '' OR @GradeGroup = GRADE.ProductGroupID)
+
+				AND (@SupplierID = '' OR @SupplierID = #InventoryBalance.Supplier)
+
+				AND (@SerialNo = '') 	
+
+				AND (@Class = '' OR @Class = #InventoryBalance.InvClass)
+
+				AND (@COID = '' OR CompanyInfo.COID = @COID)
+
+				AND (@WhLocation = '' OR #InventoryBalance.Location = @WhLocation)
+
+				AND (@Reserve <> 'S')
+
+				AND (@ReserveCust = '')
+
+				AND (@ReserveOrder = '')
+
+				AND (@ReserveSalesRep = '')
+
+				AND (@CaliperFrom = 0) 
+
+				AND (@CaliperTo = 0) 
+
+				AND (@BasisWtFrom = 0)
+
+				AND (@BasisWtTo = 0)
+
+				AND (@RollWdFrom = 0)
+
+				AND (@RollWdTo = 0)
+
+				AND (@DiameterFrom = 0)
+
+				AND (@DiameterTo = 0)
+
+				and (@Color = '')
+
+				and (@TypeGrade = '')
+
+				and (@MeltFlow= '')
+
+				and (@Form = '')
+
+				and (@DetailUDF1 = '')
+
+				and (@DetailUDF2 = '' )
+
+				and (@DetailUDF3 = '' )
+
+				and (@DetailUDF4 = '') 
+
+				and (@DetailUDF5 = '' )
+
+	    
+
+				and (@DetailUDFSecond1 = '' )
+
+				and (@DetailUDFSecond2 = '' )
+
+				and (@DetailUDFSecond3 = '' )
+
+				and (@DetailUDFSecond4 = '' )
+
+				and (@DetailUDFSecond5 = '' ) 
+
+
+
+				and (@DetailUDFThird1 = '' )
+
+				and (@DetailUDFThird2 = '')
+
+				and (@DetailUDFThird3 = '' )
+
+				and (@DetailUDFThird4 = '' )
+
+				and (@DetailUDFThird5 = '')
+
+
+
+				and (@DetailUDFFourth1 = '' )
+
+				and (@DetailUDFFourth2 = '' )
+
+				and (@DetailUDFFourth3 = '' )
+
+				and (@DetailUDFFourth4 = '' )
+
+				and (@DetailUDFFourth5 = '' )
+
+				and (@DetailUDFFourth6 = '' )
+
+				and (@DetailUDFFourth7 = '' )
+
+				and (@DetailUDFFourth8 = '' )
+
+				and (@DetailUDFFourth9 = '' )
+
+				and (@DetailUDFFourth10 = '' )
+
+		END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	 
+
+
+
+	--FINAL REPORT
+
+	SELECT 
+
+		Inventory.ReservePONumber as 'Reserve Order',
+
+		referrerReserve.name as 'Reserve Sales Rep',
+
+		Reserve.CompanyNm 'Reserve Customer',
+
+		' ' as ' ',
+
+		[Item No],
+
+		[Product Name], 
+
+		[Serial No],		
+
+		[Qty On Hand],
+
+		[-Hidden-QtyOnHand],  --
+
+		[Original Qty],
+
+		[Original Tare Qty],
+
+		[Original Gross Qty],
+
+		[-Hidden-Weight],		
+
+		#InventoryRpt.Units,
+
+		[Packaging Type],
+
+		#InventoryRpt.[Condition],
+
+		[{C}Inv Value],
+
+		[Currency],
+
+		[{C}Extension],
+
+		[Received],
+
+		[Posted],
+
+		[Rcv-No],
+
+		[Supplier],
+
+		[Warehouse Name],
+
+		[Warhouse Location],
+
+		[Inventory Class],
+
+		[Dept Name],
+
+		[Product Group],
+
+		[Product Category],
+
+		[PO Number],
+
+		[Equipment No],
+
+		[Buy Rep],	
+
+		[Aging],
+
+		[Tare Weight], 
+
+		[Gross Weight],	
+
+		[-Hidden-WeightInLbs],
+
+		#InventoryRpt.[GradeID],
+
+		[Specifications],
+
+		#InventoryRpt.[CALIPER],
+
+		[BW],
+
+		[BW-UOM],
+
+		[RW],
+
+		[RW-UOM],
+
+		[CORE],
+
+		[CORE-UOM],
+
+		[DIA],
+
+		[DIA-UOM],
+
+		[ROLL-LENGTH],
+
+		[Type-Grade],
+
+		[Form],
+
+		[MFI],
+
+		#InventoryRpt.[COLOR],
+
+		[Wh Loc],
+
+		[Unit Cost],
+
+		[Actual Cost],
+
+		#InventoryRpt.[Comments],
+
+		#InventoryRpt.IsReserved,
+
+		IsComingInvBalnce,
+
+		InvoiceDesc as [Alternate Name],
+
+		#InventoryRpt.UserDefined1,
+
+		#InventoryRpt.UserDefined2,
+
+		#InventoryRpt.UserDefined3,
+
+		#InventoryRpt.UserDefined4,
+
+		#InventoryRpt.UserDefined5,
+
+		
+
+		#InventoryRpt.UserDefinedFourth1,
+
+		#InventoryRpt.UserDefinedFourth2,
+
+		#InventoryRpt.UserDefinedFourth3,
+
+		#InventoryRpt.UserDefinedFourth4,
+
+		#InventoryRpt.UserDefinedFourth5,
+
+		#InventoryRpt.UserDefinedFourth6,
+
+		#InventoryRpt.UserDefinedFourth7,
+
+		#InventoryRpt.UserDefinedFourth8,
+
+		#InventoryRpt.UserDefinedFourth9,
+
+		#InventoryRpt.UserDefinedFourth10,
+
+
+
+		#InventoryRpt.Location,
+
+		isnull([Quantity On Hand],'') as  [Quantity On Hand]
+
+	
+
+	 FROM #InventoryRpt 
+
+	left join Inventory on Inventory.LotNo = #InventoryRpt.[Item No]
+
+	left join referrer referrerReserve on referrerReserve.ReferrerNo = Inventory.ReserveSalesRep
+
+     left JOIN Counterparty Reserve ON Inventory.ReserveCustID = Reserve.CpID
+
+	ORDER BY IsComingInvBalnce,[Product Name],[Item No]
+
+
+
+	--REPORT TOTALS
+
+	DECLARE @TotalWeightUom CHAR(1)
+
+	IF @ScaleWeightUOM = 'L' SET @TotalWeightUom = 'S' ELSE SET @TotalWeightUom = 'M'
+
+
+
+	SELECT	SUM([{C}Extension]) TotalValue, 
+
+			SUM(dbo.COnvert_to_UOM([-Hidden-WeightInLbs],'L',@UOM)  ) TotalWeight,  			
+
+			dbo.CnvUOM_Names(@UOM) TotalUOM,  
+
+			SUM([-Hidden-WeightInLbs] )  TotalWeightLBS
+
+		FROM #InventoryRpt 
+
+		
+
+
+
+
+
+
+
+
+
+--GO
+
+--exec cw_GetInventoryInquiry @WhseID=N'',@Class=N'',@RcvFromDt=N'',@RcvToDt=N'',@InFromDt=N'',@InToDt=N'',@GradeID=N'',@GradeGroup=N'',@SupplierID=N'',@SalesRep=N'',@ShipFromID=N'',@COID=N'',@InvClassID=N'',@BasisWtUOM=N'',@BasisWtFrom=0,@BasisWtTo=0,@C
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--aliperFrom=0,@CaliperTo=0,@RollWdUOM=N'',@RollWdFrom=0,@RollWdTo=0,@DiameterUOM=N'',@DiameterFrom=0,@DiameterTo=0,@InclDepleted=N'0',@TypeGrade=N'',@MeltFlow=N'',@Form=N'',@Color=N'',@WhLocation=N''
+
+
+
+
+
+
+
+
+

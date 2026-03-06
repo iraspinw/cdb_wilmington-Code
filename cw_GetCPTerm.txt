@@ -1,0 +1,42 @@
+CREATE   PROCEDURE [dbo].[cw_GetCPTerm] @CPID char(15), @Type char(65) AS 
+
+--01/04/06 DSH: CREATED FOR TAX CODE CHANGE TO ADDRESS
+
+--01/05/06 DSH: Query fix.
+
+--06/26/2009 RS: parameter @Type char(20) changed to @Type char(45); WITH (NOLOCK) added
+
+
+
+SET NOCOUNT ON
+
+    
+
+    
+
+    IF @Type = '' 
+
+		SELECT @Type = [TYPE] FROM Address WITH (NOLOCK) WHERE CPID = @CPID AND InvoiceAddr = 'Y'
+
+    
+
+    SELECT 
+
+		Terms, 
+
+		Address.SalesTaxCodeID,
+
+		ShippingLineRemarks,
+
+		CurrCode
+
+    FROM Counterparty WITH (NOLOCK)
+
+    INNER JOIN ADDRESS WITH (NOLOCK) ON Counterparty.CpID = ADDRESS.CPID AND ADDRESS.TYPE = @Type
+
+    WHERE Counterparty.CPID = @CPID
+
+
+
+
+

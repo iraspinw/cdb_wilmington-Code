@@ -1,0 +1,68 @@
+CREATE   PROCEDURE [dbo].[cw_GetBookingOpenOrders] 
+
+	
+
+	@CpID as char(12) = ''
+
+	--, 
+
+	--@GradeID as char(15), 
+
+	--@COID as char(2) 
+
+
+
+AS
+
+
+
+--4/10/2015 MEC: 
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+SELECT DISTINCT 
+
+		PODetail.PONumber As [SO No], 
+
+        convert(char(10),PO.POdate,101) As [Order Date], 
+
+        Grade.[Description] As [Product(s)],
+
+		LC.LCNo As [LC Number],
+
+		dbo.formatweightUOM([Weight], [WeightUOM]) As [-Hidden-Weight],
+
+		[WeightUOM] As [-Hidden-WeightUOM]
+
+        --,Comment
+
+FROM ((PODetail WITH(NOLOCK) inner JOIN PO WITH(NOLOCK) ON PODetail.PoNumber = PO.PONumber)
+
+	INNER JOIN Grade WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID)
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON Counterparty.CpID = PO.CpID
+
+	LEFT JOIN LC WITH(NOLOCK) ON LC.ID = PO.IssuingLC_ID
+
+WHERE 
+
+    [Status] = 'OPEN' 
+
+    AND [Source]='SO'
+
+    AND (@CpID = PO.CpID) 
+
+	and (isnull(po.Expirationdt,'')='' OR po.ExpirationDt >= CONVERT(VARCHAR(10), getdate(), 101))
+
+ --   AND (@GradeID = '' OR @GradeID = Grade.GradeID)
+
+	--AND (@COID = '' OR @COID = PO.COID)
+
+ORDER BY 
+
+	PODetail.PONumber
+

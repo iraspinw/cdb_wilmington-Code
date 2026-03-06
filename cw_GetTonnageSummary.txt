@@ -1,0 +1,697 @@
+CREATE   PROCEDURE [dbo].[cw_GetTonnageSummary] 
+
+@ReportType CHAR(15), @GroupBy VARCHAR(20), @StartDt Datetime, @EndDt Datetime, @DEPTID char(2), @TradeType CHAR(25), @WarehouseNm char(45), @ReportUOM CHAR(1), @ProductCategoryID char(30) = ''
+
+AS 
+
+
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--06/02/2017 DSH Created q_GetTonnageReceivedInquiry 
+
+--@ReportType = 'SALES' OR 'PURCHASES'
+
+--@GroupBy = 'GRADE' OR 'GRADE-PACKAGING'
+
+
+
+
+
+	--CREATE TABLE #ReceivingSubTotal(
+
+	--	ScaleTicketNo INT, 
+
+	--	NetWt DECIMAl(22,5)
+
+	--)
+
+	
+
+
+
+	CREATE TABLE #wrkReport(
+
+		GradeNm CHAR(100),
+
+		UnitTypeNm VARCHAR(30),
+
+		Quantity DECIMAL(22,5), 		
+
+		Cost MONEY, 
+
+		BuySellNo CHAR(12)
+
+	)
+
+
+
+	CREATE TABLE #REPORT (
+
+		GradeNm CHAR(100),
+
+		Quantity DECIMAL(22,5),
+
+		Cost MONEY,
+
+		AvgCost MONEY,
+
+		ShipmentCnt INT
+
+		)
+
+			
+
+		
+
+
+
+
+
+	--INBOUND
+
+	--=======
+
+	IF @ReportType = 'PURCHASES' BEGIN
+
+
+
+		INSERT #wrkReport
+
+		SELECT 
+
+			Grade.[Description], 
+
+			ISNULL(dbo.CnvUnitName(WksDetail.UnitType),''),
+
+			dbo.convert_to_uom(PWeight,PWeightUOM,@ReportUOM), --PWeight, PWeightUOM,
+
+			WksDetail.PAmount,
+
+			BuySell.BuySellNo			
+
+		FROM WksDetail 
+
+		INNER JOIN BuySell ON WksDetail.BuySellNo = BuySell.BuySellNo
+
+		INNER JOIN GRADE ON WksDetail.GradeID = Grade.GradeID
+
+		WHERE (@StartDt = '' OR ShippingDt >= @StartDt)
+
+		AND (@EndDt = '' OR ShippingDt <= @EndDt) 
+
+		AND (BuySell.[Status] <> 'X' AND BuySell.Status <> 'W')
+
+		AND PWeight <> 0 
+
+		AND (@DEPTID = '' OR BuySell.COID = @DEPTID)
+
+		AND (@TradeType = '' OR BuySell.TradeType= @TradeType)
+
+		AND (@WarehouseNm = '' OR BUYSELL.ShipToID = @WarehouseNm)
+
+		AND (@ProductCategoryID = '' OR Grade.ProductCategoryID = @ProductCategoryID)
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND BuySell.VendorID <> '(INV)'
+
+
+
+	END
+
+
+
+
+
+	--OUTBOUND
+
+	--========
+
+	IF @ReportType = 'SALES' BEGIN
+
+
+
+		INSERT #wrkReport
+
+		SELECT 
+
+			Grade.[Description], 
+
+			ISNULL(dbo.CnvUnitName(WksDetail.UnitType),''),
+
+			dbo.convert_to_uom(SWeight,SWeightUOM,@ReportUOM), --PWeight, PWeightUOM,
+
+			WksDetail.SAmount,
+
+			BuySell.BuySellNo			
+
+		FROM WksDetail 
+
+		INNER JOIN BuySell ON WksDetail.BuySellNo = BuySell.BuySellNo
+
+		INNER JOIN GRADE ON WksDetail.GradeID = Grade.GradeID
+
+		WHERE (@StartDt = '' OR ShippingDt >= @StartDt)
+
+		AND (@EndDt = '' OR ShippingDt <= @EndDt) 
+
+		AND (BuySell.[Status] <> 'X' AND BuySell.Status <> 'W')
+
+		AND SWeight <> 0 
+
+		AND (@DEPTID = '' OR BuySell.COID = @DEPTID)
+
+		AND (@TradeType = '' OR BuySell.TradeType= @TradeType)
+
+		AND (@WarehouseNm = '' OR BUYSELL.ShipToID = @WarehouseNm)
+
+		AND (@ProductCategoryID = '' OR Grade.ProductCategoryID = @ProductCategoryID)
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND BuySell.CustID <> '(INV)'
+
+
+
+	END
+
+
+
+
+
+	IF @GroupBy = 'GRADE+PKG'
+
+		UPDATE #wrkReport SET GradeNm = SUBSTRING(RTRIM(RTRIM(GradeNm) + ' ' + RTRIM(UnitTypeNm) ),1,100)
+
+
+
+	INSERT #REPORT (GradeNm,Quantity,Cost,AvgCost,ShipmentCnt)
+
+	SELECT GradeNm, SUM(Quantity), SUM(Cost),0,0 FROM #wrkReport GROUP BY GradeNm ORDER BY GradeNm
+
+		
+
+
+
+	--Shipments
+
+	Select GradeNm, BuySellNo, Count(*) Cnt INTO #wrkShipments FROM #wrkReport GROUP BY GradeNm, BuySellNo
+
+	select GradeNm, Count(*) Shipments INTO #Shipments FROM #wrkShipments  Group by GradeNm
+
+	UPDATE #REPORT SET ShipmentCnt = Shipments FROM #Shipments S INNER JOIN #REPORT R ON S.GradeNm = R.GradeNm
+
+
+
+		
+
+	IF @ReportUOM = 'L' 
+
+		UPDATE #REPORT  SET AvgCost = Cost/(Quantity/2000) WHERE Quantity <> 0
+
+	IF @ReportUOM = 'K' 
+
+		UPDATE #REPORT  SET AvgCost = Cost/(Quantity/1000) WHERE Quantity <> 0
+
+	IF @ReportUOM <> 'L' AND @ReportUOM <> 'K'
+
+		UPDATE #REPORT  SET AvgCost = Cost/Quantity WHERE Quantity <> 0
+
+
+
+
+
+
+
+	-- FINAL REPORT
+
+	-- ============
+
+	SELECT GradeNm [Product Grade],  Convert(decimal(18,3),Quantity) As [Quantity], Cost Amount ,AvgCost [Average Cost],ShipmentCnt [Load Count]from #REPORT ORDER BY GradeNm
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	---- UNGRADED PLANT TICKETS
+
+	--IF @Type = 1 BEGIN  --PLANT
+
+	--	INSERT #ReceivingSubTotal 
+	--	Select 
+
+	--		ScaleTicketNo As ScaleTicketNo, 
+
+	--		dbo.CONVERT_TO_UOM(NetWt, @sysUOM ,@UOM) As NetWt		
+
+	--	From Receiving
+
+	--	INNER JOIN COUNTERPARTY ON Receiving.CpID = COUNTERPARTY.CPID
+
+	--	Where (SingleStop_BuysellNo = '' OR SingleStop_BuysellNo is NULL)
+
+	--	AND Status = 'Completed'
+
+	--	AND (@COID = '' OR Receiving.COID = @COID)
+
+	--	AND (@TradeType = '' OR Receiving.TradeType= @COID)
+
+	--	AND (@BySupID = '' OR Receiving.CpID = @BySupID)  
+
+	--	AND (@WhseCPID = '' OR Receiving.WarehouseNm = @WhseCPID)
+
+	--	AND (ReceiveDtTm >= @StartDt And ReceiveDtTm <= @EndDt) 
+
+	--	AND ScaleTicketType <> 'M'
+
+	--	AND (@GroupNm = '' OR COUNTERPARTY.GroupNm = @GroupNm)
+
+	
+
+	--	UNION ALL
+
+	--	Select 
+
+	--		ScaleTicketNo As ScaleTicketNo,  
+
+	--		dbo.CONVERT_TO_UOM(NetWt, @sysUOM ,@UOM) As NetWt
+
+	--	From Receiving
+
+	--	INNER JOIN COUNTERPARTY ON Receiving.CpID = COUNTERPARTY.CPID
+
+	--	Where 
+
+	--		(SingleStop_BuysellNo <> '' AND SingleStop_BuysellNo is NOT NULL)
+
+	--		AND (Not Exists(Select * from WksDetail Where WKSDetail.BuySellNo = Receiving.SingleStop_BuysellNo))
+
+	--		AND Status = 'Completed'
+
+	--		AND (@COID = '' OR Receiving.COID = @COID)
+
+	--		AND (@TradeType = '' OR Receiving.TradeType= @COID)
+
+	--		AND (@BySupID = '' OR Receiving.CpID = @BySupID)  
+
+	--		AND (@WhseCPID = '' OR Receiving.WarehouseNm = @WhseCPID)
+
+	--		AND (ReceiveDtTm >= @StartDt And ReceiveDtTm <= @EndDt) 
+
+	--		AND ScaleTicketType <> 'M'
+
+	--		AND (@GroupNm = '' OR COUNTERPARTY.GroupNm = @GroupNm)
+
+	--END
+
+
+
+
+
+
+
+
+
+	--IF @GroupBy = 'GRADE'
+
+	--BEGIN
+
+	
+
+	--	INSERT #QTons
+
+	--	SELECT 
+
+	--		GradeID=Grade.[Description], 
+
+	--		ISNULL(dbo.CnvUnitName(WksDetail.UnitType),'') as UnitType,
+
+	--		Wt=Sum(dbo.calclbs(PWeight,PWeightUOM)), 
+
+	--		TotalCost=Sum(WksDetail.PAmount), 
+
+	--		Shipments=count(DetailID), 
+
+	--		BuySell.BuySellNo AS BuySellNo		
+
+	--	FROM (((WksDetail with(nolock) inner join BuySell WITH (NOLOCK) on WksDetail.BuySellNo = BuySell.BuySellNo)
+
+	--	INNER JOIN GRADE WITH (NOLOCK) ON WksDetail.GradeID = Grade.GradeID)
+
+	--	INNER JOIN COUNTERPARTY ON BuySell.vendorid = COUNTERPARTY.CPID
+
+	--	LEFT JOIN ADDRESS WITH (NOLOCK) ON BUYSELL.CUSTID = ADDRESS.CPID AND BUYSELL.SHIPTOID = ADDRESS.TYPE)
+
+	--	WHERE (ShippingDt >= @StartDt And ShippingDt <= @EndDt) 
+
+	--	AND BuySell.[Status] <> 'X' 
+
+	--	AND PWeight <> 0 		 
+
+	--	AND (@DEPTID = '' OR BuySell.COID = @DEPTID)
+
+	--	AND (@TradeType = '' OR BuySell.TradeType= @TradeType)
+
+	--	AND (@WhseCPID = '' OR BUYSELL.ShipToID = @WhseCPID)
+
+	--	AND ISNULL(BuySell.IsAgency,0) <> 1
+
+	--	AND (
+
+	--			(@Type = 0 AND BuySell.CustID = '(INV)') OR 
+
+	--			(@Type = 1 AND BuySell.CustID = '(PLANT)') -- ? '{C}'
+
+	--		)
+
+	--	AND (@GroupNm = '' OR COUNTERPARTY.GroupNm = @GroupNm)
+
+	--	Group BY Grade.[Description],WksDetail.UnitType, BuySell.BuySellNo
+
+		
+
+	--	UPDATE #QTONS SET WT = ROUND(dbo.convertfromlbs(WT,@UOM),3)
+
+	--	DELETE FROM #QTONS WHERE WT = 0 OR WT IS NULL
+
+
+
+	--	INSERT #REPORT
+
+	--	SELECT	upper(GradeID) as Grade, 
+
+	--			Sum(Wt) as WeightSt, 
+
+	--			sum(TotalCost) as TotalCost,  
+
+	--			0 as CostSt, 
+
+	--			count(BuySellNo) as Shipments		
+
+	--	FROM #QTons Group BY GradeID, BuySellNo
+
+
+
+	--	IF @Type = 1 AND (Select Count(ScaleTicketNo) From #ReceivingSubTotal) > 0
+
+	--	BEGIN
+
+	--		Insert #REPORT
+
+	--		Select
+
+	--		' [UNGRADED LOADS]',
+
+	--		Sum(NetWt),
+
+	--		0,
+
+	--		0,
+
+	--		Count(ScaleTicketNo)
+
+	--		From #ReceivingSubTotal
+
+	--	END
+
+		
+
+	--	SELECT 
+
+	--		Grade, 
+
+	--		Sum(WeightSt), 
+
+	--		Sum(TotalCost), 
+
+	--		CASE WHEN Sum(WeightSt) > 0 THEN SUM(TotalCost)/Sum(WeightSt) ELSE 0 END as CostSt, 
+
+	--		sum(Shipments), 
+
+	--		@WhseCPID as WarehouseID 
+
+	--	FROM #REPORT Group BY Grade ORDER BY Grade
+
+
+
+
+
+	--END
+
+
+
+	--IF @GroupBy = 'GRADE/UNITS' OR @GroupBy = 'GRADE/UNIT'
+
+	--BEGIN
+
+	
+
+	--	INSERT #QTons
+
+	--	SELECT 
+
+	--		GradeID=Grade.[Description] + ' ' + ISNULL(dbo.CnvUnitName(WksDetail.UnitType),''),
+
+	--		ISNULL(dbo.CnvUnitName(WksDetail.UnitType),'') as UnitType,
+
+	--		Wt=Sum(dbo.calclbs(PWeight,PWeightUOM)), 
+
+	--		TotalCost=Sum(WksDetail.PAmount), 
+
+	--		Shipments=count(DetailID),
+
+	--		BuySell.BuySellNo AS BuySellNo		
+
+	--	FROM (((WksDetail with(nolock) inner join BuySell WITH (NOLOCK) on WksDetail.BuySellNo = BuySell.BuySellNo)
+
+	--	INNER JOIN GRADE WITH (NOLOCK) ON WksDetail.GradeID = Grade.GradeID)
+
+	--	INNER JOIN COUNTERPARTY ON BuySell.vendorid = COUNTERPARTY.CPID
+
+	--	LEFT JOIN ADDRESS WITH (NOLOCK) ON BUYSELL.CUSTID = ADDRESS.CPID AND BUYSELL.SHIPTOID = ADDRESS.TYPE)
+
+	--	WHERE (ShippingDt >= @StartDt And ShippingDt <= @EndDt) 
+
+	--	AND ((@Invoiced = 0 AND BuySell.[Status] <> 'X') OR (@Invoiced = 1 AND BuySell.Status = 'I' ))
+
+	--	AND PWeight <> 0 
+
+	--	AND (@BySupID = '' OR BuySell.vendorid = @BySupID)  
+
+	--	AND (@COID = '' OR BuySell.COID = @COID)
+
+	--	AND (@TradeType = '' OR BuySell.TradeType= @TradeType)
+
+	--	AND (@WhseCPID = '' OR BUYSELL.ShipToID = @WhseCPID) 
+
+	--	AND ISNULL(BuySell.IsAgency,0) <> 1
+
+	--	AND (
+
+	--			(@Type = 0 AND BuySell.CustID = '(INV)') OR 
+
+	--			(@Type = 1 AND BuySell.CustID = '(PLANT)') -- ? '{C}'
+
+	--		)
+
+	--	AND (@GroupNm = '' OR COUNTERPARTY.GroupNm = @GroupNm)
+
+	--	Group BY Grade.[Description],WksDetail.UnitType, BuySell.BuySellNo
+
+		
+
+	--	UPDATE #QTONS SET WT = ROUND(dbo.convertfromlbs(WT,@UOM),3)
+
+	--	DELETE FROM #QTONS WHERE WT = 0 OR WT IS NULL
+
+
+
+	--	INSERT #REPORT
+
+	--		SELECT upper(GradeID) as Grade, Sum(Wt) as WeightSt, sum(TotalCost) as TotalCost,  
+
+	--			0 as CostSt, count(BuySellNo) as Shipments		
+
+	--		FROM #QTons Group BY GradeID, BuySellNo
+
+		
+
+		
+
+	--	IF @Type = 1 AND (Select Count(ScaleTicketNo) From #ReceivingSubTotal) > 0
+
+	--	BEGIN
+
+	--		Insert  #REPORT
+
+	--		Select
+
+	--		' [UNGRADED LOADS]',
+
+	--		Sum(NetWt),
+
+	--		0,
+
+	--		0,
+
+	--		Count(ScaleTicketNo)
+
+	--		From #ReceivingSubTotal
+
+	--	END
+
+		
+
+	--	SELECT Grade, Sum(WeightSt), Sum(TotalCost), CASE WHEN Sum(WeightSt) > 0 THEN SUM(TotalCost)/Sum(WeightSt) ELSE 0 END as CostSt, 
+
+	--	sum(Shipments), @WhseCPID as WarehouseID 
+
+	--	FROM #REPORT Group BY Grade ORDER BY Grade
+
+
+
+	--END
+
+	
+
+
+
+
+
+--	IF @GroupBy = 'CATEGORY'
+
+--	BEGIN
+
+--		INSERT #QTons
+
+--		SELECT 
+
+--			COALESCE(ProductCategoryID,''),   
+
+--			ISNULL(dbo.CnvUnitName(WksDetail.UnitType),'') as UnitType,
+
+--			Wt=Sum(dbo.calclbs(PWeight,PWeightUOM)), 
+
+--			TotalCost=Sum(WksDetail.PAmount), 
+
+--			Shipments=count(DetailID), 
+
+--			BuySell.BuySellNo AS BuySellNo		
+
+--		FROM (((WksDetail with(nolock) inner join BuySell WITH (NOLOCK) on WksDetail.BuySellNo = BuySell.BuySellNo)
+
+--		INNER JOIN GRADE WITH (NOLOCK) ON WksDetail.GradeID = Grade.GradeID)
+
+--		INNER JOIN COUNTERPARTY ON BuySell.vendorid = COUNTERPARTY.CPID
+
+--		LEFT JOIN ADDRESS WITH (NOLOCK) ON BUYSELL.CUSTID = ADDRESS.CPID AND BUYSELL.SHIPTOID = ADDRESS.TYPE)
+
+--		WHERE (ShippingDt >= @StartDt And ShippingDt <= @EndDt) 
+
+--		AND ((@Invoiced = 0 AND BuySell.[Status] <> 'X') OR (@Invoiced = 1 AND BuySell.Status = 'I' ))
+
+--		AND PWeight <> 0 
+
+--		AND (@BySupID = '' OR BuySell.vendorid = @BySupID)  
+
+--		AND (@COID = '' OR BuySell.COID = @COID)
+
+--		AND (@TradeType = '' OR BuySell.TradeType= @TradeType)
+
+--		AND (@WhseCPID = '' OR BUYSELL.ShipToID = @WhseCPID)
+
+--		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+--		AND (
+
+--				(@Type = 0 AND BuySell.CustID = '(INV)') OR 
+
+--				(@Type = 1 AND BuySell.CustID = '(PLANT)') -- ? '{C}'
+
+--			)
+
+--		AND (@GroupNm = '' OR COUNTERPARTY.GroupNm = @GroupNm)
+
+--		Group BY COALESCE(ProductCategoryID,''), WksDetail.UnitType, BuySell.BuySellNo
+
+		
+
+--		UPDATE #QTONS SET GradeID = '(UNASSIGNED)' where GradeID = ''
+
+		
+
+--		UPDATE #QTONS SET WT = ROUND(dbo.convertfromlbs(WT,@UOM),3)
+
+--		DELETE FROM #QTONS WHERE WT = 0 OR WT IS NULL
+
+
+
+--		INSERT #REPORT
+
+--		SELECT upper(GradeID) as Grade, Sum(Wt) as WeightSt, sum(TotalCost) as TotalCost,  
+
+--			0 as CostSt, count(BuySellNo) as Shipments		
+
+--			FROM #QTons Group BY GradeID, BuySellNo
+
+
+
+--		IF @Type = 1 AND (Select Count(ScaleTicketNo) From #ReceivingSubTotal) > 0
+
+--		BEGIN
+
+--			Insert #REPORT
+
+--			Select
+
+--			' [UNGRADED LOADS]',
+
+--			Sum(NetWt),
+
+--			0,
+
+--			0,
+
+--			Count(ScaleTicketNo)
+
+--			From #ReceivingSubTotal
+
+--		END
+
+		
+
+--		SELECT Grade, Sum(WeightSt), Sum(TotalCost), CASE WHEN Sum(WeightSt) > 0 THEN SUM(TotalCost)/Sum(WeightSt) ELSE 0 END as CostSt, 
+
+--		sum(Shipments), @WhseCPID as WarehouseID 
+
+--		FROM #REPORT Group BY Grade ORDER BY Grade	
+
+--	END	
+
+
+
+--End
+
+
+
+--go
+
+--q_GetTonnageReceivedInquiry '','9/01/2014','1/21/2015','','','CATEGORY',1,0,'S','L','Newbury GROUP'
+
+
+

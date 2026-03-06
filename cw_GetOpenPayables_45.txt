@@ -1,0 +1,88 @@
+
+
+
+
+-- I.R.05/09/24
+
+-- [dbo].[cw_GetOpenPayables_45]  - runs
+
+-- 05/09/24 
+
+
+
+CREATE PROCEDURE [dbo].[cw_GetOpenPayables_45] 
+
+
+
+AS
+
+ BEGIN
+
+
+
+    SET NOCOUNT ON;
+
+
+
+	TRUNCATE TABLE tblCietradeOpenPayablesOver45
+
+	
+
+	INSERT tblCietradeOpenPayablesOver45
+
+
+
+    SELECT [Billing Company]
+
+      ,LTRIM(RTRIM([WksNo])) [WorksheetNo]
+
+      ,[Vendor Name]
+
+
+
+      ,[Outstanding Payables Amount]
+
+
+
+	  ,IIF (DATEDIFF(dd,[Open Date], GETDATE()) >= 45, 'Y', 'N') 'Invoice Aging Over 45'
+
+
+
+	  ,IIF([Post Date] = '', 'N', 'Y') [Posted]
+
+
+
+	  ,DATEDIFF(dd,[Open Date], GETDATE()) Num_Days
+
+
+
+	  ,[Account Desc] [Account Description]
+
+	  ,[Open Date] [Invoice Date]
+
+      ,[Open Date Period] [Invoice Date Period]
+
+	   ,[Post Date]
+
+	  ,case when [Transaction Type] = 'Exp' then 'Expense'
+
+	        when [Transaction Type] = 'Pur' then 'Purchase'
+
+			else [Transaction Type] END [Transaction Type]
+
+
+
+	--INTO tblCietradeOpenPayablesOver45
+
+
+
+  FROM [cdb_Wilmington].[dbo].[CietradeOpenAPInvoices]
+
+
+
+SELECT * FROM tblCietradeOpenPayablesOver45 WHERE [Invoice Aging Over 45] = 'Y'
+
+
+
+END
+

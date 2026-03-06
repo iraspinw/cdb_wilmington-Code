@@ -1,0 +1,4172 @@
+CREATE   PROCEDURE [dbo].[cw_GetRecyclingProfit_TEST] 
+
+	@View char(10), 
+
+	@WhseNm char(45), 
+
+	@BySupID char(12), 
+
+	@SalesRep char(10), 
+
+	@IsAllDates bit, 
+
+	@StartDt Datetime, 
+
+	@EndDt Datetime, 
+
+	@GroupBy CHAR(10), 
+
+	@DoNotUseAverageAll bit = 0, 
+
+	@SpecialReportOption char(10) = '', 
+
+	@UseSoldAsGrade bit = 0, 
+
+	@BrokerDept CHAR(2) = NULL,
+
+	@DoNotUseSalesExpenses bit = 0,
+
+	@UseMarketPrices bit = 0,
+
+	@TradeType CHAR(25) = NULL
+
+
+
+AS 
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET ANSI_WARNINGS OFF
+
+--11/4/2022 ZT: Copied over from cie-sqldev01. Name changed from q_GetRecyclingProfit to cw_GetRecyclingProfit 
+
+--11/4/2022 ZT: Replaced intsances of BuySell.DispatchID with BuySell.ScaleTicketNo since DispatchID doesn't exist in .net
+
+--11/7/2022 ZT: put ((sfreightchg-pfreightchg)  /  dbo.convert_to_uom(totalweightlbs,'L',@ScaleWeight)) *  dbo.convert_to_uom(SWeight,SWeightUOM,@ScaleWeight) within a case statement to prevent divide by 0
+
+--11/7/2022 ZT: removed @SetInvSupplier from q_GetGrossProfitBySupplierAndGrade call (doesn't exist in .net)
+
+--04/04/2023 DSH Numerous revisions and changes to address sales price/value reporting and adjustment reporting and disable unsupported options.
+
+--04/06/2023 ZT: Renamed returned columns 
+
+/*
+
+Sales Price Allocation formula example:
+
+70% Grade-A  Sold for 100/ST
+
+30% Grade-B  Sold for 50/ST
+
+(.7x10) x 100 =700
+
+(.5x10) x 50  =150
+
+total          850
+
+850/10 = $85/ST
+
+*/
+
+
+
+
+
+--SET @DoNotUseAverageAll=0
+
+--SET @UseSoldAsGrade=1
+
+--SET @UseMarketPrices=0
+
+--SET @DoNotUseSalesExpenses=0
+
+
+
+
+
+	IF @WhseNm IS NULL SET @WhseNm = ''
+
+	IF @TradeType IS NULL SET @TradeType = ''
+
+	IF @SalesRep IS NULL SET @SalesRep = ''
+
+	IF @BySupID IS NULL SET @BySupID = ''
+
+
+
+	DECLARE @SupNm As VARCHAR(65)
+
+	SELECT @SupNm = CompanyNm FROM Counterparty WHERE CpID = @BySupID
+
+	IF @SupNm IS NULL SET @SupNm = ''
+
+
+
+	 
+
+
+
+	-- Assign Broker Query Trade Type
+
+	DECLARE @BrokerTradeType CHAR(25)
+
+	SET @BrokerTradeType = ISNULL(@TradeType,'')
+
+
+
+	--Assign Warehouse ID from department (company) table when run for ALL by Dept.
+
+	IF @View = '(All)' BEGIN
+
+		SELECT TOP 1 @WhseNm = WhseNm FROM companyinfo_whse WHERE COID = @BrokerDept
+
+	END
+
+
+
+
+
+	Create Table #AllocSalesPrice (
+
+		AllocRuleID Int,
+
+		RcvGrade CHAR(12),
+
+		AllocGrade CHAR(12),
+
+		AllocPrice Money  DEFAULT 0,
+
+		AllocFactor Decimal(22,4) DEFAULT 0,	
+
+		AllocWeightedValue Decimal(22,4) DEFAULT 0,	
+
+		IsCurrentPrice Int DEFAULT 0
+
+	)
+
+	Create Index #PK_AllocSalesPrice ON #AllocSalesPrice(AllocRuleID,RcvGrade)	
+
+
+
+
+
+	Create Table #MarketValue (
+
+		AllocRuleID Int,
+
+		Price Money  DEFAULT 0,
+
+		UsePriceHistory int
+
+	)
+
+	Create Index #PK_MarketValue ON #MarketValue(AllocRuleID)	
+
+
+
+
+
+
+
+	Create Table #_SETBASEWT (
+
+		AccountID CHAR(12),
+
+		Location CHAR(45),
+
+		GradeID CHAR(15),
+
+		WksNo CHAR(12),
+
+		BaseWeight Decimal(22,0)
+
+	)
+
+	Create Index #PK_SETBASEWT ON #_SETBASEWT(AccountID,Location,GradeID,WksNo)	
+
+
+
+	CREATE TABLE #_GETBASELOADWT(
+
+		AccountID CHAR(12),
+
+		Location CHAR(45),
+
+		BuySellNo CHAR(12),
+
+		BaseLoadWeight Decimal(22,0),
+
+		InternalFreightCost MONEY
+
+	)
+
+	CREATE INDEX #IE1_GETBASELOADWT ON 	#_GETBASELOADWT(AccountID,Location)		
+
+	CREATE INDEX #IE2_GETBASELOADWT ON 	#_GETBASELOADWT(BuySellNo)		
+
+
+
+
+
+	DECLARE	
+
+		@xID int,
+
+		@xSaleType char(15),	
+
+		@xGradeID char(15),			
+
+		@xSoldAsGradeID char(15),			
+
+		@xBaseWeight Decimal(22,0),
+
+		@xSoldAsGradeIDAlloc smallint,	
+
+		@SalesPerUOM money,
+
+		@AllocWeightedValue Money,
+
+		@AllocPct decimal(22,4),	
+
+		@AllocFactor decimal(22,4),
+
+		@ScaleWeightNm varchar(10),
+
+		@ScaleWeight char(1),	
+
+		@AltScaleWt CHAR(1),	
+
+		@ScaleWeighFactor decimal(22,4),
+
+		@LastPriceDate Datetime,		
+
+		@CutOffHistoryDt Datetime
+
+
+
+
+
+
+
+	SET @AllocFactor = 0		
+
+
+
+	
+
+	-- SET PRICE HISTORY CUTOFF.
+
+	SET @CutOffHistoryDt = DATEADD(M,-3,@StartDt)
+
+
+
+
+
+	-- SET DEFAULT SCALE WEIGHT.
+
+	SELECT @ScaleWeightNm = CoalEsce(OptionValue,'LBS') FROM Options WHERE OptionName = 'ScaleWtUOM'
+
+	IF @ScaleWeightNm = 'LBS' BEGIN
+
+		SET @ScaleWeight = 'L'
+
+		SET @ScaleWeighFactor = 2000
+
+	END
+
+	IF @ScaleWeightNm = 'KG' BEGIN
+
+		SET @ScaleWeight = 'K'
+
+		SET @ScaleWeighFactor = 1000
+
+	END		
+
+
+
+	-- GET DB NAME FOR CLIENT SPECIFIC CHANGES
+
+	DECLARE @DBNM VARCHAR(100) 
+
+	DECLARE @PROC_SetInvSupplier BIT 
+
+	SET @DBNM = db_name()
+
+	SET @PROC_SetInvSupplier = 0 
+
+	IF @DBNM = 'cieTrade_NSR' SET @PROC_SetInvSupplier = 1 
+
+
+
+	Create Table #PurchaseSummary2 (		
+
+		AccountID Char(12),
+
+		AccountNm Varchar(65),		
+
+		Location Varchar(45),
+
+		GradeID Char(15),
+
+		GradeNm Varchar(65),
+
+		ShipmentCnt Int,
+
+		UnitType char(1),
+
+		UnitTypeNm Varchar(65),				
+
+		BaseWeight Decimal(22,0)  DEFAULT 0,
+
+		Purchase Money  DEFAULT 0,
+
+		PurchasePerUOM Money  DEFAULT 0,
+
+		Freight Money DEFAULT 0,
+
+		FreightPerUOM Decimal(22,8) DEFAULT 0,	
+
+		IntFreight Money DEFAULT 0,
+
+		IntFreightPerUOM Decimal(22,8) DEFAULT 0,			
+
+		Processing Money Default 0,	
+
+		ProcessingPerUOM Decimal(22,8) DEFAULT 0,				
+
+		Adj Money DEFAULT 0,
+
+		AdjPerUOM Decimal(22,8) DEFAULT 0,			
+
+		Cost  Money  DEFAULT 0,
+
+		CostPerUom Decimal(22,8) DEFAULT 0,						
+
+		Sales Money  DEFAULT 0,
+
+		SalesPerUOM Money DEFAULT 0,		
+
+		Profit Money  DEFAULT 0,
+
+		ProfitPerUOM Money  DEFAULT 0,	
+
+		Margin decimal(22,4),
+
+		PriceModel varchar(30),	
+
+		ProfitItemID INT,
+
+	)
+
+
+
+	
+
+	
+
+	Create Table #PurchaseDetail (	
+
+		ID int identity(50000,1),	
+
+		BuySellNo char(12),		
+
+		Source char(1),		
+
+		WarehouseNm Char(45),		
+
+		AccountID Char(12),
+
+		AccountNm Varchar(65),
+
+		Location Varchar(45),
+
+		GradeID Char(15),
+
+		GradeNm Varchar(65),
+
+		UnitType char(1),
+
+		EquipmentType Char(30),
+
+		BaseWeight Decimal(22,0)  DEFAULT 0,
+
+		Purchase Money  DEFAULT 0,
+
+		Processing Money  DEFAULT 0,		
+
+		IntFreight Money  DEFAULT 0,				
+
+		Avg_Sales  Money DEFAULT 0,
+
+		SoldAs_Sales Money DEFAULT 0,
+
+		SoldAs_Price Money DEFAULT 0,
+
+		SoldAs_BaseWeight Decimal(22,0) DEFAULT 0,
+
+		WksDetailID INT,
+
+		IsBrokerage TINYINT,
+
+		ReferrerNo CHAR(10),
+
+		HasEquipment TINYINT DEFAULT 0
+
+	)
+
+
+
+	
+
+	CREATE INDEX #PK2_PurchaseDetail ON #PurchaseDetail(BuySellNo)
+
+	CREATE INDEX #PK3_PurchaseDetail ON #PurchaseDetail(UnitType)
+
+	CREATE INDEX #PK4_PurchaseDetail ON #PurchaseDetail(UnitType,EquipmentType)
+
+
+
+	Create Table #PurchaseSummary (		
+
+		WarehouseNm Char(45),		
+
+		AccountID Char(12),
+
+		AccountNm Varchar(65),
+
+		Location Varchar(45),
+
+		GradeID Char(15),
+
+		GradeNm Varchar(65),
+
+		UnitType char(1),
+
+		UnitTypeNm Varchar(65),
+
+		BuySellNo CHAR(12),
+
+		BaseWeight Decimal(22,0)  DEFAULT 0,
+
+		Purchase Money  DEFAULT 0,
+
+		PurchasePerUOM Money  DEFAULT 0,
+
+		Freight Money DEFAULT 0,
+
+		FreightPerUOM Decimal(22,8) DEFAULT 0,	
+
+		IntFreight Money DEFAULT 0,
+
+		IntFreightPerUOM Decimal(22,8) DEFAULT 0,			
+
+		Processing Money Default 0,		
+
+		ProcessingPerUOM Decimal(22,8) DEFAULT 0,
+
+		ProcessingUOM char(1),	
+
+		Adj Money DEFAULT 0,
+
+		AdjPerUOM Decimal(22,8) DEFAULT 0,			
+
+		Cost  Money  DEFAULT 0,
+
+		CostPerUom Decimal(22,8) DEFAULT 0,				
+
+		ShipmentCnt Int,
+
+		Sales Money  DEFAULT 0,
+
+		SalesPerUOM Money DEFAULT 0,		
+
+		Profit Money  DEFAULT 0,
+
+		ProfitPerUOM Money  DEFAULT 0,	
+
+		Margin decimal(22,4),	
+
+		PriceModel varchar(30),
+
+		ProfitItemID INT,
+
+		IsDisposal bit DEFAULT 0,		
+
+		ReceivingDt DATETIME,
+
+		IsSoldAsGrade TINYINT DEFAULT 0,
+
+		SoldAsSales MONEY DEFAULT 0,	
+
+		SoldAsBaseWeight Decimal(22,0) DEFAULT 0,
+
+		SalesRepNm VARCHAR(30),
+
+		HasEquipment INT,
+
+		IsPlantReceiving BIT DEFAULT 0
+
+	)
+
+	
+
+	CREATE INDEX #PK1_PurchaseSummary ON #PurchaseSummary(WarehouseNm,GradeID)
+
+	CREATE INDEX #PK2_PurchaseSummary ON #PurchaseSummary(BuySellNo)
+
+
+
+	Create Table #CONS_PurchaseSummary (		
+
+		AccountID Char(12),
+
+		AccountNm Varchar(65),
+
+		Location Varchar(45),
+
+		GradeID Char(15),
+
+		GradeNm Varchar(65),
+
+		UnitType char(1),
+
+		UnitTypeNm Varchar(65),
+
+		BaseWeight Decimal(22,0)  DEFAULT 0,
+
+		Purchase Money  DEFAULT 0,
+
+		Processing Money  DEFAULT 0,
+
+		PurchasePerUOM Money  DEFAULT 0,
+
+		ShipmentCnt Int
+
+	)
+
+
+
+
+
+	Create Table #wrkSalesGradeDetail (
+
+		SaleType char(15),
+
+		GradeID char(15),	
+
+		GradeNm Varchar(65),
+
+		UnitType Char(1),	
+
+		ShipBaseWeight Decimal(22,0) Default 0,
+
+		Sales Money Default 0,
+
+		SalesExpenses Money Default 0,
+
+	)		
+
+
+
+	Create Table #wrkSalesGradeSummary (	
+
+		ID int identity(1000,1),		
+
+		SaleType char(15),
+
+		ProfitItemID int,
+
+		AccountID Char(12),
+
+		Location Varchar(45),
+
+		GradeID char(15),	
+
+		GradeNm Varchar(65),
+
+		UnitType Char(1),	
+
+		ShipBaseWeight Decimal(22,0) Default 0,
+
+		Sales Money Default 0,
+
+		SalesExpenses Money Default 0,
+
+		SalesPerUOM Money Default 0,
+
+		ShipmentCnt Int,
+
+		IsErrorOnGradeID char(15),
+
+		UsePriceHistory int DEFAULT 0		
+
+	)
+
+
+
+	CREATE INDEX #PK_wrkSalesGradeSummary ON #wrkSalesGradeSummary(ID)
+
+	CREATE INDEX #IE1_wrkSalesGradeSummary ON #wrkSalesGradeSummary(GradeID,SaleType)
+
+	CREATE INDEX #IE2_wrkSalesGradeSummary ON #wrkSalesGradeSummary(SaleType)
+
+
+
+
+
+	CREATE Table #WksList(
+
+		BuySellNo char(12),
+
+		Src char(1)
+
+		)
+
+	CREATE INDEX #PK_wksList ON #wksList(BuySellNo)		
+
+
+
+	CREATE Table #wksExpenses (		
+
+		AccountID Char(12),		
+
+		Location Varchar(45),
+
+		GradeID CHAR(15),
+
+		BuySellNo CHAR(12),
+
+		Purchases Money,
+
+		Adjustments Money,		
+
+		ShipBaseWeight Decimal(22,0) Default 0,		
+
+		FreightPerUOM Decimal(22,8) Default 0
+
+	)
+
+	CREATE INDEX #PK_wksExpenses ON #wrkSalesGradeSummary(AccountID,Location)
+
+
+
+	Create Table #wksExpensesList (		
+
+		AccountID Char(12),		
+
+		Location Varchar(45)		
+
+	)
+
+	CREATE INDEX #PK_wksExpensesList ON #wksExpensesList(AccountID,Location)
+
+
+
+
+
+	Create Table #wksAdjustments (		
+
+		AccountID Char(12),		
+
+		Location Varchar(45),
+
+		GradeID CHAR(15),
+
+		BuySellNo CHAR(12),
+
+		Adjustments Money,
+
+		ShipBaseWeight Decimal(22,0) Default 0,
+
+		AdjPerUOM Decimal(22,8) Default 0
+
+	)
+
+	CREATE INDEX #PK_wksAdjustments ON #wksAdjustments(AccountID,Location,BuySellNo)
+
+
+
+	Create Table #wksAdjustmentsBase (		
+
+		AccountID Char(12),		
+
+		Location Varchar(45),	
+
+		BuySellNo CHAR(12),
+
+		AdjustmentAmt Money
+
+	)
+
+	CREATE INDEX #PK_wksAdjustmentsBase ON #wksAdjustmentsBase(AccountID,Location,BuySellNo)
+
+
+
+
+
+
+
+
+
+
+
+	Create Table #wksIntFreight (	
+
+		WarehouseNm char(45),
+
+		BuySellNo char(12),	
+
+		AccountID Char(12),		
+
+		Location Varchar(45),
+
+		FreightCPID Char(12),		
+
+		EquipmentType Char(30),
+
+		FreightAmt Money DEFAULT 0,
+
+		FreightAmtPerUOM decimal(14,6) DEFAULT 0,
+
+		ElapsedTime decimal(12,4) DEFAULT 0,
+
+		DefElapsedTime decimal(12,4) DEFAULT 0,				
+
+		TotalWt Decimal(22,0) Default 0,
+
+		IsIntFreight bit  Default 0,
+
+		DispatchTm DATETIME,
+
+		ReceiveTm DATETIME
+
+	)
+
+	CREATE Index #PK_wksIntFreight ON #wksIntFreight(BuySellNo)	
+
+	CREATE Index #IE1_wksIntFreight ON #wksIntFreight(WarehouseNm)	
+
+
+
+
+
+
+
+	CREATE TABLE #SoldAsGrade_SalesMatrix(
+
+		PurchaseDetailID INT,
+
+		SoldAsID INT,
+
+		RcvGrade CHAR(12),
+
+		RcvBaseWeight Decimal(22,0),
+
+		SellGradeID CHAR(12),
+
+		SellAllocPrct Decimal(22,3),
+
+		SellAllocBaseWt Decimal(22,3),
+
+		MarketPrice Money,
+
+		MarketValue Money			
+
+	)
+
+	CREATE INDEX #PK_SoldAsGrade_SalesMatrix ON #SoldAsGrade_SalesMatrix(PurchaseDetailID)
+
+
+
+	CREATE TABLE #SoldAs_Price(
+
+		PurchaseDetailID INT,
+
+		RcvBaseWeight Decimal(22,0),			
+
+		MarketValue Money,
+
+		MarketPrice Money
+
+	)
+
+
+
+
+
+	Create Table #BrokerageDetails (		
+
+		WarehouseNm Char(45),		
+
+		AccountID Char(12),
+
+		AccountNm Varchar(65),
+
+		Location Varchar(45),
+
+		GradeID Char(15),
+
+		GradeNm Varchar(65),
+
+		UnitType char(1),	
+
+		UnitTypeNm Varchar(65),			
+
+		BaseWeight Decimal(22,0)  DEFAULT 0,
+
+		Sales Money  DEFAULT 0,
+
+		SalesPerUOM Money DEFAULT 0,		
+
+		Purchase Money  DEFAULT 0,
+
+		PurchasePerUOM Money  DEFAULT 0,
+
+		Freight Money DEFAULT 0,
+
+		FreightPerUOM Decimal(22,8) DEFAULT 0,	
+
+		Adj Money DEFAULT 0,
+
+		AdjPerUOM Decimal(22,8) DEFAULT 0,					
+
+		IntFreight Money DEFAULT 0,
+
+		IntFreightPerUOM Decimal(22,8) DEFAULT 0,			
+
+		Processing Money DEFAULT 0,
+
+		Cost  Money  DEFAULT 0,
+
+		CostPerUom Decimal(22,8) DEFAULT 0,				
+
+		ShipmentCnt Int,
+
+		BuySellNo CHAR(12),
+
+		ScaleTicketNo INT,
+
+		ReceivingDt DATETIME,
+
+		IsSoldAsGrade TINYINT DEFAULT 0,
+
+		SalesRepNm VARCHAR(30),
+
+		ProfitItemID INT,
+
+		PriceModel varchar(30),
+
+		Profit Money  DEFAULT 0,
+
+		ProfitPerUOM Money  DEFAULT 0	
+
+	)
+
+
+
+
+
+		CREATE TABLE #GradeExpenseAlloc(
+
+			BuySellNo CHAR(12),
+
+			GradeID CHAR(15),
+
+			AllocFactor DECIMAL(22,12),
+
+			LoadWeight DECIMAL(22,12),
+
+			GradeWeight DECIMAL(22,12)
+
+			PRIMARY KEY (BuySellNo,GradeID) 
+
+		)
+
+
+
+
+
+		--BUILD MARKET PRICE TABLE
+
+--		DECLARE @MarketDate DATE
+
+--		CREATE TABLE #MarketPrices(PriceDate DATE, GradeID CHAR(12), UnitType CHAR(1), MarketPriceUOM CHAR(1), MarketPrice Decimal(22,8) DEFAULT 0, PricePerST Decimal(22,8) DEFAULT 0)	
+
+	--	If @UseMarketPrices =1 BEGIN
+
+	--		SET @MarketDate = CONVERT(VARCHAR(10),YEAR(@EndDt)) + '/' + CONVERT(VARCHAR(10),MONTH(@EndDt)) + '/' + '1'
+
+	--		INSERT #MarketPrices
+
+	--			SELECT PeriodDt, GradeID, TypeID, UOM, Price, Price FROM evergreen_pricebyperiod P WITH (NOLOCK) INNER JOIN evergreen_gradeunit G WITH (NOLOCK)  ON P.GUpk = G.GUpk WHERE PeriodDt = @MarketDate AND P.WarehouseID = @WhseCPID
+
+
+
+	--		--Convert Weights to price per Lbs  --(Other conversions could be added here)
+
+	--		UPDATE #MarketPrices SET PricePerST = MarketPrice*2000 WHERE MarketPriceUOM = 'L'
+
+	--		UPDATE #MarketPrices SET PricePerST = MarketPrice WHERE MarketPriceUOM = 'S'
+
+	--		UPDATE #MarketPrices SET PricePerST = (MarketPrice/2240)*2000 WHERE MarketPriceUOM = 'G'
+
+	--		SET @UseSoldAsGrade = 0
+
+	--END
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+	
+
+	
+
+	/* GET PERIOD SALES GROUPED BY GRADE */
+
+	-----------------------------------------------------------------------------------------
+
+
+
+	-- Get Plant Sales Details.
+
+	IF @View = '(All)' OR @View = 'Plant' BEGIN
+
+		INSERT #wrkSalesGradeDetail(SaleType,GradeID,GradeNm,UnitType,ShipBaseWeight,Sales,SalesExpenses) 	
+
+			SELECT 
+
+				'PASSTHRU',			
+
+				WksDetail.GradeID,
+
+				Grade.[Description],
+
+				COALESCE(WksDetail.UnitType,''),
+
+				dbo.convert_to_uom(SWeight,SWeightUOM,@ScaleWeight), 
+
+				WksDetail.SAmount, 
+
+				CASE WHEN totalweightlbs = 0 THEN 0 ELSE ((sfreightchg-pfreightchg)  /  dbo.convert_to_uom(totalweightlbs,'L',@ScaleWeight)) *  dbo.convert_to_uom(SWeight,SWeightUOM,@ScaleWeight) END  --*(a)			
+
+			FROM WksDetail WITH (NOLOCK) 
+
+				INNER JOIN BuySell WITH (NOLOCK) on WksDetail.BuySellNo = BuySell.BuySellNo
+
+				INNER JOIN GRADE WITH (NOLOCK) ON WksDetail.GradeID = Grade.GradeID								
+
+			WHERE 
+
+			BuySell.VendorID = '(INV)'			 
+
+			AND (BuySell.CustID <> '(INV)' AND CustID <> '(OTHER)')
+
+			AND (@IsAllDates=1 OR (@IsAllDates=0 AND ShippingDt >= @StartDt And ShippingDt <= @EndDt) )	
+
+			AND (BuySell.[Status] = 'C' OR BuySell.[Status] = 'I') 
+
+			AND SAmount <> 0 
+
+			AND (@WhseNm = '' OR (@WhseNm <> '' AND Buysell.ShipFromID = @WhseNm)) 	
+
+			AND (@TradeType = '' OR (@TradeType <> '' AND Buysell.TradeType = @TradeType))
+
+			AND (Grade.InventoryType = 'BULK_WT' OR Grade.InventoryType = 'BULK_WTVAL')
+
+	END
+
+
+
+
+
+
+
+	-- BUILD LIST OF *PASSTHROUGH* GRADES SOLD IN PERIOD. (Bought & Sold as Same Grade)
+
+	INSERT #wrkSalesGradeSummary(SaleType,GradeID,GradeNm,UnitType,ShipBaseWeight,Sales,SalesExpenses,ShipmentCnt,AccountID,Location) 
+
+		SELECT 
+
+			'PASSTHRU',			
+
+			GradeID,
+
+			GradeNm,
+
+			'',
+
+			Sum(ShipBaseWeight), 
+
+			Sum(Sales ), 
+
+			Sum(SalesExpenses),  
+
+			count(GradeID),
+
+			'',''
+
+		FROM #wrkSalesGradeDetail
+
+		Group BY GradeID, GradeNm 
+
+		
+
+		
+
+	-- SET SALES EXPENEES TO ZERO IF EXCLUDED.
+
+	IF @DoNotUseSalesExpenses = 1 
+
+		UPDATE #wrkSalesGradeSummary SET SalesExpenses = 0
+
+
+
+				
+
+	-- SET SALES PRICE (PER UNIT).		
+
+	UPDATE #wrkSalesGradeSummary SET 
+
+		Sales = (Sales + SalesExpenses),
+
+		SalesPerUOM = round(((Sales+SalesExpenses) / ShipBaseWeight)*@ScaleWeighFactor,2) 
+
+		WHERE ShipBaseWeight <> 0 
+
+
+
+
+
+--delete from #wrkSalesGradeSummary  where gradeid <> '1377'
+
+--select 'SALES' 'SALES', * from #wrkSalesGradeSummary 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	/* GET PERIOD PURCHASES. */
+
+	-----------------------------------------------------------------------------------------
+
+	-- Get Plant Purchase Details.
+
+	IF @View = '(All)' OR @View = 'Plant' BEGIN
+
+		INSERT #PurchaseDetail(BuySellNo,Source,WarehouseNm,AccountID,AccountNm,Location,GradeID,GradeNm,UnitType,EquipmentType,BaseWeight,Purchase,WksDetailID,IsBrokerage,IntFreight,ReferrerNo) 
+
+
+
+			SELECT 						
+
+				BuySell.BuySellNo,'P',	
+
+				BuySell.ShipToID,				
+
+				BuySell.VendorID,
+
+				COUNTERPARTY.Companynm,	
+
+				BuySell.ShipFromID,		
+
+				WksDetail.GradeID,
+
+				Grade.[Description],
+
+				COALESCE(WksDetail.UnitType,''),	
+
+				Eqtype,					
+
+				dbo.convert_to_uom(PWeight,PWeightUOM,@ScaleWeight), 
+
+				WksDetail.PAmount,
+
+				WksDetail.DetailID,0,0,
+
+				CASE WHEN ISNULL(BuySell.Referrerno2,'') = '' THEN BuySell.Referrerno1 ELSE BuySell.Referrerno2 END
+
+			FROM WksDetail 
+
+				INNER JOIN BuySell ON WksDetail.BuySellNo = BuySell.BuySellNo			
+
+				INNER JOIN GRADE ON WksDetail.GradeID = Grade.GradeID
+
+				INNER JOIN COUNTERPARTY ON BuySell.VendorID = Counterparty.CPID
+
+			WHERE 
+
+				BuySell.VendorID <> '(INV)' AND BuySell.CustID = '(INV)'  
+
+				AND (@IsAllDates=1 OR (ShippingDt >= @StartDt And ShippingDt <= @EndDt) )
+
+				AND (BuySell.[Status] = 'C' OR BuySell.[Status] = 'I')
+
+				AND PWeight <> 0 and totalweightlbs <> 0 
+
+				AND (@BySupID = '' OR (@BySupID <> '' AND BuySell.vendorid = @BySupID))  
+
+				AND (@WhseNm = '' OR BuySell.ShipToID = @WhseNm)
+
+				AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+				AND (@SalesRep = '' OR (@SalesRep <> '' AND (BuySell.Referrerno1 = @SalesRep OR BuySell.ReferrerNo2 = @SalesRep)))
+
+				AND Grade.InventoryType = 'BULK_WT' OR Grade.InventoryType = 'BULK_WTVAL'
+
+			
+
+	END
+
+
+
+
+
+
+
+--delete from #PurchaseDetail where buysellno <> 'PR-1750' --AND GradeID <> '1139'
+
+--delete from #PurchaseDetail where GradeID <> '1139'
+
+--select 'PURCHASES-DTL' 'PURCHASES-DTL', * from #PurchaseDetail 
+
+--return
+
+	
+
+
+
+	--IF FILTERING BY REFERRER FORCE REFERRER NAME TO FILTER. 
+
+	UPDATE #PurchaseDetail SET ReferrerNo = @SalesRep WHERE @SalesRep IS NOT NULL
+
+
+
+	-- CREATE LIST OF PURCHASING PLANT & BROKERAGE WORKSHEETS To BE EVALUATED.
+
+	INSERT #WksList
+
+		SELECT DISTINCT BuySellNo, Source FROM #PurchaseDetail	
+
+
+
+
+
+	/* GET BASE WEIGHT PER LOCATION. */
+
+	-----------------------------------------------------------------------------------------
+
+	IF @GroupBy = 'ACCT' 
+
+		INSERT #_SETBASEWT(AccountID,Location,BaseWeight)
+
+		SELECT #PurchaseDetail.AccountID, #PurchaseDetail.Location, SUM(#PurchaseDetail.BaseWeight) 
+
+			FROM #PurchaseDetail 
+
+			GROUP BY #PurchaseDetail.AccountID, #PurchaseDetail.Location
+
+
+
+
+
+	/* GET BASE WEIGHT PER LOCATION+GRADE. */
+
+	-----------------------------------------------------------------------------------------
+
+	IF @GroupBy = 'ACCT+GRADE' 
+
+		INSERT #_SETBASEWT(AccountID,Location,GradeID,BaseWeight)
+
+		SELECT #PurchaseDetail.AccountID, #PurchaseDetail.Location, #PurchaseDetail.GradeID, SUM(#PurchaseDetail.BaseWeight) 
+
+			FROM #PurchaseDetail 
+
+			GROUP BY #PurchaseDetail.AccountID, #PurchaseDetail.Location, #PurchaseDetail.GradeID
+
+
+
+
+
+	/* GET BASE WEIGHT PER TICKET. */
+
+	-----------------------------------------------------------------------------------------
+
+	IF @GroupBy = 'TICKET' 
+
+		INSERT #_SETBASEWT(AccountID,Location,WksNo,BaseWeight) 
+
+		SELECT #PurchaseDetail.AccountID, #PurchaseDetail.Location, BuySellNo, SUM(#PurchaseDetail.BaseWeight) 
+
+			FROM #PurchaseDetail 
+
+			GROUP BY #PurchaseDetail.AccountID, #PurchaseDetail.Location, #PurchaseDetail.BuySellNo
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	/* CALCULATE INTERNAL-FREIGHT FROM RULES. */
+
+	-----------------------------------------------------------------------------------------
+
+	IF EXISTS(Select * from RecyProfitRules_Freight) BEGIN 
+
+
+
+		-- GET HAUL & ELAPSED TIME DETAILS.	
+
+		INSERT #wksIntFreight(WarehouseNm,BuySellNo,AccountID,Location,FreightCPID,EquipmentType,ElapsedTime,DispatchTm,ReceiveTm,TotalWt)
+
+			SELECT --DISTINCT
+
+				WarehouseNm,
+
+				BuySellno, 		
+
+				AccountID,
+
+				Location,		
+
+				CarrierID,
+
+				#PurchaseDetail.EquipmentType,
+
+				ElapsedTime = (DATEDIFF(minute, '01/01/1900 ' + DispatchTm, '01/01/1900 ' + ReceiveTm) ), --+ (DATEDIFF(minute, '01/01/1900 ' + DispatchTm, '01/01/1900 ' + ReceiveTm) % 60),			
+
+				DispatchTm,ReceiveTm,
+
+				SUM(BaseWeight) --)NetWt  --Weight of entire ticket. 
+
+				FROM #PurchaseDetail 
+
+					INNER JOIN Receiving ON #PurchaseDetail.ScaleTicketNo = Receiving.ScaleTicketNo 				
+
+				WHERE Source = 'P'
+
+				AND Receiving.FreightChg = 0  --DSH:10/13/2017
+
+				AND RTRIM(ISNULL(ScaleTicketType,'1')) = '1' -- 02/29/2012 MCM: ADDED TO CORRECT ISSUE WITH HOW WEIGHTS ARE HANDLED ROUTE VS SINGLE STOP			
+
+				GROUP BY WarehouseNm,BuySellno,AccountID,Location,CarrierID,#PurchaseDetail.EquipmentType,DispatchTm,ReceiveTm
+
+
+
+		UPDATE #wksIntFreight SET FreightCPID = '~' WHERE FreightCPID = ''
+
+
+
+
+
+		UPDATE #wksIntFreight SET 
+
+			ElapsedTime = (DATEDIFF(minute, '01/01/1900 ' + DispatchTm, '01/02/1900 ' + ReceiveTm) ) 
+
+			WHERE ElapsedTime < 0 
+
+		
+
+
+
+	
+
+		-- 02/29/2012 MCM: ADDED TO CORRECT ISSUE WITH HOW WEIGHTS ARE HANDLED ROUTE VS SINGLE STOP
+
+		--***************************************************************************************************************************************
+
+		INSERT #wksIntFreight(WarehouseNm,BuySellNo,AccountID,Location,FreightCPID,EquipmentType,ElapsedTime,TotalWt)
+
+		SELECT DISTINCT
+
+			WarehouseNm,
+
+			BuySellno, 		
+
+			AccountID,
+
+			Location,		
+
+			CarrierID,
+
+			#PurchaseDetail.EquipmentType,
+
+			ElapsedTime = (DATEDIFF(minute, '01/01/1900 ' + DispatchTm, '01/01/1900 ' + ReceiveTm) ), --+ (DATEDIFF(minute, '01/01/1900 ' + DispatchTm, '01/01/1900 ' + ReceiveTm) % 60),
+
+			NetWt			
+
+			FROM #PurchaseDetail INNER JOIN Receiving ON #PurchaseDetail.ScaleTicketNo = Receiving.ScaleTicketNo 
+
+			WHERE Source = 'P' 
+
+			AND Receiving.FreightChg = 0  --DSH:10/13/2017
+
+			AND RTRIM(ISNULL(ScaleTicketType,'1')) <> '1' 
+
+		--	AND (DispatchTm <> '00:00:00' and ReceiveTm <> '00:00:00')
+
+				
+
+
+
+
+
+		UPDATE #wksIntFreight SET FreightCPID = '~' WHERE FreightCPID = ''
+
+		--***************************************************************************************************************************************
+
+	
+
+
+
+		------ ASSIGN DEFAULT TIME When Dispatch Time = 0
+
+		UPDATE #wksIntFreight SET 			
+
+			ElapsedTIme = DefaultTime 
+
+		 FROM #wksIntFreight INNER JOIN RecyProfitRules_Freight ON #wksIntFreight.WarehouseNm = RecyProfitRules_Freight.WarehouseNm
+
+		WHERE  DispatchTm = '00:00:00'
+
+	
+
+
+
+
+
+		---- ASSIGN FREIGHT: (Warehouse-Equipment-Hauler)
+
+		UPDATE #wksIntFreight SET 
+
+			FreightAmt = Charge,
+
+			DefElapsedTime = DefaultTime,			
+
+			IsIntFreight = 1		
+
+			FROM #wksIntFreight INNER JOIN RecyProfitRules_Freight ON #wksIntFreight.WarehouseNm = RecyProfitRules_Freight.WarehouseNm
+
+				AND RecyProfitRules_Freight.VendorID = #wksIntFreight.FreightCPID 
+
+				AND RecyProfitRules_Freight.EquipmentType = #wksIntFreight.EquipmentType
+
+			WHERE IsIntFreight = 0		
+
+		
+
+		------ ASSIGN FREIGHT: (Warehouse-Hauler)
+
+		UPDATE #wksIntFreight SET 
+
+			FreightAmt = Charge,
+
+			DefElapsedTime = DefaultTime,			
+
+			IsIntFreight = 1		
+
+			FROM #wksIntFreight INNER JOIN RecyProfitRules_Freight ON #wksIntFreight.WarehouseNm = RecyProfitRules_Freight.WarehouseNm
+
+				AND RecyProfitRules_Freight.VendorID = #wksIntFreight.FreightCPID 
+
+			WHERE IsIntFreight = 0 AND RecyProfitRules_Freight.EquipmentType IS NULL		
+
+					
+
+		------ ASSIGN FREIGHT: (Warehouse-Equipment)
+
+		UPDATE #wksIntFreight SET 
+
+			FreightAmt = Charge,
+
+			DefElapsedTime = DefaultTime,			
+
+			IsIntFreight = 1		
+
+			FROM #wksIntFreight INNER JOIN RecyProfitRules_Freight ON #wksIntFreight.WarehouseNm = RecyProfitRules_Freight.WarehouseNm
+
+				AND RecyProfitRules_Freight.EquipmentType = #wksIntFreight.EquipmentType 
+
+			WHERE IsIntFreight = 0	
+
+
+
+		-------- ASSIGN FREIGHT: (Warehouse-Default)
+
+		UPDATE #wksIntFreight SET 
+
+			FreightAmt = Charge,
+
+			DefElapsedTime = DefaultTime,
+
+			IsIntFreight = 1		
+
+			FROM #wksIntFreight INNER JOIN RecyProfitRules_Freight ON #wksIntFreight.WarehouseNm = RecyProfitRules_Freight.WarehouseNm
+
+			WHERE IsIntFreight = 0  AND RecyProfitRules_Freight.EquipmentType IS NULL AND VendorID = '' 	
+
+
+
+		------ ASSIGN DEFAULT TIME.
+
+		UPDATE #wksIntFreight SET 			
+
+			ElapsedTIme = DefElapsedTIme WHERE 	ElapsedTime <=0  AND IsIntFreight = 1
+
+
+
+		------ CALC INTERNAL FREIGHT.
+
+		UPDATE #wksIntFreight SET 			
+
+			FreightAmt = round((FreightAmt/60) * ElapsedTime,2), 
+
+			FreightAmtPerUOM = ((FreightAmt/60) * ElapsedTime) / TotalWt 
+
+			WHERE TotalWt <> 0 AND IsIntFreight = 1
+
+	
+
+			
+
+		------ UPDATE PURCHASE DETAIL.			
+
+		UPDATE #PurchaseDetail 
+
+			SET IntFreight = round(FreightAmtPerUom * BaseWeight,2)				
+
+			FROM #PurchaseDetail INNER JOIN #wksIntFreight ON #PurchaseDetail.BuySellNo =  #wksIntFreight.BuySellNo
+
+			WHERE IsIntFreight = 1
+
+
+
+	END
+
+
+
+
+
+
+
+
+
+	
+
+		
+
+
+
+	/* CALCULATE INTERNAL-FREIGHT FROM COUNTERPARTY INTERNAL FREIGHT COSTS. */
+
+	--------------------------------------------------------------------------
+
+	If @View <> 'Broker' BEGIN
+
+
+
+		If @GroupBy = 'TICKET' BEGIN	
+
+			UPDATE #PurchaseDetail 
+
+				SET IntFreight = Round(((Address.InternalFreightCost / #_SETBASEWT.BaseWeight)) * #PurchaseDetail.BaseWeight,2)
+
+				FROM #PurchaseDetail 
+
+					INNER JOIN ADDRESS ON #PurchaseDetail.AccountID = Address.CPID AND #PurchaseDetail.Location = Address.Type
+
+					INNER JOIN #_SETBASEWT ON #_SETBASEWT.WksNo = #PurchaseDetail.BuySellNo 
+
+				WHERE COALESCE(Address.InternalFreightCost,0) <> 0 
+
+					AND #PurchaseDetail.Source = 'P' 	
+
+
+
+		END
+
+
+
+
+
+	
+
+		If @GroupBy <> 'TICKET' BEGIN	
+
+			
+
+			--Create list of loads with total base weight.
+
+			INSERT #_GETBASELOADWT(AccountID,Location,BuySellNo,BaseLoadWeight,InternalFreightCost)
+
+				SELECT AccountID, Location, BuySellNo, SUM(BaseWeight),0 
+
+				FROM #PurchaseDetail 
+
+				WHERE #PurchaseDetail.Source = 'P'	
+
+				GROUP BY  AccountID, Location, BuySellNo
+
+
+
+		
+
+			UPDATE #_GETBASELOADWT 
+
+				SET #_GETBASELOADWT.InternalFreightCost = Address.InternalFreightCost 
+
+				FROM #_GETBASELOADWT INNER JOIN ADDRESS ON #_GETBASELOADWT.AccountID = Address.CPID AND #_GETBASELOADWT.Location = Address.Type				
+
+				WHERE COALESCE(Address.InternalFreightCost,0) <> 0
+
+		
+
+			UPDATE #PurchaseDetail 
+
+				SET IntFreight = Round(((#_GETBASELOADWT.InternalFreightCost / #_GETBASELOADWT.BaseLoadWeight)) * #PurchaseDetail.BaseWeight,2)
+
+				FROM #PurchaseDetail 
+
+					INNER JOIN #_GETBASELOADWT ON #PurchaseDetail.BuySellNo = #_GETBASELOADWT.BuySellNo
+
+				WHERE #_GETBASELOADWT.InternalFreightCost <> 0 --DSH 5/13/2013 Add "<>0"
+
+
+
+		END
+
+	END	
+
+	
+
+
+
+
+
+
+
+	-----------------------------------------------------------------------------------------
+
+	/* 
+
+	
+
+	CALCULATE PROCESSING CHARGES. 
+
+	UNITTYPE IS REQUIRED ON ALL RULES.
+
+	
+
+	*/
+
+	-----------------------------------------------------------------------------------------
+
+
+
+
+
+    ----(UnitType Only)
+
+    UPDATE #PurchaseDetail
+
+      SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)		
+
+        FROM #PurchaseDetail 
+
+			INNER JOIN RecyProfitRules WITH (NOLOCK) ON #PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+        WHERE 
+
+			RecyProfitRules.AccountID = '(Default)' 
+
+			AND COALESCE(RecyProfitRules.WarehouseNm,'') = '' 
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 
+
+			AND COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND Source = 'P'
+
+
+
+    ----(Warehouse Only)
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)	
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON 
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+			AND RecyProfitRules.WarehouseNm = #PurchaseDetail.WarehouseNm    
+
+        WHERE 
+
+			RecyProfitRules.AccountID = '(Default)' 
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 			
+
+			AND COALESCE(RecyProfitRules.GradeID,'') = '' 
+
+            AND Source = 'P'
+
+
+
+    ----(For Warehouse & Grade)
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON 
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType	
+
+			AND #PurchaseDetail.WarehouseNm = RecyProfitRules.WarehouseNm					
+
+			AND #PurchaseDetail.GradeID = RecyProfitRules.GradeID 
+
+		WHERE 
+
+			RecyProfitRules.AccountID = '(Default)' 
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 		
+
+			AND Source = 'P'  
+
+
+
+
+
+    ----(For Grade Only)
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON 			
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType			
+
+			AND #PurchaseDetail.GradeID = RecyProfitRules.GradeID 
+
+		WHERE 
+
+			RecyProfitRules.AccountID = '(Default)' 
+
+			AND COALESCE(RecyProfitRules.WarehouseNm,'') = '' 
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 			
+
+			AND Source = 'P'  
+
+
+
+
+
+    ----(For Warehouse & Grade Only)
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON 
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType			
+
+			AND #PurchaseDetail.WarehouseNm = RecyProfitRules.WarehouseNm						
+
+			AND #PurchaseDetail.GradeID = RecyProfitRules.GradeID 
+
+		WHERE 
+
+			RecyProfitRules.AccountID = '(Default)' 
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 			
+
+			AND Source = 'P'  
+
+
+
+	----(For Equipment -Only)
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM), HasEquipment = 1			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON 
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+			AND RecyProfitRules.EquipmentType = #PurchaseDetail.EquipmentType
+
+        WHERE RecyProfitRules.AccountID = '(Default)' 
+
+			AND COALESCE(RecyProfitRules.WarehouseNm,'') = '' 
+
+			AND COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND Source = 'P'
+
+
+
+
+
+   ----(For Equipment-Warehouse)
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM), HasEquipment = 1						
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON 
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+			AND RecyProfitRules.EquipmentType = #PurchaseDetail.EquipmentType
+
+			AND RecyProfitRules.WarehouseNm = #PurchaseDetail.WarehouseNm    
+
+        WHERE RecyProfitRules.AccountID = '(Default)' 
+
+			AND COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND Source = 'P'
+
+
+
+
+
+	-- . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
+
+
+
+
+    ----(Account Only)
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON 
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType		
+
+			AND #PurchaseDetail.AccountID = RecyProfitRules.AccountID 
+
+        WHERE ISNULL(RecyProfitRules.Location,'') = ''
+
+			AND COALESCE(RecyProfitRules.WarehouseNm,'') = ''  
+
+			AND COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 			
+
+			AND Source = 'P'
+
+			
+
+    
+
+    ----(For Account-Warehouse)
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON 
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+			AND #PurchaseDetail.WarehouseNm = RecyProfitRules.WarehouseNm	
+
+            AND RecyProfitRules.AccountID = #PurchaseDetail.AccountID
+
+        WHERE ISNULL(RecyProfitRules.Location,'') = ''		
+
+			AND COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 
+
+			AND Source = 'P'
+
+
+
+
+
+	----(For Account & Location)            
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+            AND RecyProfitRules.AccountID = #PurchaseDetail.AccountID    
+
+		    AND RecyProfitRules.Location = #PurchaseDetail.Location              
+
+		WHERE 
+
+			COALESCE(RecyProfitRules.WarehouseNm,'') = '' 
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 
+
+			AND COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND Source = 'P'
+
+
+
+
+
+	----(For Account-Warehouse & Location)            
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) 
+
+			ON #PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+            AND RecyProfitRules.AccountID = #PurchaseDetail.AccountID    
+
+		    AND RecyProfitRules.Location = #PurchaseDetail.Location    
+
+			AND RecyProfitRules.WarehouseNm = #PurchaseDetail.WarehouseNm    
+
+		WHERE 
+
+			COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 			
+
+			AND Source = 'P'
+
+
+
+
+
+	----(For Account & Grade)            
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) 
+
+			ON #PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+            AND RecyProfitRules.AccountID = #PurchaseDetail.AccountID    
+
+			AND RecyProfitRules.GradeID = #PurchaseDetail.GradeID 
+
+		 WHERE COALESCE( RecyProfitRules.Location,'') = ''
+
+			AND COALESCE(RecyProfitRules.WarehouseNm,'') = ''  
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 			
+
+			AND Source = 'P'
+
+
+
+	----(For Account-Warehouse & Grade)            
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) 
+
+			ON #PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+            AND RecyProfitRules.AccountID = #PurchaseDetail.AccountID    
+
+			AND RecyProfitRules.WarehouseNm = #PurchaseDetail.WarehouseNm    
+
+			AND RecyProfitRules.GradeID = #PurchaseDetail.GradeID 
+
+		WHERE ISNULL(RecyProfitRules.Location,'') = ''
+
+			AND COALESCE(RecyProfitRules.EquipmentType,'') = '' 
+
+			AND Source = 'P'
+
+
+
+	----(For Account-Warehouse & Location & Grade)            
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) 
+
+			ON #PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+            AND RecyProfitRules.AccountID = #PurchaseDetail.AccountID    
+
+		    AND RecyProfitRules.Location = #PurchaseDetail.Location    
+
+			AND RecyProfitRules.WarehouseNm = #PurchaseDetail.WarehouseNm    
+
+			AND RecyProfitRules.GradeID = #PurchaseDetail.GradeID 
+
+		WHERE 
+
+			COALESCE(RecyProfitRules.EquipmentType,'') = '' 
+
+			AND Source = 'P'
+
+
+
+	----(For Account-Warehouse & Grade & Equipment)            
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) 
+
+			ON #PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+            AND RecyProfitRules.AccountID = #PurchaseDetail.AccountID    
+
+		    --AND RecyProfitRules.Location = #PurchaseDetail.Location    
+
+			AND RecyProfitRules.WarehouseNm = #PurchaseDetail.WarehouseNm    
+
+			AND RecyProfitRules.GradeID = #PurchaseDetail.GradeID 
+
+			AND RecyProfitRules.EquipmentType = #PurchaseDetail.EquipmentType
+
+		WHERE Source = 'P'
+
+
+
+
+
+	----(For Account-Warehouse & Location & Grade & Equipment)            
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM)			
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) 
+
+			ON #PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+            AND RecyProfitRules.AccountID = #PurchaseDetail.AccountID    
+
+		    AND RecyProfitRules.Location = #PurchaseDetail.Location    
+
+			AND RecyProfitRules.WarehouseNm = #PurchaseDetail.WarehouseNm    
+
+			AND RecyProfitRules.GradeID = #PurchaseDetail.GradeID 
+
+			AND RecyProfitRules.EquipmentType = #PurchaseDetail.EquipmentType
+
+		WHERE Source = 'P'
+
+
+
+
+
+	-- . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
+
+
+	
+
+
+
+    ----(For Equipment-Warehouse-Account)
+
+    UPDATE #PurchaseDetail
+
+        SET Processing = Charge * dbo.convert_to_uom(BaseWeight,@ScaleWeight,ChargeUOM), HasEquipment = 1					
+
+        FROM #PurchaseDetail INNER JOIN RecyProfitRules WITH (NOLOCK) ON 
+
+			#PurchaseDetail.UnitType = RecyProfitRules.UnitType
+
+			AND RecyProfitRules.EquipmentType = #PurchaseDetail.EquipmentType
+
+			AND RecyProfitRules.WarehouseNm = #PurchaseDetail.WarehouseNm    
+
+			AND RecyProfitRules.AccountID = #PurchaseDetail.AccountID			
+
+		WHERE 
+
+			COALESCE( RecyProfitRules.Location,'') = ''	
+
+			AND COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND Source = 'P'
+
+		               
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		  
+
+
+
+	
+
+	-- GET WEIGHT BY WORKSHEET GRADE WHEN REPORTING BY ACCT+LOCATION+GRADE TO ALLOCATE FREIGHT AND ADJUSTMENTS (NOV 2016)
+
+	-----------------------------------------------------------------------------------------------------------
+
+	IF @GroupBy = 'ACCT+GRADE' BEGIN
+
+
+
+		INSERT #GradeExpenseAlloc(BuySellNo,GradeID,LoadWeight,GradeWeight)
+
+			SELECT #purchasedetail.BuysellNo,#purchasedetail.GradeID,BaseLoadWeight,SUM(BaseWeight) 
+
+			FROM #purchasedetail INNER JOIN #_GETBASELOADWT ON #purchasedetail.BuysellNo = #_GETBASELOADWT.BuysellNo
+
+			GROUP BY #purchasedetail.BuySellNo,#purchasedetail.GradeID,BaseLoadWeight
+
+			ORDER BY #purchasedetail.BuysellNo,#purchasedetail.GradeID
+
+
+
+		UPDATE #GradeExpenseAlloc SET AllocFactor = GradeWeight / LoadWeight WHERE LoadWeight <> 0	
+
+
+
+
+
+	END
+
+	-----------------------------------------------------------------------------------------------------------
+
+
+
+
+
+	-- PURCHASE DETAIL BY TICKET.
+
+	-----------------------------	
+
+	If @GroupBy = 'TICKET' BEGIN	
+
+		INSERT #PurchaseSummary(WarehouseNm,AccountID,AccountNm,Location,GradeID,GradeNm,UnitType,BaseWeight,
+
+								Sales,SalesPerUOM,Purchase,IntFreight,Processing,ShipmentCnt,BuySellNo,
+
+								ReceivingDt,IsSoldAsGrade,SalesRepNm,HasEquipment) 
+
+			SELECT 			
+
+				WarehouseNm,			
+
+				AccountID,
+
+				AccountNm,	
+
+				#PurchaseDetail.Location,		
+
+				GradeID,
+
+				GradeNm,
+
+				UnitType,						
+
+				BaseWeight, 
+
+				SoldAs_Sales,		
+
+				SoldAs_Price,
+
+				Purchase, 	
+
+				IntFreight, 	
+
+				Processing,
+
+				1,
+
+				#PurchaseDetail.BuySellNo,				
+
+				BuySell.ShippingDt,
+
+				CASE WHEN COALESCE(SoldAs_Price,0) <> 0 THEN 1 ELSE 0 END,
+
+				Referrer.[Name], --Counterparty_Referrer.ReferrerNo --Referrer.Name								
+
+				HasEquipment
+
+			FROM #PurchaseDetail 
+
+				INNER JOIN BuySell ON BUYSELL.BuySellNo = #PurchaseDetail.BuySellNo
+
+				LEFT JOIN Referrer ON #PurchaseDetail.ReferrerNo = Referrer.ReferrerNo
+
+	END
+
+
+
+	-- CONSOLIDATE PURCHASE DATA. 
+
+	----------------------------------
+
+	ELSE BEGIN
+
+		INSERT #PurchaseSummary(WarehouseNm,AccountID,AccountNm,Location,GradeID,GradeNm,UnitType,BaseWeight,
+
+								Purchase,IntFreight,Processing,ShipmentCnt,SoldAsSales,SoldAsBaseWeight,HasEquipment) 
+
+			SELECT 			
+
+				WarehouseNm,			
+
+				AccountID,
+
+				AccountNm,	
+
+				Location,		
+
+				GradeID,
+
+				GradeNm,
+
+				UnitType,						
+
+				Sum(BaseWeight), 				
+
+				Sum(Purchase), 	
+
+				Sum(IntFreight), 	
+
+				sum(Processing),
+
+				count(BuySellNo),
+
+				Sum(SoldAs_Sales),	
+
+				Sum(SoldAs_BaseWeight),
+
+				SUM(HasEquipment)					
+
+			FROM #PurchaseDetail
+
+			GROUP BY WarehouseNm,AccountID,AccountNm,Location,GradeID,GradeNm,UnitType						
+
+	END		
+
+
+
+
+
+	--SET UNIT TYPE DESCRIPTION.
+
+	UPDATE #PurchaseSummary SET 
+
+		UnitTypeNm = ISNULL(dbo.CnvUnitName(UnitType),'')			
+
+	UPDATE #PurchaseSummary SET 
+
+		PurchasePerUOM = round((Purchase/BaseWeight) * @ScaleWeighFactor,2), 
+
+		IntFreightPerUOM = round((IntFreight/BaseWeight) * @ScaleWeighFactor,2)
+
+	WHERE BaseWeight <> 0 	
+
+
+
+
+
+-- PURCHASES
+
+--select 'PURCHASES' 'PURCHASES', * from #PurchaseSummary
+
+
+
+
+
+
+
+
+
+	
+
+
+
+
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+	/* ASSIGN DISPOSAL GRADES & CHARGES. */
+
+	-------------------------------------
+
+	/*
+
+	IF EXISTS(SELECT [ID] FROM RecyProfitRules_Disposal) BEGIN
+
+		UPDATE #PurchaseSummary
+
+			SET IsDisposal=1, 
+
+				#PurchaseSummary.Sales = (dbo.convert_to_uom(#PurchaseSummary.[BaseWeight],@ScaleWeight,DisposalPriceUOM) * RecyProfitRules_Disposal.DisposalPrice) * -1,
+
+				SalesPerUOM = round((((dbo.convert_to_uom(#PurchaseSummary.[BaseWeight],@ScaleWeight,DisposalPriceUOM) * RecyProfitRules_Disposal.DisposalPrice) * -1) / BaseWeight)*@ScaleWeighFactor,2),
+
+				PriceModel = 'Disposal',
+
+				ProfitItemID = RecyProfitRules_Disposal.ID,
+
+				Margin = 1				
+
+			FROM #PurchaseSummary INNER JOIN RecyProfitRules_Disposal ON #PurchaseSummary.WarehouseNm = RecyProfitRules_Disposal.WarehouseNm
+
+				AND #PurchaseSummary.GradeID = RecyProfitRules_Disposal.GradeID
+
+	END
+
+	*/
+
+
+
+	
+
+
+
+
+
+
+
+	/* GET PERIOD FREIGHT EXPENSES. */
+
+	----------------------------------
+
+	
+
+	--ALLOCATE WORKSHEET EXPENSES BY ACCOUNT+LOCATION
+
+	IF @GroupBy = 'ACCT' BEGIN
+
+		
+
+		--a.) Get Summary of Expenses by Account & Location in period.
+
+		INSERT #wksExpenses(AccountID,Location,Purchases) 
+
+			SELECT 
+
+				VendorID, 
+
+				ShipFromID, 
+
+				SUM(PFreightChg) As Cost
+
+			FROM BUYSELL WITH (NOLOCK) 
+
+				INNER JOIN #wksList ON BUYSELL.BuySellNo = #wksList.BuySellNo
+
+			GROUP BY VendorID, ShipFromID	
+
+			
+
+		--b.) Assign Base-Weight to each account and location. 
+
+		UPDATE #wksExpenses 
+
+			SET #wksExpenses.ShipBaseWeight = #_SETBASEWT.BaseWeight
+
+			FROM #wksExpenses INNER JOIN #_SETBASEWT ON #wksExpenses.AccountID = #_SETBASEWT.AccountID
+
+				AND #wksExpenses.Location = #_SETBASEWT.Location			
+
+	END
+
+
+
+
+
+
+
+	--ALLOCATE WORKSHEET EXPENSES BY ACCOUNT+LOCATION+GRADE
+
+	IF @GroupBy = 'ACCT+GRADE' BEGIN
+
+
+
+		--a.) Get Summary of Expenses by Account & Location in period.
+
+		INSERT #wksExpenses(AccountID,Location,GradeID,Purchases) 
+
+			SELECT 			
+
+				VendorID, 
+
+				ShipFromID, 
+
+				#GradeExpenseAlloc.GradeID,				
+
+				SUM(ROUND(PFreightChg*AllocFactor,2))  
+
+				
+
+			FROM BUYSELL WITH (NOLOCK) 
+
+				INNER JOIN #wksList ON BUYSELL.BuySellNo = #wksList.BuySellNo				
+
+				INNER JOIN #GradeExpenseAlloc ON #GradeExpenseAlloc.BuySellNo = #wksList.BuysellNo --AND #GradeExpenseAlloc.GradeID = WKSDETAIL.GradeID 
+
+			GROUP BY VendorID, ShipFromID, #GradeExpenseAlloc.GradeID 
+
+
+
+		--b.) Assign Base-Weight to each account and location. 
+
+		UPDATE #wksExpenses 
+
+			SET #wksExpenses.ShipBaseWeight = #_SETBASEWT.BaseWeight
+
+			FROM #wksExpenses INNER JOIN #_SETBASEWT ON #wksExpenses.AccountID = #_SETBASEWT.AccountID AND #wksExpenses.Location = #_SETBASEWT.Location	AND #wksExpenses.GradeID= #_SETBASEWT.GradeID
+
+	END
+
+
+
+
+
+	--ALLOCATE WORKSHEET EXPENSES BY TICKET
+
+	If @GroupBy = 'TICKET' BEGIN
+
+		
+
+		--a.) Get Summary of Expenses by Account & Location in period.
+
+		INSERT #wksExpenses(AccountID,Location,BuySellNo,Purchases) 
+
+			SELECT 
+
+				VendorID, 
+
+				ShipFromID, 
+
+				BUYSELL.BuySellNo,
+
+				PFreightChg As Cost
+
+			FROM BUYSELL WITH (NOLOCK) 
+
+				INNER JOIN #wksList ON BUYSELL.BuySellNo = #wksList.BuySellNo
+
+	
+
+		--b.) Assign Base-Weight to each account and location. 
+
+		UPDATE #wksExpenses 
+
+			SET #wksExpenses.ShipBaseWeight = #_SETBASEWT.BaseWeight
+
+			FROM #wksExpenses INNER JOIN #_SETBASEWT ON #wksExpenses.AccountID = #_SETBASEWT.AccountID
+
+				AND #wksExpenses.Location = #_SETBASEWT.Location	
+
+				AND #wksExpenses.BuysellNo = #_SETBASEWT.WksNo
+
+	END
+
+
+
+
+
+	
+
+	--c.) Calculate Freight Expense per UOM.  (to be used later)
+
+	UPDATE #wksExpenses SET FreightPerUOM = Purchases/ShipBaseWeight WHERE ShipBaseWeight <> 0
+
+
+
+
+
+
+
+
+
+
+
+	-------------------------------------------------------------------------------------------------------
+
+	/* 
+
+		GET PERIOD ADJUSTMENTS. 
+
+		This section was rewritten 10/2018 DSH to first define the total adjustments to be reported and
+
+		then allocate adjustments based on report type.
+
+	*/
+
+	-------------------------------------------------------------------------------------------------------
+
+
+
+	--GET PURCHASE ADJUSTMENTS BASED ON REPORT FILTERS.		
+
+	INSERT #wksAdjustmentsBase(AccountID,Location,BuySellNo,AdjustmentAmt) 
+
+	SELECT 
+
+		VendorID, 
+
+		ShipFromID, 
+
+		BUYSELL.BuySellNo,
+
+		Cost 
+
+		FROM GPLEDGER 
+
+			INNER JOIN BUYSELL WITH (NOLOCK) ON GPLEDGER.BuySellNo = BuySell.BuySellNo
+
+			INNER JOIN #wksList ON BUYSELL.BuySellNo = #wksList.BuySellNo
+
+			WHERE Source = 'A' AND AdjType = 'P' AND 
+
+			(
+
+				(AdjPosted = 'Y' AND (@IsAllDates=1 OR (TradeDt >= @StartDt And TradeDt <= @EndDt)))  --AND COALESCE(BuySell.ScaleTicketNo,'') = '')  AND COALESCE(BuySell.DispatchID,'') = ''))	
+
+				OR
+
+				(@IsAllDates=1 OR (BuySell.InvoiceDt >= @StartDt And BuySell.InvoiceDt <= @EndDt)) 	 --AND COALESCE(BuySell.ScaleTicketNo,'') <> '') AND COALESCE(BuySell.DispatchID,'') <> ''))	
+
+			)
+
+	------------------------------------------------------
+
+
+
+	IF @GroupBy = 'ACCT' BEGIN
+
+		INSERT #wksAdjustments(AccountID,Location,ShipBaseWeight,Adjustments) 
+
+		SELECT #wksAdjustmentsBase.AccountID,#wksAdjustmentsBase.Location,#_SETBASEWT.BaseWeight, SUM(AdjustmentAmt) 
+
+			FROM #wksAdjustmentsBase INNER JOIN #_SETBASEWT ON #wksAdjustmentsBase.AccountID = #_SETBASEWT.AccountID AND #wksAdjustmentsBase.Location = #_SETBASEWT.Location
+
+			GROUP BY #wksAdjustmentsBase.AccountID,#wksAdjustmentsBase.Location,#_SETBASEWT.BaseWeight
+
+
+
+	END
+
+
+
+	IF @GroupBy = 'ACCT+GRADE' BEGIN
+
+
+
+		CREATE TABLE #wksAdjustmentGradeAlloc(
+
+			AccountID CHAR(12),
+
+			Location CHAR(45),
+
+			BuySellNo CHAR(12),
+
+			GradeID CHAR(15),
+
+			AdjustmentAmt MONEY,
+
+			WeightLbs DECIMAL(22,5),
+
+			TotalWeightLbs DECIMAL(22,5)
+
+			)
+
+
+
+
+
+		INSERT #wksAdjustmentGradeAlloc(AccountID,Location,BuySellNo,GradeID,AdjustmentAmt,WeightLbs)
+
+		Select AccountID, Location, #wksAdjustmentsBase.BuySellNo, GradeID, AdjustmentAmt, SUM(dbo.Convert_To_UOM(Pweight,PWeightUOM,'L'))
+
+			FROM #wksAdjustmentsBase INNER JOIN WksDetail ON #wksAdjustmentsBase.BuySellNo =  WksDetail.BuySellNo
+
+			GROUP BY AccountID, Location, #wksAdjustmentsBase.BuySellNo, GradeID, AdjustmentAmt
+
+
+
+		SELECT BuySellNo, SUM(WeightLbs) SumWeightLbs INTO #_TotWt FROM  #wksAdjustmentGradeAlloc GROUP BY BuySellNo
+
+		UPDATE #wksAdjustmentGradeAlloc SET TotalWeightLbs = SumWeightLbs  FROM #wksAdjustmentGradeAlloc INNER JOIN #_TotWt ON #wksAdjustmentGradeAlloc.BuySellNo = #_TotWt.BuySellNo
+
+		UPDATE #wksAdjustmentGradeAlloc SET AdjustmentAMt = AdjustmentAmt * (WeightLbs/TotalWeightLbs) WHERE TotalWeightLbs <> 0 
+
+
+
+		INSERT #wksAdjustments(AccountID,Location,GradeID,ShipBaseWeight,Adjustments) 
+
+			SELECT AccountID, Location, GradeID, SUM(WeightLbs), SUM(AdjustmentAmt) FROM #wksAdjustmentGradeAlloc  
+
+			GROUP BY AccountID, Location, GradeID
+
+	END
+
+
+
+
+
+	IF @GroupBy = 'TICKET' BEGIN
+
+		INSERT #wksAdjustments(AccountID,Location,BuySellNo,ShipBaseWeight,Adjustments) 
+
+		SELECT #wksAdjustmentsBase.AccountID,#wksAdjustmentsBase.Location,#_SETBASEWT.WksNo,#_SETBASEWT.BaseWeight, SUM(AdjustmentAmt) 
+
+			FROM #wksAdjustmentsBase INNER JOIN #_SETBASEWT ON #wksAdjustmentsBase.AccountID = #_SETBASEWT.AccountID AND #wksAdjustmentsBase.Location = #_SETBASEWT.Location AND #wksAdjustmentsBase.BuySellNo = #_SETBASEWT.WksNo
+
+			GROUP BY #wksAdjustmentsBase.AccountID,#wksAdjustmentsBase.Location,#_SETBASEWT.WksNo,#_SETBASEWT.BaseWeight
+
+	END
+
+
+
+	UPDATE #wksAdjustments SET AdjPerUOM = Adjustments/ShipBaseWeight WHERE ShipBaseWeight <> 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-------------------------------------------------------------------------------
+
+	--NOTE: For each of the following, a virtual "sales" grade is 
+
+	--		created to match each of the receiving grades that use allocations 
+
+	--		and do not have naturally matching passthrough grades.
+
+	--
+
+	--		"distinct" clause is used because #PurchaseSumamry may include same
+
+	--		grade with different unit types. 
+
+	-------------------------------------------------------------------------------
+
+
+
+	-- D.) INCLUDE PROFIT ALLOCATIONS FOR SUPPLIER(ACCOUNT & LOCATION).
+
+	insert #wrkSalesGradeSummary(SaleType,ProfitItemID,AccountID,Location,GradeID,GradeNm,UnitType)	
+
+		SELECT DISTINCT 'ACCT-LOC',ItemID,AccountID,ShipFromID,RecyProfitDef.GradeID,Grade.[Description],COALESCE(RecyProfitDef.UnitType,'')
+
+			FROM RecyProfitDef inner join #PurchaseSummary ON RecyProfitDef.CPID = #PurchaseSummary.AccountID 
+
+				INNER JOIN GRADE WITH (NOLOCK) ON RecyProfitDef.GradeID = Grade.GradeID
+
+				WHERE RecyProfitDef.ShipFromID = #PurchaseSummary.Location
+
+
+
+	-- E.) INCLUDE PROFIT ALLOCATIONS FOR SUPPLIER(ACCOUNT) ONLY.
+
+	insert #wrkSalesGradeSummary(SaleType,ProfitItemID,AccountID,Location,GradeID,GradeNm,UnitType)	
+
+		SELECT DISTINCT 'ACCT',ItemID,AccountID,ShipFromID,RecyProfitDef.GradeID,Grade.[Description],COALESCE(RecyProfitDef.UnitType,'')
+
+			FROM #PurchaseSummary 
+
+				inner join RecyProfitDef ON #PurchaseSummary.AccountID = RecyProfitDef.CPID  AND #PurchaseSummary.GradeID = RecyProfitDef.GradeID  
+
+				INNER JOIN GRADE WITH (NOLOCK) ON RecyProfitDef.GradeID = Grade.GradeID
+
+				WHERE RecyProfitDef.ShipFromID IS NULL
+
+
+
+
+
+	-- F.) GET PROFIT ALLOCATIONS FOR ANY SUPPLIER ONLY.	
+
+	insert #wrkSalesGradeSummary(SaleType,ProfitItemID,AccountID,Location,GradeID,GradeNm,UnitType)	
+
+		SELECT DISTINCT 'ANY',ItemID,AccountID,ShipFromID,RecyProfitDef.GradeID,Grade.[Description],COALESCE(RecyProfitDef.UnitType,'')
+
+			FROM #PurchaseSummary 
+
+				INNER JOIN RecyProfitDef ON #PurchaseSummary.GradeID = RecyProfitDef.GradeID  
+
+				INNER JOIN GRADE WITH (NOLOCK) ON RecyProfitDef.GradeID = Grade.GradeID
+
+				WHERE RecyProfitDef.CPID = '(DEFAULT)' AND Coalesce(RecyProfitDef.WarehouseNm,'') = '' 
+
+
+
+	-- G.) GET PROFIT ALLOCATIONS FOR WAREHOUSE ONLY.	
+
+	insert #wrkSalesGradeSummary(SaleType,ProfitItemID,AccountID,Location,GradeID,GradeNm,UnitType)	
+
+		SELECT DISTINCT 'WHSE',ItemID,AccountID,ShipFromID,RecyProfitDef.GradeID,Grade.[Description],COALESCE(RecyProfitDef.UnitType,'')
+
+			FROM #PurchaseSummary 
+
+				inner join RecyProfitDef ON #PurchaseSummary.WarehouseNM = RecyProfitDef.WarehouseNm  
+
+				INNER JOIN GRADE WITH (NOLOCK) ON RecyProfitDef.GradeID = Grade.GradeID
+
+				WHERE Coalesce(RecyProfitDef.WarehouseNm,'') <> '' 
+
+
+
+
+
+--delete from #wrkSalesGradeSummary where gradeid NOT IN ('1377','1139')           
+
+--select 'wrkSalesGradeSummary' 'wrkSalesGradeSummary', * from #wrkSalesGradeSummary
+
+--return
+
+
+
+
+
+	/* CALCULATE MARKET PRICE FOR EACH GRADE ALLOCATION RULE. */
+
+	-----------------------------------------------------------------------------------------------------------------------------------------	
+
+	INSERT #AllocSalesPrice(AllocRuleID,RcvGrade,AllocGrade,AllocFactor) 
+
+		SELECT DISTINCT ProfitItemID,
+
+						#wrkSalesGradeSummary.GradeID,
+
+						RecyProfitDef_SoldAs.SoldAsGradeID, 
+
+						RecyProfitDef_SoldAs.SoldAsGradeIDAlloc  
+
+		FROM #wrkSalesGradeSummary inner join RecyProfitDef_SoldAs WITH (NOLOCK) ON #wrkSalesGradeSummary.ProfitItemID = RecyProfitDef_SoldAs.ItemID
+
+		WHERE #wrkSalesGradeSummary.SaleType<>'PASSTHRU'
+
+
+
+	--1.) Populate Alocation with passthru grade prices.
+
+	UPDATE #AllocSalesPrice
+
+		SET AllocPrice = Coalesce(SalesPerUom,0), IsCurrentPrice=1
+
+		FROM #AllocSalesPrice INNER JOIN #wrkSalesGradeSummary ON #AllocSalesPrice.AllocGrade = #wrkSalesGradeSummary.GradeID AND SaleType='PASSTHRU'		
+
+
+
+	--2.) Populate with latest price from prior 3 month period. 
+
+	IF @WhseNm IS NOT NULL BEGIN
+
+
+
+		CREATE TABLE #_PriceHistory(
+
+			GradeID CHAR(12),Price MONEY,PriceUOM CHAR(1), RowNum INT
+
+			)
+
+
+
+		INSERT #_PriceHistory			
+
+			SELECT GradeID, SPrice, SpriceUOM, Row_Number() OVER(PARTITION by GradeID ORDER BY GradeID) AS RowNumber  --"PARTITION" CLAUSE ADDED NOV 2015 DSH -- PREVENTED PRICE UPDATE BELOW FROm WORKING.
+
+				FROM wksdetail 
+
+					inner join buysell ON wksdetail.buysellno = buysell.buysellno					
+
+					INNER JOIN #AllocSalesPrice ON wksdetail.gradeid =  #AllocSalesPrice.AllocGrade
+
+				WHERE 				
+
+					BuySell.IsBulk = 1 	AND Buysell.VendorID = '(INV)'	  --vendorid = '(Plant)' 					
+
+					AND Status = 'I' 
+
+					AND InvoiceDt >= @CutOffHistoryDt  --(3 month cutoff)							
+
+					AND BuySell.ShipFromID = @WhseNm
+
+
+
+
+
+		UPDATE #AllocSalesPrice 
+
+			SET AllocPrice = Price 
+
+			FROM #AllocSalesPrice INNER JOIN #_PriceHistory ON #AllocSalesPrice.AllocGrade = #_PriceHistory.GradeID and RowNum = 1
+
+			WHERE IsCurrentPrice = 0 
+
+
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-- 3.) COMPUTE WEIGHTED VALUE MARKET PRICE ALLOCATION.		--Calc Sales Amount based on weight received and allocation %.   		
+
+	UPDATE #AllocSalesPrice	SET AllocWeightedValue = (AllocPrice * (AllocFactor/100 * 10))
+
+
+
+	-- 4.) CALCULATE MARKET VALUE PER BUSINESS ALLOCATION RULE.
+
+	INSERT #MarketValue (AllocRuleID,Price,UsePriceHistory)
+
+		SELECT AllocRuleID, ROUND(SUM(AllocWeightedValue)/10,2),sum(IsCurrentPrice) 
+
+			FROM #AllocSalesPrice 
+
+			GROUP BY AllocRuleID
+
+	UPDATE #MarketValue SET UsePriceHistory = 1  WHERE UsePriceHistory <> 0  			
+
+
+
+	--5.) UPDATE CONSOLIDATED GRADE SUMMARY WITH MARKET VALUE.
+
+	UPDATE #wrkSalesGradeSummary SET 
+
+		SalesPerUOM = Price,
+
+		#wrkSalesGradeSummary.UsePriceHistory = #MarketValue.UsePriceHistory		
+
+		FROM #wrkSalesGradeSummary INNER JOIN #MarketValue ON #wrkSalesGradeSummary.ProfitItemID = #MarketValue.AllocRuleID
+
+	-----------------------------------------------------------------------------------------------------------------------------------------	
+
+
+
+		
+
+
+
+
+
+--select '#AllocSalesPrice' '#AllocSalesPrice', * from #AllocSalesPrice
+
+--select 'wrkSalesGradeSummary' 'wrkSalesGradeSummary', * from #wrkSalesGradeSummary
+
+--RETURN
+
+
+
+
+
+
+
+	/* GET AVERAGE SALES PRICE FOR ALL GRADES FOR PERIOD. */
+
+	--------------------------------------------------------
+
+	Declare @TotalWeight Decimal(22,4),
+
+			@Sales Decimal(22,4),
+
+			@AverageSalesPerUOM money	
+
+				
+
+	SELECT	@TotalWeight = SUM(ShipBaseWeight), 
+
+			@Sales = SUM(Sales)
+
+		FROM #wrkSalesGradeSummary	WHERE SaleType='PASSTHRU'			
+
+	SET @AverageSalesPerUOM = 0
+
+	IF @TotalWeight <> 0 
+
+		SET @AverageSalesPerUOM = (@Sales / @TotalWeight) * @ScaleWeighFactor
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	/* MATCH COMMODITY SALES PRICES TO RECEIVED MATERIAL */
+
+	-------------------------------------------------------
+
+	IF @View <> 'Broker' BEGIN  --AND @UseMarketPrices = 0
+
+
+
+
+
+		-- UPDATE PRICES ACCOUNT/LOCATION PROFIT RULES WITH UNIT.
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.SalesPerUOM = #wrkSalesGradeSummary.SalesPerUom, 
+
+			#PurchaseSummary.ProfitItemID = #wrkSalesGradeSummary.ProfitItemID,
+
+			#PurchaseSummary.PriceModel = 'Alloc-Acct/Loc/Grade/Unit' + CASE WHEN UsePriceHistory = 1 THEN '*' ELSE '' END
+
+			FROM #PurchaseSummary INNER JOIN #wrkSalesGradeSummary ON 
+
+				#PurchaseSummary.AccountID = #wrkSalesGradeSummary.AccountID 
+
+				AND #PurchaseSummary.Location  = #wrkSalesGradeSummary.Location
+
+				AND #PurchaseSummary.GradeID   = #wrkSalesGradeSummary.GradeID
+
+				AND #PurchaseSummary.UnitType = #wrkSalesGradeSummary.UnitType
+
+			WHERE IsDisposal = 0 AND IsSoldAsGrade=0	
+
+
+
+		-- UPDATE PRICES ACCOUNT/LOCATION PROFIT RULES.
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.SalesPerUOM = #wrkSalesGradeSummary.SalesPerUom, 
+
+			#PurchaseSummary.ProfitItemID = #wrkSalesGradeSummary.ProfitItemID,
+
+			#PurchaseSummary.PriceModel = 'Alloc-Acct/Loc/Grade' + CASE WHEN UsePriceHistory = 1 THEN '*' ELSE '' END
+
+			FROM #PurchaseSummary INNER JOIN #wrkSalesGradeSummary ON 
+
+				#PurchaseSummary.AccountID = #wrkSalesGradeSummary.AccountID 
+
+				AND #PurchaseSummary.Location  = #wrkSalesGradeSummary.Location
+
+				AND #PurchaseSummary.GradeID   = #wrkSalesGradeSummary.GradeID			
+
+				WHERE IsDisposal = 0 AND IsSoldAsGrade=0 AND #wrkSalesGradeSummary.UnitType = '' AND #PurchaseSummary.SalesPerUOM=0
+
+
+
+
+
+		-- UPDATE PRICES ACCOUNT ONLY RULES. (Note: There can be multiple items per grade)
+
+		--ACCT SPECIFIC
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.SalesPerUOM = #wrkSalesGradeSummary.SalesPerUom,
+
+			#PurchaseSummary.ProfitItemID = #wrkSalesGradeSummary.ProfitItemID,
+
+			#PurchaseSummary.PriceModel = 'Alloc-Acct/Grade' + CASE WHEN UsePriceHistory = 1 THEN '*' ELSE '' END
+
+			FROM #PurchaseSummary INNER JOIN #wrkSalesGradeSummary ON 
+
+				#PurchaseSummary.AccountID = #wrkSalesGradeSummary.AccountID 
+
+				AND #PurchaseSummary.GradeID = #wrkSalesGradeSummary.GradeID				
+
+				WHERE IsDisposal = 0 AND IsSoldAsGrade=0 AND #wrkSalesGradeSummary.Location = '' AND #wrkSalesGradeSummary.UnitType = '' AND #PurchaseSummary.SalesPerUOM=0 AND SaleType = 'ACCT' 
+
+
+
+		--WHSE SPECIFIC
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.SalesPerUOM = #wrkSalesGradeSummary.SalesPerUom,
+
+			#PurchaseSummary.ProfitItemID = #wrkSalesGradeSummary.ProfitItemID,
+
+			#PurchaseSummary.PriceModel = 'Alloc-Acct/Grade' + CASE WHEN UsePriceHistory = 1 THEN '*' ELSE '' END
+
+			FROM #PurchaseSummary 
+
+				INNER JOIN #wrkSalesGradeSummary ON #PurchaseSummary.AccountID = #wrkSalesGradeSummary.AccountID AND #PurchaseSummary.GradeID = #wrkSalesGradeSummary.GradeID				
+
+				WHERE IsDisposal = 0 AND IsSoldAsGrade=0 AND #wrkSalesGradeSummary.Location = '' AND #wrkSalesGradeSummary.UnitType = '' AND #PurchaseSummary.SalesPerUOM=0 AND SaleType = 'WHSE' 
+
+
+
+
+
+		-- UPDATE PRICES ACCOUNT ONLY RULES WITH UNIT.
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.SalesPerUOM = #wrkSalesGradeSummary.SalesPerUom,
+
+			#PurchaseSummary.ProfitItemID = #wrkSalesGradeSummary.ProfitItemID,
+
+			#PurchaseSummary.PriceModel = 'Alloc-Acct/Grade/Unit' + CASE WHEN UsePriceHistory = 1 THEN '*' ELSE '' END
+
+			FROM #PurchaseSummary INNER JOIN #wrkSalesGradeSummary ON 
+
+				#PurchaseSummary.AccountID = #wrkSalesGradeSummary.AccountID 
+
+				AND #PurchaseSummary.GradeID = #wrkSalesGradeSummary.GradeID	
+
+				AND #PurchaseSummary.UnitType = #wrkSalesGradeSummary.UnitType	
+
+				WHERE IsDisposal = 0 AND IsSoldAsGrade=0 AND #wrkSalesGradeSummary.Location = '' AND #PurchaseSummary.SalesPerUOM=0
+
+
+
+		-- UPDATE PRICES FOR DEFAULT RULES.
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.SalesPerUOM = #wrkSalesGradeSummary.SalesPerUom,
+
+			#PurchaseSummary.PriceModel = 'Alloc-Default' + CASE WHEN UsePriceHistory = 1 THEN '*' ELSE '' END
+
+			FROM #PurchaseSummary INNER JOIN #wrkSalesGradeSummary ON 
+
+				#PurchaseSummary.GradeID = #wrkSalesGradeSummary.GradeID
+
+				WHERE IsDisposal = 0 AND IsSoldAsGrade=0 AND SaleType = 'ANY' AND #wrkSalesGradeSummary.UnitType = '' AND #PurchaseSummary.SalesPerUOM=0			
+
+
+
+
+
+
+
+
+
+		-- UPDATE PRICES FOR DEFAULT RULES WITH UNIT.
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.SalesPerUOM = #wrkSalesGradeSummary.SalesPerUom,
+
+			#PurchaseSummary.PriceModel = 'Alloc-Default'
+
+			FROM #PurchaseSummary INNER JOIN #wrkSalesGradeSummary ON 
+
+				#PurchaseSummary.GradeID = #wrkSalesGradeSummary.GradeID
+
+				AND #PurchaseSummary.UnitType = #wrkSalesGradeSummary.UnitType		
+
+				WHERE IsDisposal = 0 AND IsSoldAsGrade=0 AND SaleType = 'ANY' AND #PurchaseSummary.SalesPerUOM=0			
+
+
+
+
+
+		-- UPDATE PRICES FOR PASSTHROUGH GRADES.
+
+			/* Note: Average price allocations are intentionally unit type indifferent. */
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.SalesPerUOM = #wrkSalesGradeSummary.SalesPerUom,
+
+			#PurchaseSummary.PriceModel = 'AvgPrc-Grade' 
+
+			FROM #PurchaseSummary INNER JOIN #wrkSalesGradeSummary ON 
+
+				#PurchaseSummary.GradeID = #wrkSalesGradeSummary.GradeID	
+
+				WHERE IsDisposal = 0 AND IsSoldAsGrade=0 AND SaleType = 'PASSTHRU' AND Coalesce(#PurchaseSummary.SalesPerUOM,0)=0
+
+
+
+				
+
+		---- APPLY AVERAGE PRICE FOR "ORPHAN" RECEIVING GRADES' 
+
+		IF @DoNotUseAverageAll = 0 
+
+			UPDATE #PurchaseSummary SET 
+
+				#PurchaseSummary.SalesPerUOM = @AverageSalesPerUOM, 
+
+				#PurchaseSummary.PriceModel = 'AvgPrc-All'
+
+				FROM #PurchaseSummary 
+
+				WHERE IsDisposal = 0 AND IsSoldAsGrade=0 AND Coalesce(#PurchaseSummary.SalesPerUOM,0)=0
+
+		ELSE				
+
+			UPDATE #PurchaseSummary SET 
+
+				#PurchaseSummary.PriceModel = '(None)' 
+
+				FROM #PurchaseSummary 
+
+				WHERE IsDisposal = 0 AND IsSoldAsGrade=0 AND Coalesce(#PurchaseSummary.SalesPerUOM,0)=0
+
+	END	
+
+	------------------------------------------------------- Price Matching.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--select 'PURCHASES-UPDATE' 'PURCHASES-UPDATE', SalesPerUOM, PriceModel, * from #PurchaseSummary
+
+--Return
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	/* MATCH MARKET PRICES TO RECEIVED MATERIAL */
+
+	----------------------------------------------
+
+	--IF @View <> 'Broker' AND @UseMarketPrices = 1 BEGIN
+
+	--	UPDATE #PurchaseSummary SET 
+
+	--		SalesPerUOM = P.PricePerST,
+
+	--		PriceModel = 'Market-Price' 
+
+	--		FROM #PurchaseSummary S INNER JOIN #MarketPrices P ON S.GradeID = P.GradeID AND S.UnitType = P.UnitType
+
+	--END
+
+	--------------------------------------------------------- Market Price Matching.
+
+
+
+
+
+
+
+
+
+	-- UPDATE FREIGHT PER UOM.
+
+	IF @GroupBy = 'ACCT' 
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.FreightPerUom = #wksExpenses.FreightPerUom 
+
+			FROM #PurchaseSummary INNER JOIN #wksExpenses ON #PurchaseSummary.AccountID = #wksExpenses.AccountID
+
+				AND #PurchaseSummary.Location = #wksExpenses.Location
+
+
+
+	IF @GroupBy = 'ACCT+GRADE' 
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.FreightPerUom = #wksExpenses.FreightPerUom 
+
+			FROM #PurchaseSummary INNER JOIN #wksExpenses ON #PurchaseSummary.AccountID = #wksExpenses.AccountID
+
+				AND #PurchaseSummary.Location = #wksExpenses.Location
+
+				AND #PurchaseSummary.GradeID = #wksExpenses.GradeID
+
+
+
+
+
+	IF @GroupBy = 'TICKET' 
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.FreightPerUom = #wksExpenses.FreightPerUom 
+
+			FROM #PurchaseSummary INNER JOIN #wksExpenses ON #PurchaseSummary.AccountID = #wksExpenses.AccountID
+
+				AND #PurchaseSummary.Location = #wksExpenses.Location
+
+				AND #PurchaseSummary.BuySellNo = #wksExpenses.BuySellNo
+
+
+
+
+
+	-- UPDATE ADJUSTMENTS PER UOM.
+
+	IF @GroupBy = 'ACCT' 
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.AdjPerUom = #wksAdjustments.AdjPerUom 
+
+			FROM #PurchaseSummary INNER JOIN #wksAdjustments ON 
+
+				#PurchaseSummary.AccountID = #wksAdjustments.AccountID
+
+				AND #PurchaseSummary.Location = #wksAdjustments.Location
+
+
+
+	IF @GroupBy = 'ACCT+GRADE' --10/13/2017 DSH Added this missing section to allocate adjustments by grade
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.AdjPerUom = #wksAdjustments.AdjPerUom 
+
+			FROM #PurchaseSummary INNER JOIN #wksAdjustments ON 
+
+				#PurchaseSummary.AccountID = #wksAdjustments.AccountID
+
+				AND #PurchaseSummary.Location = #wksAdjustments.Location
+
+				AND #PurchaseSummary.GradeID= #wksAdjustments.GradeID
+
+
+
+	IF @GroupBy = 'TICKET' 
+
+		UPDATE #PurchaseSummary SET 
+
+			#PurchaseSummary.AdjPerUom = #wksAdjustments.AdjPerUom 
+
+			FROM #PurchaseSummary INNER JOIN #wksAdjustments ON #PurchaseSummary.AccountID = #wksAdjustments.AccountID
+
+				AND #PurchaseSummary.Location = #wksAdjustments.Location
+
+				AND #PurchaseSummary.BuySellNo = #wksAdjustments.BuySellNo
+
+
+
+
+
+
+
+
+
+    /* APPLY BACK STORED PROCESSING CHARGES PER UOM.
+
+    -----------------------------------------------------------------
+
+	This section is meant to apply back the processing charges using the apply 
+
+	rules to avoid roudning errors. However this method will not work on all 
+
+	rollup data so a calculated default is provided at the bottom - This entire section 
+
+	is technically unecessary was provided to satisfy Pioneer who probably complained 
+
+	about penny rounding between processing charge shown and that calculated using 
+
+	processing dollar amount
+
+
+
+
+
+	OCT 2018 Commented out because price was overwriting rule application (Pioneer Complaint)  --DSH
+
+	*/
+
+
+
+	/*
+
+
+
+    ----(Default UnitType ONLY)
+
+    UPDATE #PurchaseSummary
+
+        SET ProcessingPerUOM = Charge        
+
+        FROM #PurchaseSummary INNER JOIN RecyProfitRules WITH (NOLOCK) ON #PurchaseSummary.UnitType = RecyProfitRules.UnitType            
+
+			WHERE RecyProfitRules.AccountID = '(Default)' AND COALESCE(RecyProfitRules.EquipmentType,'') = '' AND COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND HasEquipment = 0 
+
+
+
+	------(Warehouse-UnitType)	
+
+    UPDATE #PurchaseSummary
+
+        SET ProcessingPerUOM = Charge        
+
+        FROM #PurchaseSummary INNER JOIN RecyProfitRules WITH (NOLOCK) ON #PurchaseSummary.UnitType = RecyProfitRules.UnitType
+
+			AND #PurchaseSummary.WarehouseID = RecyProfitRules.WarehouseID			
+
+            WHERE RecyProfitRules.AccountID = '(Default)' AND COALESCE(RecyProfitRules.EquipmentType,'') = '' AND COALESCE(RecyProfitRules.GradeID,'') = ''
+
+			AND HasEquipment = 0 
+
+
+
+	----(For Warehouse-UnitType-Grade)
+
+    UPDATE #PurchaseSummary
+
+           SET ProcessingPerUOM = Charge    
+
+		FROM #PurchaseSummary INNER JOIN RecyProfitRules WITH (NOLOCK) ON #PurchaseSummary.UnitType = RecyProfitRules.UnitType
+
+			AND #PurchaseSummary.WarehouseID = RecyProfitRules.WarehouseID
+
+			AND #PurchaseSummary.GradeID = RecyProfitRules.GradeID
+
+		WHERE RecyProfitRules.AccountID = '(Default)' AND  COALESCE(RecyProfitRules.EquipmentType,'') = '' 
+
+		AND HasEquipment = 0 
+
+*/
+
+
+
+
+
+	-- APPLY CALCULATED DEFAULT PROCESSING CHARGE PER UOM (WHERE MISSING).
+
+	UPDATE #PurchaseSummary 
+
+	SET 
+
+		ProcessingPerUOM = round((Processing / BaseWeight)* @ScaleWeighFactor ,2)		
+
+		WHERE Processing <> 0 AND ProcessingPerUOM = 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-- UPDATE COSTS.
+
+	UPDATE #PurchaseSummary SET 		    	
+
+		Freight = Round(FreightPerUom * BaseWeight,2),
+
+		FreightPerUom =  round(FreightPerUom * @ScaleWeighFactor,4),			
+
+		Adj = Round(AdjPerUom * BaseWeight,2),
+
+		AdjPerUom =  round(AdjPerUom * @ScaleWeighFactor,4),	
+
+		Cost = Round(FreightPerUom * BaseWeight,2) + Round(AdjPerUom * BaseWeight,2) + Purchase + Processing + IntFreight,		
+
+		CostPerUom = (((FreightPerUom * BaseWeight) +(AdjPerUom * BaseWeight) + Processing + Purchase + IntFreight) / 	BaseWeight)	* @ScaleWeighFactor		
+
+		WHERE BaseWeight <> 0 
+
+
+
+
+
+
+
+	/* UPDATE SALES & PROFIT. */
+
+	-----------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+	-- UPDATE SALES.
+
+	If @View <> 'Broker' BEGIN
+
+		UPDATE #PurchaseSummary SET 		
+
+			Sales = round((BaseWeight-SoldAsBaseWeight) * (SalesPerUOM/@ScaleWeighFactor) +  SoldAsSales ,2),
+
+			SalesPerUOM = (((BaseWeight-SoldAsBaseWeight) * (SalesPerUOM/@ScaleWeighFactor) +  SoldAsSales) / BaseWeight) * @ScaleWeighFactor
+
+			WHERE BaseWeight <> 0 AND IsSoldAsGrade=0 	
+
+		UPDATE #PurchaseSummary SET 		
+
+			Profit = Round(Sales - Cost,2),
+
+			ProfitPerUom = Round(  Round(Sales - Cost,2) / (BaseWeight/@ScaleWeighFactor)  ,2)
+
+			WHERE BaseWeight <> 0 AND IsSoldAsGrade=0 
+
+	END
+
+
+
+
+
+
+
+	-- ASSIGN MARGIN	
+
+	UPDATE #PurchaseSummary SET 				
+
+		Margin = ((BaseWeight * (SalesPerUOM/@ScaleWeighFactor)) - Cost)  / Cost
+
+			WHERE ABS(Cost) > .01 
+
+
+
+
+
+	-- SPECIAL CUSTOM REPORTING OUTPUT (1)
+
+	IF @SpecialReportOption = 'MARGIN' BEGIN
+
+		SELECT	@StartDt,
+
+				GradeNm, GradeID, 
+
+				round(SUM(BaseWeight/@ScaleWeighFactor),3) WeightST,
+
+				SUM(Sales) Sales, 
+
+				SUM(Purchase) Costs,
+
+				SUM(Sales-Purchase) GrossMargin,				
+
+				SUM(Sales-Purchase)/round(SUM(BaseWeight/@ScaleWeighFactor),3) GrossMarginUOM
+
+			FROM #PurchaseSummary
+
+			GROUP BY GradeNm, GradeID
+
+			ORDER BY GradeNm
+
+		RETURN
+
+	END
+
+
+
+	-- SPECIAL CUSTOM REPORTING OUTPUT (2)
+
+	IF @SpecialReportOption = 'MARGIN_ACC' BEGIN
+
+		SELECT	@StartDt,		
+
+				GradeNm, GradeID, 
+
+				AccountNm,
+
+				Location,				
+
+				round(SUM(BaseWeight/@ScaleWeighFactor),3) WeightST,
+
+				SUM(Sales) Sales, 
+
+				SUM(Purchase) Costs,
+
+				SUM(Sales-Purchase) GrossMargin,				
+
+				SUM(Sales-Purchase)/round(SUM(BaseWeight/@ScaleWeighFactor),3) GrossMarginUOM
+
+			FROM #PurchaseSummary
+
+			GROUP BY GradeNm, GradeID, AccountNm, Location
+
+			ORDER BY GradeNm, GradeID, AccountNm, Location
+
+		RETURN
+
+	END
+
+
+
+
+
+
+
+
+
+	--NEW BROKERAGE DATA SECTION
+
+/*
+
+	----------------------------------------------------------------------------------------------------------------------------------
+
+	IF @View = '(All)' OR @View = 'Broker' BEGIN
+
+
+
+
+
+		UPDATE #PurchaseSummary SET IsPlantReceiving = 1
+
+
+
+		IF @SalesRep IS NULL SET @SalesRep = '' 
+
+		IF @BySupID IS NULL SET @BySupID = ''
+
+		IF @BrokerDept IS NULL SET @BrokerDept = ''
+
+		
+
+		
+
+		-- RESULTS BY TICKET/ACCT
+
+		If @GroupBy <>  'ACCT+GRADE' BEGIN
+
+			INSERT #PurchaseSummary(WarehouseNm,AccountID,AccountNm,Location,GradeID,GradeNm,UnitType,UnitTypeNm,
+
+					BaseWeight,Sales,SalesPerUOM,Purchase,PurchasePerUOM,Freight,FreightPerUom,Adj,AdjPerUOM,  
+
+					IntFreight,Processing,Cost,ShipmentCnt,BuySellNo,ScaleTicketNo,ReceivingDt,IsSoldAsGrade,SalesRepNm,ProfitItemID,
+
+					PriceModel,Profit,ProfitPerUom) 
+
+			EXEC q_GetGrossProfitBySupplierAndGrade 'SUPPLIER+GRADE+WKS',1, @StartDt,@EndDt,@BrokerDept,@BrokerTradeType ,@BySupID ,@SalesRep,'S',''--, @SetInvSupplier = @PROC_SetInvSupplier     
+
+		END				
+
+
+
+
+
+
+
+
+
+		-- RESULTS BY ACCT GROUP
+
+		If @GroupBy = 'ACCT+GRADE' BEGIN
+
+
+
+			INSERT #BrokerageDetails(WarehouseNm,AccountID,AccountNm,Location,GradeID,GradeNm,UnitType,UnitTypeNm,
+
+					BaseWeight,Sales,SalesPerUOM,Purchase,PurchasePerUOM,Freight,FreightPerUom,Adj,AdjPerUOM,  
+
+					IntFreight,Processing,Cost,ShipmentCnt,BuySellNo,ScaleTicketNo,ReceivingDt,IsSoldAsGrade,SalesRepNm,ProfitItemID,
+
+					PriceModel,Profit,ProfitPerUom) 
+
+				EXEC q_GetGrossProfitBySupplierAndGrade 'SUPPLIER+GRADE+WKS',1, @StartDt,@EndDt,@BrokerDept,@BrokerTradeType ,@BySupID ,@SalesRep,'S',''--, @SetInvSupplier = @PROC_SetInvSupplier     
+
+
+
+			INSERT #PurchaseSummary(WarehouseNm,AccountID,AccountNm,Location,GradeID,GradeNm,UnitType,UnitTypeNm,
+
+					BaseWeight,Sales,SalesPerUOM,Purchase,PurchasePerUOM,Freight,FreightPerUom,Adj,AdjPerUOM,  
+
+					IntFreight,Processing,Cost,ShipmentCnt,BuySellNo,ScaleTicketNo,ReceivingDt,IsSoldAsGrade,SalesRepNm,ProfitItemID,
+
+					PriceModel,Profit,ProfitPerUom)		
+
+				SELECT WarehouseNm,AccountID,AccountNm,Location,GradeID,UPPER(GradeNm),UnitType,UnitTypeNm,
+
+					SUM(BaseWeight),SUM(Sales),0,SUM(Purchase),0,SUM(Freight),0,SUM(Adj),0,SUM(IntFreight),SUM(Processing),SUM(Cost),SUM(ShipmentCnt),
+
+					NULL,NULL,NULL,1,'',0,'Actual',SUM(Profit),0
+
+					FROM #BrokerageDetails		
+
+					GROUP BY WarehouseNm,AccountID,AccountNm,Location,GradeID,GradeNm,UnitType,UnitTypeNm
+
+
+
+			
+
+			UPDATE #PurchaseSummary
+
+			SET PurchasePerUOM = (Purchase/BaseWeight) * @ScaleWeighFactor,					
+
+				FreightPerUom = (Freight/BaseWeight) * @ScaleWeighFactor,
+
+				IntFreightPerUom = (IntFreight/BaseWeight) * @ScaleWeighFactor,	
+
+				ProcessingPerUOM = (Processing/BaseWeight) * @ScaleWeighFactor,								
+
+				AdjPerUom = (Adj/BaseWeight)*@ScaleWeighFactor,
+
+				SalesPerUOM = (Sales/BaseWeight)*@ScaleWeighFactor,
+
+				CostPerUom = (Cost/BaseWeight)*@ScaleWeighFactor,				
+
+				ProfitPerUOM = (Profit/BaseWeight) * @ScaleWeighFactor				
+
+			WHERE BaseWeight <> 0 AND PriceModel = 'Actual' 	
+
+		
+
+		END
+
+
+
+		--*1
+
+		UPDATE #PurchaseSummary 
+
+			SET Margin = Profit / Sales WHERE Cost <> 0 AND Sales <> 0 AND PriceModel = 'Actual' 	
+
+
+
+
+
+
+
+
+
+		-- REMOVE ADJUSTMENTS FROM ANY PLANT WORKSHEETS
+
+		-------------------------------------------------------------------------------------------------------------------			
+
+		DELETE #PurchaseSummary FROM #PurchaseSummary WHERE #PurchaseSummary.AccountID = '(INV)' 
+
+		--DELETE #PurchaseSummary FROM #PurchaseSummary INNER JOIN BuySell ON #PurchaseSummary.BuySellNo = BuySell.BuySellNo 
+
+		--WHERE #PurchaseSummary.AccountID = '(INV)' AND IsPlantReceiving = 0		
+
+		-------------------------------------------------------------------------------------------------------------------
+
+
+
+	END
+
+	
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	--===========================================================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+		
+
+
+
+	-- FINAL REPORT BY ACCOUNT.		
+
+	---------------------------
+
+	If @GroupBy = 'ACCT' BEGIN  --Acct = 1 
+
+
+
+
+
+		CREATE TABLE #LoadCountTable(
+
+			AccountID Char(12),		
+
+			Location Varchar(45),
+
+			BuySellNo CHAR(12) 
+
+			)
+
+		CREATE TABLE #LoadCounts(
+
+			AccountID Char(12),		
+
+			Location Varchar(45),
+
+			ShipmentCnt INT
+
+			)
+
+		INSERT #LoadCountTable SELECT DISTINCT AccountID, Location, BuySellNo FROM #PurchaseSummary  WHERE BuySellno IS NOT NULL
+
+		INSERT #LoadCountTable SELECT DISTINCT AccountID, Location, BuySellNo FROM #purchasedetail  WHERE BuySellno IS NOT NULL
+
+		INSERT #LoadCounts SELECT AccountID, Location, COUNT(*) FROM #LoadCountTable GROUP BY AccountID, Location
+
+
+
+
+
+		INSERT #PurchaseSummary2 (AccountID,AccountNm,Location,ShipmentCnt,BaseWeight,Purchase,Freight,IntFreight,Processing,Adj,Cost,Sales,Profit,Margin)
+
+			SELECT 
+
+				AccountID,
+
+				AccountNm,
+
+				Location,
+
+				SUM(ShipmentCnt),
+
+				Sum(BaseWeight),
+
+				sum(Purchase),
+
+				SUM(Freight),
+
+				SUM(IntFreight),
+
+				SUM(Processing),				
+
+				SUM(Adj),				
+
+				SUM(Cost),				
+
+				SUM(Sales),
+
+				SUM(Profit),0
+
+				FROM #PurchaseSummary
+
+				GROUP BY AccountID,	AccountNm,Location
+
+				Order By AccountNm, Location
+
+
+
+		UPDATE #PurchaseSummary2
+
+			SET PurchasePerUOM = (Purchase/BaseWeight) * @ScaleWeighFactor,					
+
+				FreightPerUom = (Freight/BaseWeight) * @ScaleWeighFactor,
+
+				IntFreightPerUom = (IntFreight/BaseWeight) * @ScaleWeighFactor,	
+
+				ProcessingPerUOM = (Processing/BaseWeight) * @ScaleWeighFactor,								
+
+				AdjPerUom = (Adj/BaseWeight)*@ScaleWeighFactor,
+
+				SalesPerUOM = (Sales/BaseWeight)*@ScaleWeighFactor,
+
+				CostPerUom = (Cost/BaseWeight)*@ScaleWeighFactor,				
+
+				ProfitPerUOM = (Profit/BaseWeight) * @ScaleWeighFactor				
+
+			WHERE BaseWeight <> 0  				
+
+	
+
+		UPDATE #PurchaseSummary2 
+
+			SET Margin = Profit / Sales
+
+			WHERE Cost <> 0 AND Sales <> 0 	
+
+			
+
+		-- update load counts
+
+		UPDATE #PurchaseSummary2 
+
+			SET ShipmentCnt = #LoadCounts.ShipmentCnt
+
+			FROM #PurchaseSummary2 INNER JOIN #LoadCounts ON #PurchaseSummary2.AccountID = #LoadCounts.AccountID AND  #PurchaseSummary2.Location = #LoadCounts.Location
+
+
+
+					
+
+				
+
+		SELECT 
+
+			#PurchaseSummary2.AccountID,
+
+			AccountNm As [Account],		
+
+			#PurchaseSummary2.Location,
+
+			GradeID,
+
+			GradeNm As [Grade],
+
+			ShipmentCnt As [Shipment Count], 
+
+			UnitType,
+
+			UnitTypeNm As [Unit Type],				
+
+			BaseWeight [Weight],
+
+			Purchase,
+
+			PurchasePerUOM As [Purchase Per UOM],
+
+			Freight,
+
+			FreightPerUOM As [Freight Per UOM],	
+
+			IntFreight AS [Inter Freight],
+
+			IntFreightPerUOM,					
+
+			Processing,	
+
+			ProcessingPerUOM As [Processing Per UOM],				
+
+			Adj,
+
+			AdjPerUOM As [Adj Per UOM],			
+
+			Cost,
+
+			CostPerUom As [Cost Per UOM],						
+
+			Sales,
+
+			SalesPerUOM As [Sales Per UOM],		
+
+			Profit,
+
+			ProfitPerUOM As [Profit Per UOM],	
+
+			Margin,
+
+			PriceModel As [Price Model],	
+
+			ProfitItemID,
+
+			'' as [Scale Ticket No.],
+
+			'' as [Receiving Date],
+
+			'' [Ticket Type],
+
+			''  as [Sales Rep]
+
+		 FROM #PurchaseSummary2 			 
+
+			Order By #PurchaseSummary2.AccountNm, #PurchaseSummary2.Location
+
+	
+
+		RETURN
+
+	END		
+
+			
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		
+
+	
+
+
+
+
+
+	-- FINAL REPORT BY ACCOUNT GRADE.	
+
+	---------------------------------		
+
+	If @GroupBy = 'ACCT+GRADE' BEGIN
+
+		SELECT 		
+
+			AccountID,
+
+			AccountNm As [Account],
+
+			Location,
+
+			WarehouseNm,
+
+			GradeID,
+
+			GradeNm As [Grade],
+
+			ShipmentCnt As [Shipment Count],
+
+			UnitType,
+
+			UnitTypeNm As [Unit Type],
+
+			BaseWeight [Weight],
+
+			Purchase,
+
+			PurchasePerUOM As [Purchase Per UOM],				
+
+			Freight,
+
+			FreightPerUom As [Freight Per UOM],
+
+			IntFreight AS [Inter Freight],
+
+			IntFreightPerUOM,		
+
+			Processing,
+
+			ProcessingPerUOM As [Processing Per UOM],
+
+			Adj,
+
+			AdjPerUom As [Adj Per UOM],
+
+			Cost,
+
+			CostPerUOM As [Cost Per UOM],
+
+			Sales,
+
+			SalesPerUOM As [Sales Per UOM],
+
+			Profit,
+
+			ProfitPerUOM As [Profit Per UOM],
+
+			Margin,				
+
+			PriceModel As [Price Model],
+
+			ProfitItemID,
+
+			'' as [Scale Ticket No.],
+
+			'' as [Receiving Date],
+
+			'' [Ticket Type],
+
+			'' as [Sales Rep]
+
+			FROM #PurchaseSummary
+
+			Order By AccountNm, Location
+
+
+
+	END
+
+
+
+
+
+	-- FINAL REPORT BY TICKET.	
+
+	-------------------------		
+
+	If @GroupBy = 'TICKET' BEGIN
+
+	
+
+		
+
+		SELECT 		
+
+			AccountID,
+
+			AccountNm As [Account],
+
+			Location,			
+
+			WarehouseNm,
+
+			GradeID,
+
+			GradeNm As [Grade],
+
+			ShipmentCnt As [Shipment Count],
+
+			UnitType,
+
+			UnitTypeNm As [Unit Type],
+
+			BaseWeight [Weight],
+
+			Purchase,
+
+			PurchasePerUOM As [Purchase Per UOM],				
+
+			Freight,
+
+			FreightPerUom As [Freight Per UOM],
+
+			IntFreight AS [Inter Freight],
+
+			IntFreightPerUOM,		
+
+			Processing,
+
+			ProcessingPerUOM As [Processing Per UOM],
+
+			Adj,
+
+			AdjPerUom As [Adj Per UOM],
+
+			Cost,
+
+			CostPerUOM As [Cost Per UOM],
+
+			Sales,
+
+			SalesPerUOM As [Sales Per UOM],
+
+			Profit,
+
+			ProfitPerUOM As [Profit Per UOM],
+
+			Margin,				
+
+			PriceModel As [Price Model],
+
+			ProfitItemID,						
+
+			--CASE WHEN ScaleTicketNo <> 0 THEN CONVERT(CHAR(12),ScaleTicketNo) ELSE BuySellNo END as [Scale Ticket No],
+
+			ReceivingDt as [Receiving Date],	
+
+			--CASE WHEN ScaleTicketNo <> 0 THEN 'TICKET' ELSE 'WKS' END AS [Ticket Type],
+
+			SalesRepNm	as [Sales Rep]	
+
+			FROM #PurchaseSummary 
+
+			Order By AccountNm, Location, ReceivingDt	
+
+			
+
+					
+
+
+
+	END
+
+
+
+
+
+
+
+
+
+--GO
+
+--exec cw_GetRecyclingProfit @View=N'(All)',@WhseCPID=NULL,@BySupID=NULL,@SalesRep=NULL,@StartDt='2023-02-01 00:00:00',@EndDt='2023-04-04 00:00:00',@IsAllDates=0,@GroupBy=N'TICKET',@DoNotUseAverageAll=1,@UseSoldAsGrade=0,@UseMarketPrices=1,@DoNotUseSalesE
+xpenses=0
+
+--go
+
+--exec cw_GetRecyclingProfit @View=N'(All)',@WhseCPID=NULL,@BySupID=NULL,@SalesRep=NULL,@StartDt='2023-02-01 00:00:00',@EndDt='2023-04-04 00:00:00',@IsAllDates=0,@GroupBy=N'ACCT+GRADE',@DoNotUseAverageAll=1,@UseSoldAsGrade=1,@UseMarketPrices=1,@DoNotUseSa
+lesExpenses=0
+
+
+
+
+

@@ -1,0 +1,660 @@
+CREATE proc [dbo].[cw_GetContainerList_TEST]
+
+	@BookingNo varchar(25) = '',
+
+	@POL varchar(25) = '',
+
+	@POD varchar(25) = '',
+
+	@PLDV varchar(25) = '',
+
+	@Supplier varchar(15) = '',
+
+	@Location char(45) = '',
+
+	@GradeID varchar(15) = '',
+
+	@COID char(2) = '',
+
+	@OrderNo char(15) = '',
+
+	@ContainerNo varchar(30) = '',
+
+	@SealNo varchar(30) = '',
+
+	@PickupNo varchar(25) = '',
+
+	@CutoffFrom datetime = '',
+
+	@CutoffTo datetime = '',
+
+	@ETSFrom datetime = '',
+
+	@ETSTo datetime = '',
+
+	@ETAFrom datetime = '',
+
+	@ETATo datetime = '',
+
+	@VGMFrom datetime = '',
+
+	@VGMTo datetime = '',
+
+	@ShippingFrom datetime = '',
+
+	@ShippingTo datetime = '',
+
+	@ShowUnsoldOnly bit = 0,
+
+	@BuySellNo varchar(12) = '',
+
+	@Carrier varchar(15) = '',
+
+	@ContainerSession int = 0,
+
+	@ShowPackedOnly bit = 0,
+
+	@ShowContPhotosOnly bit = 0,
+
+	@ShowContNoPhotos bit = 0,
+
+	@ShowPreContOnly bit = 0
+
+	
+
+	AS
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED	
+
+
+
+--08/29/2018 DSH Revised for cieTrade.net
+
+--09/05/2018 MEC Filter corrections and column list changes
+
+--11/12/2018 BF added ShowPackedOnly option
+
+--11/20/2018 DSH Updated Sort order by Booking
+
+--04/04/2023 ZT: Changed grade filter to use container contents instead of buysell.GradeID
+
+
+
+	-- PURCHASED CONTAINERS
+
+	SELECT top 5000
+
+		upper(container.containerno) [Container No],
+
+		container.sealno [Seal No],
+
+		BuySell.ShippingDt as [Shipping Date],
+
+		cast(DATEPART(hour, BuySell.ShippingTm) as varchar) + ':' + RIGHT('0' + cast(DATEPART(minute, BuySell.ShippingTm) as varchar),2) AS [Shipping Time],
+
+		container.bookingno [Booking No],
+
+		Case When Booking.CutOffDate = '01/01/1900' Then NULL Else Booking.CutOffDate End As [Cuttoff Date],
+
+		Booking.LoadPort AS [POL],
+
+		Booking.PortOfDischg AS [POD],
+
+		Booking.PlaceOfDeliv AS [PLDV],
+
+		Freight.CompanyNm AS [Carrier],
+
+		Vessel,
+
+		VoyageNo As [Voyage No],
+
+		Case When Booking.ETS = '01/01/1900' Then NULL Else Booking.ETS End [ETD],
+
+		Case When Booking.ETA = '01/01/1900' Then NULL Else Booking.ETA End [ETA],
+
+		Counterparty.CompanyNm AS [Vendor],
+
+		[Address].[Type] AS [Location],
+
+		Buysell.RefPONo As [PO No],
+
+		RcvBuysellno [Source-Wks],
+
+		ISNULL(SaleBuySellNo, '') [Sales-Wks],
+
+		BuySell.TotalWeightLbs AS [Net Weight LBS],
+
+		dbo.CONVERT_TO_UOM(BuySell.TotalWeightLbs, 'L', 'M')  AS [Net Weight MT],
+
+		dbo.CONVERT_TO_UOM(BuySell.TotalWeightLbs, 'L', 'K')  AS [Net Weight KG],
+
+		Customer.CompanyNm As [Customer],
+
+		COALESCE(SalesWks.RefSONo,'') As [SO No],
+
+		Case When IsNull(SalesWks.InvGrouping,'') <> '' Then SalesWks.InvGrouping Else ISNULL(SaleBuySellNo, '') END AS [Invoice Number],
+
+		COALESCE(SalesWks.RelNo,'') AS [Release No],
+
+		COALESCE(CompanyInfo.CompanyDesc,'') AS [Dept],
+
+		Grade.[Description] AS [Commodity],
+
+		Container.ContainerID as [-Hidden-ContainerID],
+
+		buysell.[status] as [-Hidden-Status],
+
+		Booking.BookSheetID as [-Hidden-BookID],
+
+		RcvBuysellno [-Hidden-SourceWks],
+
+		ISNULL(SaleBuySellNo, '') AS [-Hidden-InvoiceNo],
+
+		ContainerType as [-Hidden-ContType],
+
+		Container.Tare as [EQ Tare],
+
+		Container.VGM as VGM,
+
+		BuySell.PSupplierCost+BuySell.PFreightChg [Value],
+
+		container.units [Units],
+
+		 --case when (ContainerType <>'C' and  buysell.[status]<>'I') or ( buysell.[status]='I' and ISNULL(SaleBuySellNo, '')='') then 0 else isnull(SalesWks.SalesAmt,0) + isnull(SalesWks.sfreightChg,0) end [-hidden-Sales Amount],
+
+		 Buysell.PFreightChg [-hidden-Expenses],
+
+		(Buysell.SalesAmt + Buysell.SFreightChg - (( Buysell.PSupplierCost + Buysell.PAdjustment) -  Buysell.SAdjustment +  Buysell.PFreightChg)) As [-hidden-Gross Profit],
+
+		 Buysell.PSupplierCost [-hidden-Purchases],
+
+		 Buysell.FxInvoiceAmt as [Material Cost],
+
+		 SalesWks.FxInvoiceAmt as [Sales Amount],
+
+		 (select count(DetailID) from WKSDetail where WksDetail.buysellno = Container.RcvBuySellNo) as ProductCount
+
+		 --(select top 1 	dbo.CONVERT_TO_UOM(WKSDetail.SPrice, WKSDetail.SPriceUOM, 'M') from WKSDetail  where  WKSDetail.BuySellNo = SalesWks.BuySellNo and  WKSDetail.DetailID = Container.OrderLinkID) as [Sales Price (MT)],
+
+		 --(select top 1 	dbo.CONVERT_TO_UOM(WKSDetail.SPrice, WKSDetail.SPriceUOM, 'M') from WKSDetail  where  WKSDetail.BuySellNo = Buysell.BuySellNo) as [PO Price (MT)],
+
+		 --(select top 1 	dbo.CONVERT_TO_UOM(WKSDetail.SPrice, WKSDetail.SPriceUOM, 'S') from WKSDetail  where  WKSDetail.BuySellNo = Buysell.BuySellNo) as [PO Price (ST)]
+
+	FROM Container
+
+		left JOIN Buysell on Buysell.buysellno = Container.RcvBuysellno
+
+		left JOIN counterparty on counterparty.cpid = Buysell.VendorID
+
+		left JOIN [Address] ON [Address].CpID = buysell.VendorID AND [Address].InvoiceAddr = 'Y'
+
+		left JOIN GRADE ON Grade.GradeID = BuySell.RefGradeID
+
+		left JOIN [Booksheet] Booking ON Booking.BookingNo = Container.BookingNo
+
+		LEFT JOIN BuySell SalesWks ON SalesWks.BuySellNo = Container.SaleBuySellNo
+
+		LEFT JOIN Counterparty Customer On SalesWks.CustID = Customer.CPID
+
+		LEFT JOIN Counterparty Freight On Freight.CPID = Booking.Carrier
+
+		LEFT JOIN CompanyInfo ON CompanyInfo.COID = BuySell.COID
+
+		LEFT JOIN ContainerContents ON ContainerContents.ContainerID = Container.ContainerID
+
+		LEFT JOIN Inventory ON ContainerContents.LotNo = Inventory.LotNo
+
+	WHERE 
+
+		(@ContainerSession > 0 AND Container.SessionID = @ContainerSession) OR
+
+		(@ContainerSession = 0 AND
+
+			(@BookingNo = '' OR container.bookingno like '%' + @BookingNo + '%')
+
+			AND (@Supplier = '' OR buysell.VendorID = @Supplier)
+
+			AND (@Location = '' OR Buysell.ShipFromID = @Location)
+
+			AND (@GradeID = '' OR Grade.GradeID = @GradeID)
+
+			--AND (@GradeID = '' OR Inventory.GradeID = @GradeID)
+
+			AND (@COID = '' OR BuySell.COID = @COID)
+
+			AND (@OrderNo = '' OR BuySell.RefPONo = @OrderNo)
+
+			AND (@ContainerNo = '' OR container.ContainerNo like '%' + @ContainerNo + '%')
+
+			AND (@SealNo = '' OR container.SealNo = @SealNo)
+
+			AND (@PickupNo = '' OR Buysell.PickupNo = @PickupNo)
+
+			AND (@CutoffFrom = '' OR @CutoffFrom <= CutOffDate)
+
+			AND (@CutoffTo = '' OR @CutoffTo >= CutOffDate)
+
+			AND (@ETSFrom = '' OR @ETSFrom <= ETS)
+
+			AND (@ETSTo = '' OR @ETSTo >= ETS)
+
+			AND (@ETAFrom = '' OR @ETAFrom <= ETA)
+
+			AND (@ETATo = '' OR @ETATo >= ETA)
+
+			AND (@VGMFrom = '' OR @VGMFrom <= VGMCutOffDate)
+
+			AND (@VGMTo = '' OR @VGMTo >= VGMCutOffDate)
+
+			AND (@ShippingFrom = '' OR @ShippingFrom <= buysell.ShippingDt)
+
+			AND (@ShippingTo = '' OR @ShippingTo >= buysell.ShippingDt)
+
+			AND (@POL = '' OR Booking.LoadPort = @POL)
+
+			AND (@POD = '' OR Booking.PortOfDischg = @POD)
+
+			AND (@PLDV = '' OR Booking.PlaceOfDeliv = @PLDV)
+
+			AND (@BuySellNo = '' OR RcvBuysellno like '%' + @BuySellNo + '%')
+
+			AND (@Carrier = '' OR Freight.CpID = @Carrier)
+
+			AND (@ShowUnsoldOnly = 0 or (@ShowUnsoldOnly = 1 and isnull(container.SaleBuySellNo, '') = ''))
+
+			AND (@ShowPackedOnly = 0 and ContainerType = 'P')
+
+			AND (@ShowContPhotosOnly = 0 OR (Select COUNT(*) From DocumentImage where RefID = Container.RcvBuysellno And IsNull(IsContainer,0) = 1) > 0)
+
+			AND (@ShowContNoPhotos = 0 OR (Select COUNT(*) From DocumentImage where RefID = Container.RcvBuysellno And IsNull(IsContainer,0) = 1) = 0)
+
+			AND (@ShowPreContOnly = 0 OR Container.PreContainer = 1)
+
+		)
+
+
+
+		UNION ALL
+
+		
+
+	-- PRE CONTAINERS
+
+	SELECT top 5000
+
+		IsNull(buysell.RefEquipNo,'') [Container No],
+
+		ISNULL(buysell.RefSealNo,'') [Seal No],
+
+		BuySell.ShippingDt as [Shipping Date],
+
+		cast(DATEPART(hour, BuySell.ShippingTm) as varchar) + ':' + RIGHT('0' + cast(DATEPART(minute, BuySell.ShippingTm) as varchar),2) AS [Shipping Time],
+
+		BuySell.bookingno [Booking No],
+
+		Case When Booking.CutOffDate = '01/01/1900' Then NULL Else Booking.CutOffDate End As [Cuttoff Date],
+
+		Booking.LoadPort AS [POL],
+
+		Booking.PortOfDischg AS [POD],
+
+		Booking.PlaceOfDeliv AS [PLDV],
+
+		Freight.CompanyNm AS [Carrier],
+
+		Vessel,
+
+		VoyageNo As [Voyage No],
+
+		Case When Booking.ETS = '01/01/1900' Then NULL Else Booking.ETS End [ETD],
+
+		Case When Booking.ETA = '01/01/1900' Then NULL Else Booking.ETA End [ETA],
+
+		Counterparty.CompanyNm AS [Vendor],
+
+		[Address].[Type] AS [Location],
+
+		Buysell.RefPONo As [PO No],
+
+		BuySell.BuySellNo [Source-Wks],
+
+		ISNULL(SaleBuySellNo, '') [Sales-Wks],
+
+		BuySell.TotalWeightLbs AS [Net Weight LBS],
+
+		dbo.CONVERT_TO_UOM(BuySell.TotalWeightLbs, 'L', 'M')  AS [Net Weight MT],
+
+		dbo.CONVERT_TO_UOM(BuySell.TotalWeightLbs, 'L', 'K')  AS [Net Weight KG],
+
+		Customer.CompanyNm As [Customer],
+
+		COALESCE(SalesWks.RefSONo,'') As [SO No],
+
+		Case When IsNull(SalesWks.InvGrouping,'') <> '' Then SalesWks.InvGrouping Else ISNULL(SaleBuySellNo, '') END AS [Invoice Number],
+
+		COALESCE(SalesWks.RelNo,'') AS [Release No],
+
+		COALESCE(CompanyInfo.CompanyNm,'') AS [Dept],
+
+		Grade.[Description] AS [Commodity],
+
+		IsNull(Container.ContainerID,0) as [-Hidden-ContainerID],
+
+		buysell.[status] as [-Hidden-Status],
+
+		Booking.BookSheetID as [-Hidden-BookID],
+
+		RcvBuysellno [-Hidden-SourceWks],
+
+		ISNULL(SaleBuySellNo, '') AS [-Hidden-InvoiceNo],
+
+		IsNull(ContainerType,'') as [-Hidden-ContType],
+
+		IsNull(Container.Tare,0) as [EQ Tare],
+
+		IsNull(Container.VGM,0) as VGM,
+
+		BuySell.PSupplierCost+BuySell.PFreightChg [Value],
+
+		container.units [Units],
+
+		--0 as [-hidden-Sales Amount],--case when (ContainerType <>'C' and  buysell.[status]<>'I') or ( buysell.[status]='I' and ISNULL(SaleBuySellNo, '')='') then 0 else isnull(Buysell.SalesAmt,0) + isnull(Buysell.sfreightChg,0) end [-hidden-Sales Amount],
+
+		 Buysell.PFreightChg [-hidden-Expenses],
+
+		(Buysell.SalesAmt + Buysell.SFreightChg - (( Buysell.PSupplierCost + Buysell.PAdjustment) -  Buysell.SAdjustment +  Buysell.PFreightChg)) As [-hidden-Gross Profit],
+
+		 0 as [-hidden-Purchases],-- Buysell.PSupplierCost [-hidden-Purchases]
+
+		  Buysell.FxInvoiceAmt as [Material Cost],
+
+		  SalesWks.FxInvoiceAmt as [Sales Amount],
+
+		  (select count(DetailID) from WKSDetail where WksDetail.buysellno = Container.RcvBuySellNo) as ProductCount
+
+		 --(select top 1 	dbo.CONVERT_TO_UOM(WKSDetail.SPrice, WKSDetail.SPriceUOM, 'M') from WKSDetail  where  WKSDetail.BuySellNo = SalesWks.BuySellNo and  WKSDetail.DetailID = Container.OrderLinkID) as [Sales Price (MT)],
+
+		 --(select top 1 	dbo.CONVERT_TO_UOM(WKSDetail.SPrice, WKSDetail.SPriceUOM, 'M') from WKSDetail  where  WKSDetail.BuySellNo = Buysell.BuySellNo) as [PO Price (MT)],
+
+		 --(select top 1 	dbo.CONVERT_TO_UOM(WKSDetail.SPrice, WKSDetail.SPriceUOM, 'S') from WKSDetail  where  WKSDetail.BuySellNo = Buysell.BuySellNo) as [PO Price (ST)]
+
+
+
+	FROM Buysell
+
+		left JOIN Container on Buysell.buysellno = Container.RcvBuysellno
+
+		left JOIN counterparty on counterparty.cpid = Buysell.VendorID
+
+		left JOIN [Address] ON [Address].CpID = buysell.VendorID AND [Address].InvoiceAddr = 'Y'
+
+		left JOIN GRADE ON Grade.GradeID = BuySell.RefGradeID
+
+		left JOIN [Booksheet] Booking ON Booking.BookingNo = Buysell.BookingNo
+
+		LEFT JOIN BuySell SalesWks ON SalesWks.BuySellNo = Container.SaleBuySellNo
+
+		LEFT JOIN Counterparty Customer On SalesWks.CustID = Customer.CPID
+
+		LEFT JOIN Counterparty Freight On Freight.CPID = Booking.Carrier
+
+		LEFT JOIN CompanyInfo ON CompanyInfo.COID = BuySell.COID
+
+		--LEFT JOIN ContainerContents ON ContainerContents.ContainerID = Container.ContainerID
+
+		--LEFT JOIN Inventory ON ContainerContents.LotNo = Inventory.LotNo
+
+	WHERE 
+
+		(@ContainerSession > 0 AND IsNull(Container.SessionID,'') = @ContainerSession) OR
+
+		(@ContainerSession = 0 AND
+
+			(@BookingNo = '' OR BuySell.bookingno like '%' + @BookingNo + '%')
+
+			AND (@ContainerNo = '' OR container.ContainerNo like '%' + @ContainerNo + '%')
+
+			AND (@Supplier = '' OR buysell.VendorID = @Supplier)
+
+			AND (@Location = '' OR Buysell.ShipFromID = @Location)
+
+			AND (@GradeID = '' OR Grade.GradeID = @GradeID)
+
+			AND (@COID = '' OR BuySell.COID = @COID)
+
+			AND (@OrderNo = '' OR BuySell.RefPONo = @OrderNo)
+
+			AND (@PickupNo = '' OR Buysell.PickupNo = @PickupNo)
+
+			AND (@CutoffFrom = '' OR @CutoffFrom <= CutOffDate)
+
+			AND (@CutoffTo = '' OR @CutoffTo >= CutOffDate)
+
+			AND (@ETSFrom = '' OR @ETSFrom <= ETS)
+
+			AND (@ETSTo = '' OR @ETSTo >= ETS)
+
+			AND (@ETAFrom = '' OR @ETAFrom <= ETA)
+
+			AND (@ETATo = '' OR @ETATo >= ETA)
+
+			AND (@VGMFrom = '' OR @VGMFrom <= VGMCutOffDate)
+
+			AND (@VGMTo = '' OR @VGMTo >= VGMCutOffDate)
+
+			AND (@ShippingFrom = '' OR @ShippingFrom <= buysell.ShippingDt)
+
+			AND (@ShippingTo = '' OR @ShippingTo >= buysell.ShippingDt)
+
+			AND (@POL = '' OR Booking.LoadPort = @POL)
+
+			AND (@POD = '' OR Booking.PortOfDischg = @POD)
+
+			AND (@PLDV = '' OR Booking.PlaceOfDeliv = @PLDV)
+
+			AND (@BuySellNo = '' OR BuySell.Buysellno like '%' + @BuySellNo + '%')
+
+			AND (@Carrier = '' OR Freight.CpID = @Carrier)
+
+			AND (@ShowUnsoldOnly = 0 or (@ShowUnsoldOnly = 1 and isnull(container.SaleBuySellNo, '') = ''))
+
+			AND (@ShowPackedOnly = 0 and ContainerType = 'P')
+
+			AND (@ShowContPhotosOnly = 0 OR (Select COUNT(*) From DocumentImage where RefID = Container.RcvBuysellno And IsNull(IsContainer,0) = 1) > 0)
+
+			AND (@ShowContNoPhotos = 0 OR (Select COUNT(*) From DocumentImage where RefID = Container.RcvBuysellno And IsNull(IsContainer,0) = 1) = 0)
+
+			AND (@ShowPreContOnly = 0 OR Container.PreContainer = 1)
+
+		)
+
+		AND (IsNull(Container.ContainerNo,'') = '' OR ISNULL(Container.SealNo,'') = '') AND BuySell.ShipToID = '(CONTAINER)'
+
+
+
+		UNION ALL
+
+
+
+		-- CONTAINERIZED CONTAINERS
+
+		SELECT top 5000
+
+		upper(container.containerno) [Container No],
+
+		container.sealno [Seal No],
+
+		Container.ShipDate as [Shipping Date],
+
+		'' AS [Shipping Time],
+
+		container.bookingno [Booking No],
+
+		Case When Booking.CutOffDate = '01/01/1900' Then NULL Else Booking.CutOffDate End As [Cuttoff Date],
+
+		Booking.LoadPort AS [POL],
+
+		Booking.PortOfDischg AS [POD],
+
+		Booking.PlaceOfDeliv AS [PLDV],
+
+		Freight.CompanyNm AS [Carrier],
+
+		Vessel,
+
+		VoyageNo As [Voyage No],
+
+		Case When Booking.ETS = '01/01/1900' Then NULL Else Booking.ETS End [ETD],
+
+		Case When Booking.ETA = '01/01/1900' Then NULL Else Booking.ETA End [ETA],
+
+		'PACKED' AS [Vendor],
+
+		'' AS [Location],
+
+		'' As [PO No],
+
+		RcvBuysellno [Source-Wks],
+
+		ISNULL(SaleBuySellNo, '') [Sales-Wks],
+
+		container.NetWeight AS [Net Weight LBS],
+
+		dbo.CONVERT_TO_UOM(container.NetWeight, 'L', 'M')  AS [Net Weight MT],
+
+		dbo.CONVERT_TO_UOM(container.NetWeight, 'L', 'K')  AS [Net Weight KG],
+
+		Customer.CompanyNm As [Customer],
+
+		COALESCE(SalesWks.RefSONo,'') As [SO No],
+
+		ISNULL(SaleBuySellNo, '') AS [Invoice Number],
+
+		COALESCE(SalesWks.RelNo,'') AS [Release No],
+
+		'' AS [Dept],
+
+		'' AS [Commodity],
+
+		ContainerID as [-Hidden-ContainerID],
+
+		'' as [-Hidden-Status],
+
+		Booking.BookSheetID as [-Hidden-BookID],
+
+		RcvBuysellno [-Hidden-SourceWks],
+
+		ISNULL(SaleBuySellNo, '') AS [-Hidden-InvoiceNo],
+
+		ContainerType as [-Hidden-ContType],
+
+		Container.Tare as [EQ Tare],
+
+		container.VGM as VGM,
+
+		0 [Value],
+
+		Container.units [Units],
+
+		-- case when (ContainerType <>'C' and  SalesWks.[status]<>'I') or ( SalesWks.[status]='I' and ISNULL(SaleBuySellNo, '')='') then 0 else isnull(SalesWks.SalesAmt,0) + isnull(SalesWks.sfreightChg,0) end [-hidden-Sales Amount],
+
+		 SalesWks.PFreightChg [-hidden-Expenses],
+
+		(SalesWks.SalesAmt + SalesWks.SFreightChg - (( SalesWks.PSupplierCost + SalesWks.PAdjustment) -  SalesWks.SAdjustment +  SalesWks.PFreightChg)) As [-hidden-Gross Profit],
+
+		0 as [-hidden-Purchases],-- SalesWks.PSupplierCost [-hidden-Purchases]
+
+		0 as [Material Cost],
+
+		SalesWks.FxInvoiceAmt as [Sales Amount],
+
+		(select count(DetailID) from WKSDetail where WksDetail.buysellno = Container.RcvBuySellNo) as ProductCount
+
+		--(select top 1 	dbo.CONVERT_TO_UOM(WKSDetail.SPrice, WKSDetail.SPriceUOM, 'M') from WKSDetail  where  WKSDetail.BuySellNo = SalesWks.BuySellNo and  WKSDetail.DetailID = Container.OrderLinkID) as [Sales Price (MT)],
+
+		--0 as [PO Price (MT)],
+
+		--0 as [PO Price (ST)]
+
+	FROM Container		
+
+		left JOIN [Booksheet] Booking ON Booking.BookingNo = Container.BookingNo
+
+		LEFT JOIN BuySell SalesWks ON SalesWks.BuySellNo = Container.SaleBuySellNo
+
+		LEFT JOIN Counterparty Customer On SalesWks.CustID = Customer.CPID
+
+		LEFT JOIN Counterparty Freight On Freight.CPID = Booking.Carrier
+
+		
+
+		
+
+	WHERE 
+
+		(@ContainerSession > 0 AND isnull(Container.SessionID,0) = @ContainerSession and containertype='C') OR
+
+		(@ContainerSession = 0 AND
+
+			(@BookingNo = '' OR container.bookingno like '%' + @BookingNo + '%')
+
+			AND (@ContainerNo = '' OR container.ContainerNo like '%' + @ContainerNo + '%')
+
+			AND (@SealNo = '' OR container.SealNo = @SealNo)
+
+			AND (@CutoffFrom = '' OR @CutoffFrom <= CutOffDate)
+
+			AND (@CutoffTo = '' OR @CutoffTo >= CutOffDate)
+
+			AND (@GradeID = '' OR SalesWks.RefGradeID = @GradeID)
+
+			AND (@ETSFrom = '' OR @ETSFrom <= ETS)
+
+			AND (@ETSTo = '' OR @ETSTo >= ETS)
+
+			AND (@ETAFrom = '' OR @ETAFrom <= ETA)
+
+			AND (@ETATo = '' OR @ETATo >= ETA)
+
+			AND (@VGMFrom = '' OR @VGMFrom <= VGMCutOffDate)
+
+			AND (@VGMTo = '' OR @VGMTo >= VGMCutOffDate)
+
+			AND (@ShippingFrom = '' OR @ShippingFrom <= container.ShipDate)
+
+			AND (@ShippingTo = '' OR @ShippingTo >= container.ShipDate)
+
+			AND (@POL = '' OR Booking.LoadPort = @POL)
+
+			AND (@POD = '' OR Booking.PortOfDischg = @POD)
+
+			AND (@PLDV = '' OR Booking.PlaceOfDeliv = @PLDV)
+
+			AND (@BuySellNo = '' OR RcvBuysellno like '%' + @BuySellNo + '%')
+
+			AND (@Carrier = '' OR Freight.CpID = @Carrier)
+
+			AND ContainerType = 'C'
+
+			AND (@ShowUnsoldOnly = 0 or (@ShowUnsoldOnly = 1 and isnull(container.SaleBuySellNo, '') = ''))
+
+		    AND (@ShowPackedOnly = 0 or (ContainerType = 'C' and @ShowPackedOnly=1))
+
+			--AND (@ShowPackedOnly = 0 and ContainerType = 'P')
+
+			AND (@ShowContPhotosOnly = 0 OR (Select COUNT(*) From DocumentImage where RefID = Container.RcvBuysellno And IsNull(IsContainer,0) = 1) > 0)
+
+			AND (@ShowContNoPhotos = 0 OR (Select COUNT(*) From DocumentImage where RefID = Container.RcvBuysellno And IsNull(IsContainer,0) = 1) = 0)
+
+			AND (@ShowPreContOnly = 0 OR Container.PreContainer = 1)
+
+		)
+
+	ORDER BY [Shipping Date] Desc, [Booking No]
+
+
+

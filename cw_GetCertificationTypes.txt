@@ -1,0 +1,26 @@
+CREATE PROC [dbo].[cw_GetCertificationTypes] 
+
+As
+
+-- 02/11/20 MN: CREATED
+
+ 
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+		SELECT
+
+			CertificationID AS [CertificationID],
+
+			RTRIM(CertificationType) As [CertificationType],
+
+			RTRIM(Organization) as Organization
+
+		FROM Certification
+
+
+

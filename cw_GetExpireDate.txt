@@ -1,0 +1,8 @@
+CREATE   PROCEDURE [dbo].[cw_GetExpireDate] AS
+
+
+
+select [ExpDt] from [SystemInfo]
+
+
+

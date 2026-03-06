@@ -1,0 +1,24 @@
+CREATE   PROCEDURE [dbo].[cw_GetWksDetailCount] @ReturnCount varchar(15) OUTPUT
+
+--05/25/17 MN: Created
+
+AS
+
+
+
+BEGIN TRANSACTION
+
+	SELECT @ReturnCount = COUNT(BuySellNo) FROM WKSDetail
+
+	
+
+COMMIT TRANSACTION
+
+
+
+RETURN @ReturnCount
+
+
+
+
+

@@ -1,0 +1,74 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetPhotoBuysellNo] @ContainerNo char(30) AS
+
+
+
+BEGIN
+
+--04/18/2012 MCM: Created for ciePhoto inquiry in cieTrade
+
+--11/06/2013 MEC: Allow latest worksheet in duplicate container numbers
+
+--11/22/2013 MCM: Broken when more than one buysell exists with same container no-fixed
+
+--01/16/2013 MEC: Added check for container in Container table
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+SELECT BuySellNo FROM BuySell 
+
+WHERE RefEquipNo = @ContainerNo
+
+ORDER BY ShippingDt Desc
+
+			
+
+
+
+	--IF EXISTS(SELECT BuySellNo FROM WksDetail WHERE ContainerNo = @ContainerNo)
+
+	--BEGIN
+
+	--	SELECT Buysell.BuySellNo FROM WksDetail WITH (NOLOCK)
+
+	--		INNER JOIN BuySell WITH (NOLOCK) ON Buysell.BuySellNo = WksDetail.BuySellNo 
+
+	--		WHERE ContainerNo = @ContainerNo 
+
+	--		GROUP BY Buysell.BuySellNo, ShippingDt 
+
+	--		ORDER BY ShippingDt Desc
+
+			
+
+	--	RETURN
+
+	--END
+
+	--ELSE IF EXISTS(SELECT BuySellNo FROM Container WHERE ContainerNo = @ContainerNo)
+
+	--BEGIN
+
+	--	SELECT BuySell.BuySellNo FROM Container WITH (NOLOCK)
+
+	--		INNER JOIN BuySell WITH (NOLOCK) ON Buysell.BuySellNo = Container.BuySellNo 
+
+	--		WHERE ContainerNo = @ContainerNo
+
+	--		ORDER BY ShippingDt Desc
+
+	--	RETURN
+
+	--END
+
+		
+
+END
+

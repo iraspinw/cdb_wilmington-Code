@@ -1,0 +1,105 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CREATE    PROCEDURE [dbo].[cw_GetPackingListBrokerage] @BuySellNo char(12)
+
+ AS
+
+--05/05/2009 BF Copied from q_GetExpInvoice2 for Commercial Invoice (new doc format)
+
+--07/09/2009 JW: added FormatQty function around the weight
+
+--07/15/2009 BF: Added spec string to select
+
+--08/05/2009 JW: added @Notes to print invoice notes
+
+--02/14/2013 RS: @WksInvoiceAmt,@WksCurrency added
+
+--03/12/2013 RS: @ShowExp added for Com. Inv. Basic per Fortex
+
+
+
+SET NOCOUNT ON
+
+
+
+
+
+	
+
+	DECLARE @WksInvoiceAmt money
+
+	DECLARE @WksCurrency char(3)
+
+	SELECT @WksInvoiceAmt = FxInvoiceAmt, @WksCurrency = CurrencyCd FROM Buysell WHERE Buysell.BuySellNo = @BuySellNo
+
+	
+
+		-- GET PRODUCT LIST.
+
+		SELECT Grade.Description, wksDetail.InvoiceDesc, Units, dbo.CnvUnitName(UnitType) as UnitType, dbo.FormatQty(dbo.convert_to_uom(SWeight, SWeightUOM, SPriceUOM),SPriceUOM) as sweight, dbo.CnvUOM_Names(SPriceUOM) as sWeightUOM, SPrice, dbo.CnvUOM_Names(SP
+riceUOM) as SPRiceUOM, SCurrencyCd, IsMSF, SFxAmount,
+
+		RollWd, RollWdUOM, wksDetail.LinearLen, LengthUOM, SMSFPrice, SPACE(3) as areaPriceUOM, SPACE(3) as areaUOM, Specifications, GrossWt, sweight as swt
+
+		INTO #P
+
+		FROM wksDetail  WITH(NOLOCK) 
+
+		INNER JOIN Grade WITH(NOLOCK) ON wksDetail.GradeID = Grade.GradeID
+
+		WHERE wksDetail.BuySellNo = @BuySellNo
+
+		
+
+
+
+		--AREA PRICING WORKSHEET... CALCULATE AREA AND USE MSF PRICE
+
+		IF EXISTS(SELECT TOP 1 IsMSF FROM #P WHERE IsMSF = 'T' OR SPriceUOM IN ('Z','C')) BEGIN
+
+			--FORMAT UOM
+
+			UPDATE #P SET areaPriceUOM = 'CSM', areaUOM = 'SQM' WHERE SPriceUOM = 'C'
+
+			UPDATE #P SET areaPriceUOM = 'MSM', areaUOM = 'SQM' WHERE SPriceUOM = 'Z'
+
+			UPDATE #P SET areaPriceUOM = 'MSF', areaUOM = 'SQF' WHERE IsMSF = 'T'
+
+		END		
+
+	
+
+		
+
+		--RETURN PRODUCT LIST
+
+		SELECT *, @WksInvoiceAmt as WksInvoiceAmt, @WksCurrency as WksCurrency 
+
+		FROM #P
+
+
+
+
+
+	
+
+--cw_GetPackingListBrokerage '501438'
+
+
+
+
+
+
+

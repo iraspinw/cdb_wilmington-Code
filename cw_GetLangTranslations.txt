@@ -1,0 +1,14 @@
+CREATE   PROCEDURE [dbo].[cw_GetLangTranslations] @Lang char(10) = '' AS
+
+--02/28/2023 MN: Created
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT RTRIM(Label) AS Label, RTRIM(Value) AS [Value], RTRIM(Lang) AS [Lang] FROM LangTranslation WHERE (@Lang = '' OR Lang = @Lang) ORDER BY Label
+
+
+

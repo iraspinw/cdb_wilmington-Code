@@ -1,0 +1,78 @@
+CREATE proc [dbo].[cw_GetSystemLogforObject] @ObjectID varchar(30) = '', @Object varchar(30) = '' as
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SET NOCOUNT ON;
+
+--11/11/2015 MCM: Added @FromDt, @ToDt, @User, @Object, @ObjectID
+
+--12/07/2015: Added If(worksheet) block... to include AR-TRACKING and ADJUSTMENTS
+
+--04/06/2018 MEC: Reversed order to Asc per David (Most recent on bottom.)
+
+--04/07/2021 MEC: Added Timezone Assignment to datestamp
+
+--10/18/2022 ZT: Added logic to handle BILLSHEET discrepancy 
+
+--11/14/2022 ZT: Seperated Date and time columns
+
+	IF(@Object = 'worksheet')
+
+		BEGIN
+
+			SELECT 
+
+			Case When TimeZone.TimeZoneNm is null Then CAST(Datestamp As DATE) Else CAST(DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), Datestamp) As DATE) End AS [Date],
+
+			Case When TimeZone.TimeZoneNm is null Then CAST(Datestamp As TIME) Else CAST(DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), Datestamp) As TIME) End AS [Time], 
+
+			UserNm AS [User Name], Comment
+
+			FROM systemlog s
+
+			left join userdef on userdef.userid= s.userid
+
+			left join TimeZone on UserDef.TimeZoneNm = TimeZone.TimeZoneNm
+
+			--WHERE (s.UserID = @User OR @User = '')
+
+			WHERE (ObjectID = @ObjectID)
+
+			AND ([Object] = @Object OR [Object] = 'AR-TRACKING' OR [Object] = 'ADJUSTMENTS' or [Object]='INVOICE' or [Object]='WORKSHEET')
+
+			order by datestamp asc
+
+
+
+		END
+
+	ELSE
+
+		BEGIN
+
+			SELECT 
+
+			Case When TimeZone.TimeZoneNm is null Then CAST(Datestamp As DATE) Else CAST(DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), Datestamp) As DATE) End AS [Date],
+
+			Case When TimeZone.TimeZoneNm is null Then CAST(Datestamp As TIME) Else CAST(DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), Datestamp) As TIME) End AS [Time], 
+
+			UserNm AS [User Name], Comment
+
+				FROM systemlog s
+
+				left join userdef on userdef.userid= s.userid
+
+				left join TimeZone on UserDef.TimeZoneNm = TimeZone.TimeZoneNm
+
+				--WHERE (s.UserID = @User OR @User = '')
+
+				WHERE (ObjectID = @ObjectID OR @ObjectID = '' )
+
+				AND ([Object] = @Object OR @Object = '' OR (@Object = 'BILLSHEET' AND Object = 'BILL SHEET'))
+
+				order by datestamp asc
+
+		END
+
+
+

@@ -1,0 +1,14 @@
+CREATE proc [dbo].[cw_GetARInterest] @ARBatchNo int as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+select sale * -1 sale, adjfxamount * -1 adjfxamount, adjcurrencycd, glacct, adjcpid
+
+from gpledger 
+
+where [source]='N' and AdjReason = 'INTEREST CHG'
+
+and ARBatchNo = @ARBatchNo
+

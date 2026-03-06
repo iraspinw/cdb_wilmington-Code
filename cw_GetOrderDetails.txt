@@ -1,0 +1,16 @@
+CREATE proc cw_GetOrderDetails @PONumber varchar(15) as
+
+
+
+select top 1 podetail.Price, podetail.PriceUOM, podetail.UnitType, po.CpID, po.AddrType, podetail.GradeID, podetail.PODesc
+
+from po
+
+left join podetail on podetail.ponumber = po.ponumber
+
+where 
+
+	po.ponumber = @PONumber
+
+	AND po.status = 'OPEN'
+

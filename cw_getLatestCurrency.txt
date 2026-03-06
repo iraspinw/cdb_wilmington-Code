@@ -1,0 +1,7 @@
+Create proc [dbo].[cw_getLatestCurrency] @curcode varchar(15) as 
+
+set transaction isolation level read uncommitted
+
+
+
+select top 1 FxRate from currencyrate where curcode=@curcode order by ExchDate desc

@@ -1,0 +1,480 @@
+CREATE PROC [dbo].[cw_GetBookingContainerList] @BookingNo varchar(25) as
+
+Set NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+--10/19/2015 RS: Created
+
+--11/09/2015 RS: Don't show zero WT
+
+--11/10/2015 RS: Added SPrice, SPriceUOM
+
+--11/12/2015 RS: Added SFxAmount, SCurrencyCd
+
+--12/18/2015 RS: UnitType fixed
+
+--01/21/2016 RS: Added @SWTUOM
+
+--05/12/2016 RS: Use @SWTUOM = Booksheet.TotalWeightUOM
+
+--05/23/2016 RS: Added GrossWt 
+
+--07/20/2016 RS: Added TareWt 
+
+--11/06/2018 DSH Added Chargeback section.
+
+--12/11/2018 DSH Exclude Inventory Sales (only show brojkerage and containers)
+
+--12/19/2018 DSH Updated Brokerage section ot include non-container inventory sales.
+
+--05/04/2022 Nick: Removed sum() from Danco's Units
+
+--05/19/2022 Nick: Commented out Danco's logic since they're complaining about it in their BOL instructions doc. If they want it to exist elsewhere, we'll have to make a separate stored procedure for them.
+
+
+
+--cw_GetBookingContainerList '6297448140*'
+
+
+
+	CREATE TABLE #CommercialInvoiceList(
+
+		SealNo VARCHAR(30),
+
+		BookingNo CHAR(25),
+
+		BuySellNo CHAR(12),
+
+		ContainerNo VARCHAR(30),
+
+		WT DECIMAL(22,10),
+
+		SWeightUOM CHAR(3),
+
+		Units INT,
+
+		UnitType VARCHAR(30),
+
+		[Description] VARCHAR(100),
+
+		InvoiceDesc  VARCHAR(100),
+
+		ShippingDt DATE,
+
+		SPrice DECIMAL(22,5),
+
+		SPriceUOM CHAR(10),
+
+		SFxAmount MONEY,
+
+		SCurrencyCd CHAR(3),
+
+		GrossWT DECIMAL(22,5),
+
+		TareWT DECIMAL(22,5),
+
+		ShippedCount INT,
+
+		Specifications VARCHAR(500),
+
+		CalcWeight DECIMAL(22,8),
+
+		RowId INT IDENTITY(1,1)	,
+
+		WTKg DECIMAL(22,10),
+
+	    GrossWTKg DECIMAL(22,5),
+
+		TareWTKg DECIMAL(22,5)
+
+	
+
+	)
+
+
+
+	
+
+
+
+
+
+	-- DISPLAY IN QTY UOM
+
+	DECLARE @SWTUOM char(1)	
+
+	SET @SWTUOM = ISNULL((SELECT TOP 1 TotalWeightUOM FROM Booksheet WITH(NOLOCK) WHERE BookingNo = @BookingNo),'L')
+
+
+
+	DECLARE @ShippedCount int, @ContainerSalesAmt MONEY
+
+
+
+	SELECT @ContainerSalesAmt = SUM(SFXAmount) FROM WksDetail INNER JOIN BuySell ON WksDetail.BuYSellNo = BuYSell.BuYSellNo 
+
+		WHERE BuySell.BookingNo = @BookingNo AND BuySell.CustID <> '(INV)'
+
+
+
+
+
+	Set @ShippedCount = (SELECT Count(Distinct BuySell.BuySellNo) ShippedCount
+
+		FROM BuySell WITH(NOLOCK)
+
+		INNER JOIN WksDetail ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+		LEFT JOIN Grade ON Grade.GradeID = WksDetail.GradeID
+
+		WHERE BuySell.BookingNo = @BookingNo And IsNull(RefEquipNo,'') <> '')
+
+
+
+
+
+
+
+	--INVENTORY SALE (CONTAINERS) 
+
+	----------------------------------------------------------------------------------------------------------------
+
+
+
+	INSERT #CommercialInvoiceList
+
+	SELECT distinct 	
+
+		Container.SealNo, 
+
+		Container.BookingNo, 
+
+		BuySell.BuySellNo,
+
+		Container.ContainerNo,		
+
+		sum(dbo.CONVERT_TO_UOM_XP(WksInventory.[Weight],WksInventory.UOM,@SWTUOM)),   ----dbo.CONVERT_TO_UOM(NetWeight,Container.UOM,@SWTUOM) as WT,		
+
+		dbo.CnvUOM_Names(@SWTUOM),
+
+		isnull(Container.units,0), --isnull(WksDetail.Units,0), --isnull(Inventory.Units,0), 
+
+		dbo.CnvUnitName(ISNULL(container.UnitType,'')),
+
+		Grade.[Description] As [Description],
+
+		WksDetail.InvoiceDesc,
+
+		BuySell.ShippingDt,
+
+		WksDetail.SPrice, 
+
+		dbo.CnvUOM_Names(WksDetail.SPriceUOM) as SPriceUOM,
+
+		0 SFxAmount,  --WksDetail.SFxAmount as 
+
+		WksDetail.SCurrencyCd,
+
+		isnull(Container.GrossWeight,sum(dbo.CONVERT_TO_UOM(Inventory.GrossWt,WksInventory.UOM,@SWTUOM))),
+
+		Container.Tare,
+
+		@ShippedCount, 
+
+		CASE WHEN IsNull(ShowCommDescOnDocs,0) = 1 Then IsNull(WKSDetail.Specifications,'') + ' ' + CommodityDesc Else IsNull(WKSDetail.Specifications,'') End As Specifications,
+
+		0,
+
+	    sum(dbo.CONVERT_TO_UOM_XP(WksInventory.[Weight],WksInventory.UOM,'KG')),
+
+		sum(dbo.CONVERT_TO_UOM_XP(Inventory.GrossWt,WksInventory.UOM,'KG')),
+
+		sum(dbo.CONVERT_TO_UOM_XP(Inventory.TareWt,WksInventory.UOM,'KG'))
+
+	 --dbo.CONVERT_TO_UOM_XP(Container.GrossWeight,WksInventory.UOM,'KG'),
+
+	--dbo.CONVERT_TO_UOM_XP(Container.Tare,WksInventory.UOM,'KG')
+
+	FROM WksInventory 		
+
+		INNER JOIN Inventory ON WksInventory.LotNo = Inventory.LotNo
+
+		LEFT JOIN WksDetail ON WksInventory.DetailID = WksDetail.DetailID
+
+		LEFT JOIN ContainerContents ON Inventory.LotNo = ContainerContents.LotNo
+
+		LEFT JOIN Container ON Container.ContainerID =  ContainerContents.ContainerID 
+
+		LEFT JOIN Grade ON Inventory.GradeID = Grade.GradeID
+
+		LEFT JOIN BuySell ON WksInventory.BuySellNo = BuySell.BuySellNo
+
+	WHERE Container.BookingNo = @BookingNo 
+
+	AND BuySell.VendorID = '(INV)' AND BuySell.CustID <> '(INV)' 
+
+	group by Container.SealNo, Container.BookingNo, BuySell.BuySellNo,Container.ContainerNo,WksDetail.Units,container.UnitType,	Grade.[Description],
+
+		     WksDetail.InvoiceDesc,BuySell.ShippingDt,WksDetail.SPrice, WksDetail.SPriceUOM ,WksDetail.SCurrencyCd,Container.GrossWeight,Container.Tare,
+
+			 ShowCommDescOnDocs,WKSDetail.Specifications,CommodityDesc,Container.units
+
+
+
+	UPDATE #CommercialInvoiceList Set CalcWeight = dbo.convert_to_uom(Wt,@SWTUOM,SPriceUOM)
+
+
+
+	UPDATE #CommercialInvoiceList Set SFxAmount = Round(CalcWeight * SPrice,2)
+
+
+
+	--TRUE-UP
+
+	DECLARE @CalcTotalSales MONEY
+
+	DECLARE @Adj MONEY
+
+	SELECT @CalcTotalSales  = sum(SFxAmount) from #CommercialInvoiceList
+
+	SET @Adj = @ContainerSalesAmt- @CalcTotalSales
+
+	UPDATE #CommercialInvoiceList SET SFxAmount = SFxAmount + @Adj WHERE RowID = 1
+
+	
+
+
+
+
+
+	--BROKERAGE & INVENTORY SALE (NON CONTAINER)
+
+	----------------------------------------------------------------------------------------------------------------
+
+	INSERT #CommercialInvoiceList
+
+	SELECT 
+
+		BuySell.RefSealNo As SealNo, 
+
+		BookingNo, 
+
+		BuySell.BuySellNo,
+
+		BuySell.RefEquipNo as ContainerNo,
+
+		dbo.FormatQty(SUM(dbo.CONVERT_TO_UOM(WksDetail.SWeight,SWeightUOM,@SWTUOM)),@SWTUOM) as WT,
+
+		dbo.CnvUOM_Names(@SWTUOM) as SWeightUOM,
+
+		Sum(WksDetail.Units) As Units,
+
+		dbo.CnvUnitName((Select Top 1 Unittype From wksdetail with (nolock) Where WksDetail.BuySellNo = BuySell.BuySellNo)) As UnitType, 
+
+		Grade.[Description] As [Description],
+
+		WksDetail.InvoiceDesc,
+
+		BuySell.ShippingDt,
+
+		WksDetail.SPrice, 
+
+		dbo.CnvUOM_Names(WksDetail.SPriceUOM), 
+
+		SUM(WksDetail.SFxAmount) as SFxAmount,
+
+		WksDetail.SCurrencyCd,
+
+		dbo.FormatQty(SUM(dbo.CONVERT_TO_UOM(WksDetail.GrossWt,SWeightUOM,@SWTUOM)),@SWTUOM) as GrossWT,
+
+		dbo.FormatQty(SUM(dbo.CONVERT_TO_UOM(WksDetail.TareWt,SWeightUOM,@SWTUOM)),@SWTUOM) as TareWT,
+
+		@ShippedCount AS [ShippedCount],
+
+		CASE WHEN IsNull(ShowCommDescOnDocs,0) = 1 Then IsNull(WKSDetail.Specifications,'') + ' ' + CommodityDesc Else IsNull(WKSDetail.Specifications,'') End As Specifications,
+
+		0,
+
+	   sum( dbo.CONVERT_TO_UOM_XP(WksDetail.SWeight,SWeightUOM,'KG')),
+
+	   sum(dbo.CONVERT_TO_UOM_XP(WksDetail.GrossWt,SWeightUOM,'KG')),
+
+	   sum(dbo.CONVERT_TO_UOM_XP(WksDetail.TareWt,SWeightUOM,'KG'))
+
+	FROM BuySell WITH(NOLOCK)
+
+	INNER JOIN WksDetail ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+	LEFT JOIN Grade ON Grade.GradeID = WksDetail.GradeID
+
+	WHERE 
+
+		BuySell.BookingNo = @BookingNo
+
+		AND BuySell.RefEquipNo <> ''
+
+		AND CustID <> '(INV)' 
+
+		AND ISNULL(IsContainer,0) = 0 
+
+		GROUP BY RefEquipNo, RefSealNo, BookingNo, BuySell.BuySellNo, Grade.Description, 
+
+		Grade.CommodityDesc,InvoiceDesc,BuySell.ShippingDt,SPrice, SPriceUOM, WksDetail.SCurrencyCd, Specifications, ShowCommDescOnDocs,WksDetail.SWeight,WksDetail.SWeightUOM,WksDetail.GrossWt,WksDetail.TareWt
+
+	HAVING Sum(dbo.CONVERT_TO_UOM(WksDetail.SWeight,WksDetail.SWeightUOM,'M'))>0
+
+	ORDER BY BuySell.ShippingDt, RefEquipNo
+
+
+
+	
+
+	--GET CHARGEBACKS
+
+	INSERT #CommercialInvoiceList(BookingNo,BuySellNo,ContainerNo,Wt,SWeightUOM,[Description],InvoiceDesc, ShippingDt, SPrice, SPriceUOM, SFxAmount, SCurrencyCd, ShippedCount)
+
+	SELECT 
+
+		BuySell.BookingNo,
+
+		BuySell.BuySellNo,
+
+		'',0,NULL,
+
+		InvoiceDesc,
+
+		InvoiceDesc, 
+
+		BuySell.ShippingDt, 
+
+		PriceCust,
+
+		PricePerCust,
+
+		FxAmountCust, 
+
+		CurrencyCdCust,
+
+		@ShippedCount  --, , GLAcct,  
+
+		FROM BuySell WITH(NOLOCK)
+
+		INNER JOIN WksDelivery WITH(NOLOCK) ON WksDelivery.BuysellNo = BuySell.BuySellNo
+
+	WHERE BuySell.BookingNo = @BookingNo 
+		AND WksDelivery.ChgToCustAmt <> 0 
+
+
+
+
+
+--select * from #CommercialInvoiceList
+
+
+
+	--DECLARE @DBNAME VARCHAR(100)
+
+ --   SET @DBNAME = db_name() 
+
+	--IF @DBNAME  IN ('cdb_Danco')
+
+	--   BEGIN
+
+	--	      CREATE TABLE  #CommercialInvoiceListRollUp(
+
+	--				SealNo VARCHAR(30),
+
+	--				BookingNo CHAR(25),
+
+	--				BuySellNo CHAR(12),
+
+	--				ContainerNo VARCHAR(30),
+
+	--				WT DECIMAL(22,10),
+
+	--				SWeightUOM CHAR(3),
+
+	--				Units INT,
+
+	--				UnitType VARCHAR(30),
+
+	--			--	[Description] VARCHAR(100),
+
+	--				--InvoiceDesc  VARCHAR(100),
+
+	--				--ShippingDt DATE,
+
+	--				--SPrice DECIMAL(22,5),
+
+	--				--SPriceUOM CHAR(10),
+
+	--				SFxAmount MONEY,
+
+	--				SCurrencyCd CHAR(3),
+
+	--				GrossWT DECIMAL(22,5),
+
+	--				TareWT DECIMAL(22,5),
+
+	--				--ShippedCount INT,
+
+	--				--Specifications VARCHAR(500),
+
+	--				CalcWeight DECIMAL(22,8),
+
+	--				WTKg DECIMAL(22,10),
+
+	--				GrossWTKg DECIMAL(22,5),
+
+	--				TareWTKg DECIMAL(22,5),
+
+	--			     GradeCnt INT
+
+	--				)
+
+	--		   INSERT #CommercialInvoiceListRollUp
+
+	--		   SELECT SealNo, BookingNo, BuySellNo, ContainerNo, SUM(WT),SWeightUOM, Units, isnull(UnitType,'') , sum(SFxAmount),SCurrencyCd,sum(GrossWT),sum(TareWT),sum(CalcWeight),sum(WTKg),sum(GrossWTKg),sum(TareWTKg), COUNT(*)
+
+	--		   FROM #CommercialInvoiceList 
+
+	--		   GROUP BY SealNo, BookingNo, BuySellNo, ContainerNo,SWeightUOM,Units,isnull(UnitType,''),SCurrencyCd
+
+	--		  -- select * from #CommercialInvoiceListRollUp
+
+
+
+	--		  DELETE FROM #CommercialInvoiceListRollUp WHERE GradeCnt =1 
+
+
+
+	--		  DELETE #CommercialInvoiceList FROM #CommercialInvoiceList INNER JOIN #CommercialInvoiceListRollUp ON #CommercialInvoiceList.SealNo = #CommercialInvoiceListRollUp.SealNo AND #CommercialInvoiceList.BookingNo = #CommercialInvoiceListRollUp.BookingNo A
+ND #CommercialInvoiceList.ContainerNo = #CommercialInvoiceListRollUp.ContainerNo --AND #CommercialInvoiceList.UnitType = #CommercialInvoiceListRollUp.UnitType
+
+	--		  WHERE GradeCnt <> 1
+
+	--		  --CONSOLIDATE GRADES--
+
+	--	     INSERT #CommercialInvoiceList(SealNo,BookingNo,BuySellNo,ContainerNo,WT,SWeightUOM,Units,UnitType,SFxAmount,SCurrencyCd,GrossWT,TareWT,CalcWeight,WTKg,GrossWTKg,TareWTKg)
+
+	--		                        SELECT SealNo,BookingNo,BuySellNo,ContainerNo,WT,SWeightUOM,Units,UnitType,SFxAmount,SCurrencyCd,GrossWT,TareWT,CalcWeight,WTKg,GrossWTKg,TareWTKg
+
+	--			                   FROM #CommercialInvoiceListRollUp 
+
+
+
+	--    end
+
+	SELECT *,(select count(*) from BuySell where BookingNo=@BookingNo) as ContainerCount FROM #CommercialInvoiceList
+
+
+
+
+
+--GO
+
+--exec cw_GetBookingContainerList '193CA0694365'
+
+
+

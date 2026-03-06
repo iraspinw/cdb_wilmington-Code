@@ -1,0 +1,10 @@
+create proc [dbo].[cw_GetSalesGLAcct] as
+
+select top 1 GLAccount.GLAcct from GLAccount where cat = 'SALES'
+
+order by glacct asc
+
+
+
+
+

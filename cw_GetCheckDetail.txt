@@ -1,0 +1,14 @@
+CREATE proc [dbo].[cw_GetCheckDetail]
+
+@CheckID int as
+
+
+
+	SELECT * 
+
+	FROM CheckSetup
+
+	where ID=@CheckID
+
+
+

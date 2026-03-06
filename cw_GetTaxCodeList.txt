@@ -1,0 +1,18 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetTaxCodeList] AS
+
+--11/02/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT SalesTaxCodeID [-Hidden- ID], SalesTaxCode, SalesTaxCodeDescription, SalesTax01 [-Hidden- Tax01], SalesTax02 [-Hidden- Tax02], SalesTax03 [-Hidden- Tax03]
+
+		FROM SalesTaxCode s ORDER BY SalesTaxCodeDescription
+
+
+

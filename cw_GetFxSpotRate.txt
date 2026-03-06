@@ -1,0 +1,32 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetFxSpotRate] @CurrCode char(3), @TradeDate datetime, 
+
+    @ExchangeRate decimal(18,8) OUTPUT, @ExchangeDate datetime OUTPUT    
+
+AS
+
+SET NOCOUNT ON
+
+--12/31/2007 DSH Created for FX Contract Assignment
+
+--10/22/2008 DSH Changed precision to new standard (8)
+
+
+
+    
+
+    select top 1 
+
+        @ExchangeRate = FxRate, 
+
+        @ExchangeDate = ExchDate
+
+        FROM CurrencyRate WITH(NOLOCK)
+
+        Where CurCode = @CurrCode AND ExchDate <= @TradeDate
+
+        order by ExchDate DESC
+
+
+

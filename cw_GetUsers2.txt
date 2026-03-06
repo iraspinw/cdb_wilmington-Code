@@ -1,0 +1,162 @@
+CREATE PROC [dbo].[cw_GetUsers2] @UserName varchar(100)='', @DBID int, @Status varchar = '' AS
+
+--08/22/2014 MEC: Created
+
+--07/24/2015 MCM: Modified to work with master user tables
+
+--08/14/2019 Alex: Returned 
+
+ 
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	--SELECT UserID As [USER ID], UserNm As [USER NAME], Case When Active = 1 Then 'Active' Else 'Inactive' End AS [STATUS]	
+
+	--FROM cieTrade_Sys.dbo.Users WITH(NOLOCK)
+
+	--WHERE (@UserName = '' OR UserNm Like @UserName + '%')
+
+	--AND (@Status = '' OR @Status = ISNULL(Active,1))
+
+	--ORDER BY UserNm, UserID
+
+
+
+	-- u: User
+
+	-- ua: UserApp
+
+	-- ud: UserDef
+
+	-- db: DBUser
+
+	IF(@Status = '')
+
+	BEGIN
+
+		SELECT
+
+			cm.CustomerID As [-Hidden-OwnerUserID],
+
+			u.LoginID As [Login ID],
+
+			u.UserName As [User Name],
+
+			u.UserName As [User Details],
+
+			CASE WHEN ISNULL(AllowLogin,0) = 1 THEN 'Active' ELSE 'Inactive' END AS [Status],
+
+			ur.RoleNm As [Role],
+
+			u.UserEmail AS [Email],
+
+			u.UserID As [-Hidden-USER ID],
+
+			isnull(ud.EmailSignature,'') as EmailSignature,   --08/14/2019 Alex:
+
+			isnull(ud.lastLogin,'--') as [Last Login],	--10/14/2022 Dakota: last login for user
+
+			isnull(ud.TimeZoneNm,0) as TimeZone
+
+		FROM
+
+			[CIE-SQLPROD01].[cieXChange].[dbo].DBUser db 
+
+			INNER JOIN [CIE-SQLPROD01].[cieXChange].[dbo].[User] u ON db.UserID = u.UserID
+
+			INNER JOIN [CIE-SQLPROD01].[cieXChange].[dbo].UserApp ua ON db.UserID = ua.UserID
+
+			INNER JOIN UserDef ud ON ud.UserID = u.cieTradeUserID
+
+			LEFT JOIN [CIE-SQLPROD01].[cieXChange].[dbo].Company cm ON db.UserID = cm.OwnerUserID
+
+			LEFT JOIN UserRole ur ON ur.RoleID = ud.RoleID
+
+		WHERE
+
+			(@UserName = '' OR u.UserName LIKE @UserName + '%')
+
+			AND LoginID <> 'xa'
+
+			AND db.[DBID]=@DBID 
+
+			AND [AppName]='cietrade.net'
+
+			and u.username <> 'TestUser'
+
+
+
+			--and (loginID <> 'admin' OR DBName = 'cieTradeNET')			-- Added this line to include admin account only for cieTradeNET Database
+
+		ORDER BY u.UserName
+
+	END
+
+	ELSE
+
+	BEGIN
+
+			SELECT
+
+			cm.CustomerID As [-Hidden-OwnerUserID],
+
+			u.LoginID As [Login ID],
+
+			u.UserName As [User Name],
+
+			u.UserName As [User Details],
+
+			CASE WHEN ISNULL(AllowLogin,0) = 1 THEN 'Active' ELSE 'Inactive' END AS [Status],
+
+			ur.RoleNm As [Role],
+
+			u.UserEmail AS [Email],
+
+			u.UserID As [-Hidden-USER ID],
+
+			isnull(ud.EmailSignature,'') as EmailSignature,  --08/14/2019 Alex:
+
+			isnull(ud.lastLogin,'--') as [Last Login],	--10/14/2022 Dakota: last login for user
+
+			isnull(ud.TimeZoneNm,0) as TimeZone
+
+		FROM
+
+			[CIE-SQLPROD01].[cieXChange].[dbo].DBUser db 
+
+			INNER JOIN [CIE-SQLPROD01].[cieXChange].[dbo].[User] u ON db.UserID = u.UserID
+
+			INNER JOIN [CIE-SQLPROD01].[cieXChange].[dbo].UserApp ua ON db.UserID = ua.UserID
+
+			INNER JOIN UserDef ud ON ud.UserID = u.cieTradeUserID
+
+			LEFT JOIN [CIE-SQLPROD01].[cieXChange].[dbo].Company cm ON db.UserID = cm.OwnerUserID
+
+			LEFT JOIN UserRole ur ON ur.RoleID = ud.RoleID
+
+			
+
+		WHERE
+
+			(@UserName = '' OR u.UserName LIKE @UserName + '%')
+
+			AND LoginID <> 'xa'
+
+			AND db.[DBID]=@DBID 
+
+			AND [AppName]='cietrade.net'
+
+			and loginID <> 'admin'
+
+			And AllowLogin = @Status
+
+		ORDER BY u.UserName
+
+	END
+
+
+

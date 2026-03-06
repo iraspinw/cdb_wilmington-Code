@@ -1,0 +1,118 @@
+
+
+CREATE PROC [dbo].[cw_GetPettyCashAccount] @DeptID CHAR(2) = NULL, @GLAcct char(12) OUTPUT, @ErrorMessage VARCHAR(100) OUTPUT
+
+AS
+
+SET ANSI_WARNINGS OFF
+
+SET @GLAcct = ''
+
+--01/30/2015 DSH Created for Public Trade to pick Petty Cash Account based on dept (If Applicable).
+
+--09/01/2015 EMR: Changed petty cash to work if there is only one petty cash GL account
+
+--09/28/2015 MCM: Added @IsOnePettyCash = 1  - just get the one...
+
+BEGIN
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	DECLARE @DeptNm VARCHAR(100)
+
+	DECLARE @IsOnePettyCash INT
+
+	
+
+
+
+
+
+	-- CHECK FOR DEPARTMENTAL (MULTIPLE) PETTY CASH ACCOUNTS
+
+	SELECT 	@IsOnePettyCash = COUNT(*) FROM GLAccount WITH (NOLOCK) where cat = 'PETTY CASH' 
+
+
+
+	-- IF ONE ACCOUNT AND NO DEPT ASSIGNED
+
+	IF @IsOnePettyCash = 1 AND RTRIM((SELECT ISNULL(PettyCashCOID,'') FROM GLAccount where cat = 'PETTY CASH')) = '' BEGIN
+
+			
+
+		SELECT @GLAcct = GLAcct FROM GLAccount WHERE CAT = 'PETTY CASH'
+
+		IF @GLAcct IS NULL OR @GLAcct = '' BEGIN
+
+			SELECT @DeptNm = CompanyDesc FROM CompanyInfo WHERE COID = @DeptID			
+
+			SET @ErrorMessage = 'UNABLE TO POST CASH TRANSACTION.' + char(13) + char(10) + 'Could not find a Cash account for Dept ' + RTRIM(@DeptNm) + '.' 
+
+			RAISERROR (@ErrorMessage,10,1)
+
+			RETURN
+
+		END
+
+	END
+
+
+
+	-- GET DEPARTMENTAL PETTY CASH ACCOUNT.
+
+	
+
+	IF @IsOnePettyCash >= 1 BEGIN
+
+			
+
+		SELECT @GLAcct = GLAcct FROM GLAccount WITH (NOLOCK) WHERE CAT = 'PETTY CASH' AND PettyCashCOID = @DeptID
+
+		IF @GLAcct IS NULL OR @GLAcct = '' BEGIN
+
+			SELECT @DeptNm = CompanyDesc FROM CompanyInfo WHERE COID = @DeptID			
+
+			SET @ErrorMessage = 'UNABLE TO POST CASH TRANSACTION.' + char(13) + char(10) + 'Could not find a Cash account for Dept ' + RTRIM(@DeptNm) + '.' 
+
+			RAISERROR (@ErrorMessage,10,1)
+
+			RETURN
+
+		END
+
+	END
+
+
+
+	-- GET PETTY CASH GL ACCOUNT.    
+
+	IF @IsOnePettyCash < 1 BEGIN
+
+		SELECT @GLAcct = GLAcct FROM GLAccount WITH (NOLOCK) where cat = 'PETTY CASH' AND (PettyCashCOID IS NULL OR PettyCashCOID = '')
+
+		IF @GLAcct IS NULL OR @GLAcct = '' BEGIN
+
+			SET @ErrorMessage = 'UNABLE TO POST CASH TRANSACTION.' + char(13) + char(10) + 'Could not find a Cash Account to post to.'
+
+			RAISERROR (@ErrorMessage,10,1)
+
+			RETURN
+
+		END
+
+	END
+
+
+
+END
+
+
+
+
+
+--cw_GetPettyCashAccount '00', '', ''
+

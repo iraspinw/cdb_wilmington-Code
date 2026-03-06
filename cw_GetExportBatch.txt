@@ -1,0 +1,28 @@
+CREATE proc [dbo].[cw_GetExportBatch] @FromDt datetime, @ToDt datetime, @Exported bit = 0 as
+
+
+
+set nocount on 
+
+set transaction isolation level read uncommitted
+
+
+
+select ExportBatchNo as 'Batch No',  ExportDt as 'Export Date', ExportType as 'Type', recordCnt as '# of Items', sum(FxAmount) as Amount
+
+from PayablesBatch
+
+inner join counterparty on counterparty.cpid = PayablesBatch.cpid
+
+inner join APBatchExport on APBatchExport.BatchNo = PayablesBatch.ExportBatchNo
+
+where (@FromDt = '' OR (@FromDt <= ExportDt and @ToDt + ' 23:59:59' >= ExportDt))
+
+and ((@Exported = 0 and isnull(ExportBatchNo,0) = 0) OR (@Exported=1 and isnull(exportbatchno, 0) <> 0))
+
+group by ExportBatchNo,  exportdt, ExportType, recordCnt
+
+order by exportbatchno
+
+
+

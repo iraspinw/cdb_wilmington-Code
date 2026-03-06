@@ -1,0 +1,32 @@
+CREATE   PROCEDURE [dbo].[cw_GetPlaceHolders] 
+
+@TemplateType char(10), 
+
+@OriginType char(3) = ''
+
+as
+
+
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+--03/24/2020 alex: Created
+
+-- <%--Emily-PleaceHolder per document- pendding --%>
+
+
+
+select placeholders.FormID,placeholderName,PlaceholderValue from placeholders
+
+left join xDocMaster on xDocMaster.FormID=placeholders.FormID
+
+where  (@OriginType='CW' or placeholders.FormID=@TemplateType) 
+
+       and origin=@OriginType
+
+
+
+
+

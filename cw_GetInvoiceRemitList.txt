@@ -1,0 +1,18 @@
+CREATE   PROCEDURE [dbo].[cw_GetInvoiceRemitList] AS
+
+--02/21/2019 Alex: Copied from  q_GetInvoiceRemitList
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+      SET NOCOUNT ON;
+
+	  SELECT RemitID as '-Hidden-RemitID',
+
+	  RemitNm Name,
+
+	  RemitAddr 'Remittance Details'
+
+	 -- WireInst
+
+	  FROM InvoiceRemit WITH(NOLOCK) ORDER BY RemitNm
+

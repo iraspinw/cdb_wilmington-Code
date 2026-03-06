@@ -1,0 +1,32 @@
+CREATE PROC [dbo].[cw_GetSessionID] 
+
+	@email varchar(150)
+
+as
+
+--08/22/2014 MEC: Created
+
+--07/24/2015 MCM: Modified to work with master user tables
+
+--08/14/2019 Alex: Returned 
+
+--10-17-2022 Dakota: made changes, added active users query when status = '2'
+
+ 
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	select isnull(sessionID,'') from userdef where UserEmail like '%' + @email + '%'
+
+
+
+
+
+
+
+
+

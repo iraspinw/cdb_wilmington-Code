@@ -1,0 +1,834 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCreditSummary] 
+
+	
+
+	@CpID char(12),
+
+	@BuySellNo char(12) = '',
+
+	@SONo char(15) = '',
+
+	@AROnly bit = 0
+
+	
+
+AS 
+
+
+
+-- 09/17/2018  MEC: Copied for cieTrade.net
+
+
+
+--cw_GetCreditSummary '43410'
+
+
+
+CREATE TABLE #CreditSummary
+
+	(
+
+		PendingOrdersTotal money, 
+
+		PendingOrdersSecured money,
+
+		PendingOrdersCovered money,
+
+		UnshippedOrdersTotal money,
+
+		UnshippedOrdersSecured money,
+
+		UnshippedOrdersCovered money,
+
+		PendingShipmentsTotal money,
+
+		PendingShipmentsSecured money,
+
+		PendingShipmentsCovered money,
+
+		OpenCreditTotal money,
+
+		OpenCreditSecured money,
+
+		OpenCreditCovered money,
+
+		CreditLimit money,
+
+		ExpDt datetime,
+
+		Terms char(30),
+
+		ActiveCreditProtocolID int,
+
+		AgendaDate datetime,
+
+		Status varchar(30),
+
+		CreditInsurance money,
+
+		UACashAmt money,
+
+		AdvanceOrders Money,
+
+		CreditLimitCurrency char(3),
+
+		CreditInsuranceCurrency char(3),
+
+		DBNo varchar(11)
+
+	)
+
+
+
+if @AROnly = 0 begin
+
+	SET NOCOUNT ON
+
+	declare @PendingOrdersSecured as money
+
+	declare @PendingOrdersCovered as money
+
+	declare @UnshippedOrdersSecured as money
+
+	declare @UnshippedOrdersCovered as money
+
+	declare @PendingShipmentsSecured as money
+
+	declare @PendingShipmentsCovered as money
+
+	declare @OpenCreditSecured as money
+
+	declare @OpenCreditCovered as money
+
+	declare @OpenSalesSecured as money
+
+	declare @OpenSalesCovered as money
+
+	declare @UACashAmt as money
+
+	declare @LastPmtDate as datetime
+
+	declare @LastPmtCur as char(3)
+
+	declare @LastPmtAmt as money
+
+	declare @AdvanceOrders as money
+
+	declare @AdvanceOrder_Shipments Money
+
+	declare @DBNo varchar(11)
+
+
+
+	
+
+
+
+		SELECT @DBNo = DBNo FROM Counterparty WHERE CpID = @CpID
+
+
+
+		--Get pending orders (not approved) that are L/C or Secured Credit
+
+		SELECT @PendingOrdersSecured  = isnull(sum(PODetail.Amount),0) 
+
+		FROM PODetail WITH(NOLOCK) 
+
+		INNER JOIN PO WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber
+
+		LEFT JOIN BILLINGTERM WITH(NOLOCK) ON PO.TERMS = BILLINGTERM.TERM
+
+		WHERE PO.Source = 'SO' 
+
+		AND PO.Status = 'REVIEW'
+
+		AND PO.CpID = @CpID
+
+		AND isnull(BILLINGTERM.EXCLUDEFROMCREDITCHECK, 0) = 1
+
+		AND ISNULL(PO.IsAgency,0) = 0  AND IsAdvanceOrder=0
+
+
+
+		--Get pending orders (not approved) that are not L/C or secured credit
+
+		SELECT @PendingOrdersCovered  = isnull(sum(PODetail.Amount),0) 
+
+		FROM PODetail WITH(NOLOCK) 
+
+		INNER JOIN PO WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber
+
+		LEFT JOIN BILLINGTERM WITH(NOLOCK) ON PO.TERMS = BILLINGTERM.TERM
+
+		WHERE PO.Source = 'SO' 
+
+		AND PO.Status = 'REVIEW' 
+
+		AND PO.CpID = @CpID
+
+		AND isnull(BILLINGTERM.EXCLUDEFROMCREDITCHECK, 0) = 0
+
+		AND ISNULL(PO.IsAgency,0) = 0  
+
+		AND IsAdvanceOrder=0
+
+
+
+
+
+		/* GET UNSHIPPED ORDERS/PARTIAL SHIPPED ORDERS TOTAL */
+
+		SELECT podetail.ponumber, sum(amount) as amount
+
+		into #OPENORDERSSECURED
+
+		FROM PODetail WITH(NOLOCK) 
+
+		INNER JOIN PO WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber
+
+		LEFT JOIN BILLINGTERM WITH(NOLOCK) ON PO.TERMS = BILLINGTERM.TERM
+
+		WHERE PO.Source = 'SO' 
+
+		AND PO.CpID = @CPID AND PO.Status = 'OPEN' 
+
+		AND isnull(BILLINGTERM.EXCLUDEFROMCREDITCHECK, 0) = 0
+
+		AND ISNULL(PO.IsAgency,0) = 0 
+
+		AND ISNULL(IsAdvanceOrder,0)=0
+
+		group by podetail.ponumber
+
+	
+
+		SELECT wksdetail.spo, sum(wksdetail.samount * -1) as amount
+
+		into #SHIPMENTSSECURED
+
+		FROM wksDetail WITH(NOLOCK)  
+
+		INNER JOIN BuySell WITH(NOLOCK) ON wksDetail.BuySellNo = BuySell.BuySellNo 
+
+		LEFT JOIN BILLINGTERM WITH(NOLOCK) ON BuySell.TERMS = BILLINGTERM.TERM
+
+		where 
+
+		ISNULL(BuySell.[Status],'') Not In ('X', 'I')
+
+		AND EXISTS(SELECT PO.PONumber FROM PO WITH(NOLOCK) WHERE PO.Source = 'SO' AND PO.CpID = @cpid AND PO.Status = 'OPEN' AND ISNULL(PO.IsAgency,0) = 0 AND PO.PONumber = wksDetail.SPo)-- AND PO.IsAdvanceOrder=0 Alex:7/7/2020
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1 	
+
+		--AND isnull(BILLINGTERM.EXCLUDEFROMCREDITCHECK, 0) = 1 --Alex:7/7/2020
+
+		AND (@BuySellNo = '' OR BuySell.BuySellNo <> @BuySellNo)
+
+		group by wksdetail.spo
+
+
+
+
+
+		update #OPENORDERSSECURED set 
+
+			#OPENORDERSSECURED.amount = #OPENORDERSSECURED.amount + #SHIPMENTSSECURED.amount 
+
+			from #OPENORDERSSECURED WITH(NOLOCK) inner join #SHIPMENTSSECURED WITH(NOLOCK) on #OPENORDERSSECURED.ponumber = #SHIPMENTSSECURED.spo
+
+
+
+		select @UnshippedOrdersSecured = sum(amount) from #OPENORDERSSECURED WITH(NOLOCK) where amount > 0
+
+
+
+
+
+		declare @UnshippedOrdersSecuredNegativeAllow money
+
+		select @UnshippedOrdersSecuredNegativeAllow = sum(amount) from #OPENORDERSSECURED WITH(NOLOCK) 
+
+
+
+	
+
+
+
+
+
+		SELECT podetail.ponumber, sum(amount) as amount
+
+		into #OPENORDERSCOVERED
+
+		FROM PODetail WITH(NOLOCK) 
+
+		INNER JOIN PO WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber
+
+		LEFT JOIN BILLINGTERM WITH(NOLOCK) ON PO.TERMS = BILLINGTERM.TERM
+
+		WHERE PO.Source = 'SO' 
+
+		AND PO.CpID = @CPID AND PO.Status = 'OPEN' 	
+
+		AND isnull(BILLINGTERM.EXCLUDEFROMCREDITCHECK, 0) <> 1
+
+		AND ISNULL(PO.IsAgency,0) = 0 AND IsAdvanceOrder=0
+
+		group by podetail.ponumber
+
+
+
+
+
+		SELECT wksdetail.spo, sum(wksdetail.samount * -1) as amount
+
+		into #SHIPMENTSCOVERED
+
+		FROM wksDetail WITH(NOLOCK)  
+
+			INNER JOIN BuySell with (NOLOCK) ON wksDetail.BuySellNo = BuySell.BuySellNo 
+
+			LEFT JOIN BILLINGTERM with (NOLOCK) ON BuySell.TERMS = BILLINGTERM.TERM
+
+		where 
+
+			ISNULL(BuySell.[Status],'') Not In ('X', 'I')
+
+			AND EXISTS(SELECT PO.PONumber FROM PO WITH(NOLOCK) WHERE PO.Source = 'SO' AND PO.CpID = @cpid AND PO.Status = 'OPEN' AND ISNULL(PO.IsAgency,0) = 0  AND PO.PONumber = wksDetail.SPo) --AND PO.IsAdvanceOrder=0
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1	
+
+		AND (@BuySellNo = '' OR BuySell.BuySellNo <> @BuySellNo)
+
+		group by wksdetail.spo
+
+
+
+
+
+		update #OPENORDERSCOVERED set #OPENORDERSCOVERED.amount = #OPENORDERSCOVERED.amount + #SHIPMENTSCOVERED.amount 
+
+			from #OPENORDERSCOVERED WITH(NOLOCK) inner join #SHIPMENTSCOVERED WITH(NOLOCK) on #OPENORDERSCOVERED.ponumber = #SHIPMENTSCOVERED.spo
+
+	
+
+		--GET ORDER SUMS
+
+		SELECT PO.PONumber, SUM(Amount) AS Amount 
+
+			INTO #ORDERSUMS
+
+			FROM #OPENORDERSCOVERED 
+
+			INNER JOIN PO ON #OPENORDERSCOVERED.PoNumber = PO.PONumber
+
+			GROUP BY PO.PONumber
+
+        
+
+		SELECT PONumber
+
+			INTO #NEGORDERS
+
+			FROM #ORDERSUMS
+
+			WHERE Amount < 0
+
+	
+
+		--REMOVE ORDERS OVERSHIPPED SO REPORT ISNT SKEWED NEGATIVE
+
+		DELETE FROM #OPENORDERSCOVERED FROM #OPENORDERSCOVERED 
+
+			INNER JOIN #NEGORDERS ns ON ns.PONumber = #OPENORDERSCOVERED.PONumber
+
+	
+
+		select @UnshippedOrdersCovered = sum(amount) from #OPENORDERSCOVERED where amount > 0
+
+	
+
+
+
+
+
+		-- GET VALUE OF ADVANCE-ORDERS (Non-Credit). 
+
+		SELECT @AdvanceOrders = sum(amount) 	
+
+		FROM PODetail WITH(NOLOCK) 
+
+		INNER JOIN PO WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber	
+
+		WHERE PO.Source = 'SO' 
+
+		AND PO.CpID = @CPID AND PO.[Status] <> 'CLOSED'
+
+		AND ISNULL(PO.IsAgency,0) = 0
+
+		AND IsAdvanceOrder=1
+
+
+
+		-- GET VALUE OF ADVANCE-ORDER SHIPMENTS	
+
+		SELECT @AdvanceOrder_Shipments = sum(wksdetail.samount) 
+
+		FROM wksDetail WITH(NOLOCK)  
+
+			INNER JOIN BuySell with (NOLOCK) ON wksDetail.BuySellNo = BuySell.BuySellNo 
+
+			INNER JOIN PO ON  WksDetail.SPO = PO.PONumber
+
+		where 
+
+			ISNULL(BuySell.[Status],'') Not In ('X', 'I')
+
+			AND PO.CpID = @cpid 
+
+			AND PO.Status <> 'CLOSED'
+
+			AND ISNULL(PO.IsAgency,0) = 0 
+
+			AND PO.IsAdvanceOrder=1 
+
+			AND (@BuySellNo = '' OR BuySell.BuySellNo <> @BuySellNo)
+
+
+
+		SELECT @AdvanceOrders = Coalesce(@AdvanceOrders,0) - Coalesce(@AdvanceOrder_Shipments,0)
+
+		IF @AdvanceOrders < 0 SET @AdvanceOrders = 0 
+
+		------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+		-- GET PENDING INVOICE AMOUNT (Secured)
+
+		SELECT @PendingShipmentsSecured = isnull(Sum(SBalanceDue),0) 
+
+		FROM BuySell WITH (NOLOCK) 
+
+		LEFT JOIN BILLINGTERM WITH(NOLOCK) on Buysell.terms = billingterm.term
+
+		WHERE BuySell.CustID = @CpID
+
+		AND ISNULL(BuySell.[Status],'') Not In ('X', 'I')
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND isnull(BILLINGTERM.EXCLUDEFROMCREDITCHECK, 0) = 1
+
+		AND (@BuySellNo = '' OR BuySell.BuySellNo <> @BuySellNo)
+
+	
+
+
+
+		-- GET PENDING INVOICE AMOUNT (Covered by Limits)
+
+		SELECT @PendingShipmentsCovered = isnull(Sum(SBalanceDue),0) 
+
+		FROM BuySell WITH (NOLOCK) 
+
+		LEFT JOIN BILLINGTERM WITH(NOLOCK) on Buysell.terms = billingterm.term
+
+		WHERE BuySell.CustID = @CpID
+
+		AND ISNULL(BuySell.[Status],'') Not In ('X', 'I')
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		--AND ISNULL(BuySell.RefSONo,'') = ''  ---Alex 7/9/2020 
+
+		AND isnull(BILLINGTERM.EXCLUDEFROMCREDITCHECK, 0) = 0
+
+		AND (@BuySellNo = '' OR BuySell.BuySellNo <> @BuySellNo)
+
+
+
+		-- GET OPEN CREDIT (SECURED)
+
+		SELECT @OpenCreditSecured = Sum(isnull(SBalanceDue,0))
+
+		FROM BuySell WITH(NOLOCK)  
+
+		LEFT join billingterm WITH(NOLOCK) on billingterm.term = terms
+
+		WHERE BuySell.CustID = @CpID
+
+		AND ISNULL(BuySell.[Status],'') = 'I'
+
+		and isnull(billingterm.excludefromcreditcheck, 0) = 1
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND (@BuySellNo = '' OR BuySell.BuySellNo <> @BuySellNo)
+
+		AND ISNULL(IsInvoiceBooked,0) <> 1
+
+	
+
+		-- GET OPEN CREDIT (COVERED)
+
+		SELECT @OpenCreditCovered = Sum(isnull(SBalanceDue,0))
+
+		FROM BuySell WITH(NOLOCK)  
+
+		LEFT join billingterm WITH(NOLOCK) on billingterm.term = terms
+
+		WHERE BuySell.CustID = @CpID
+
+		AND ISNULL(BuySell.[Status],'') = 'I'
+
+		and isnull(billingterm.excludefromcreditcheck, 0) = 0
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND (@BuySellNo = '' OR BuySell.BuySellNo <> @BuySellNo)
+
+		AND ISNULL(IsInvoiceBooked,0) <> 1
+
+
+
+		if @UnshippedOrdersSecured < 0 begin
+
+			set @UnshippedOrdersSecured = 0
+
+		end
+
+
+
+		if @UnshippedOrdersCovered < 0 begin
+
+			set @UnshippedOrdersCovered = 0
+
+		end
+
+
+
+		--GET UA CASH
+
+	--01/17/2010 RS: UAC fixed
+
+		--Select @UACashAmt = sum(isnull(balance, 0)) 
+
+		--	from uacashledger with (NOLOCK) where custid = @CPID and balance > 0 
+
+		Select @UACashAmt = sum(isnull(balance, 0)) 
+
+			FROM uacashledger with (NOLOCK) 
+
+			where custid = @CPID AND ISNULL(Reversed,0) <> 1 --AND balance>0
+
+			Having sum(isnull(balance, 0))>0	
+
+
+
+
+
+
+
+
+
+
+
+	--select @UnshippedOrdersSecured,@UnshippedOrdersCovered
+
+	--return
+
+
+
+
+
+		INSERT #CreditSummary(
+
+			PendingOrdersTotal, 
+
+			PendingOrdersSecured,
+
+			PendingOrdersCovered,
+
+			UnshippedOrdersTotal,
+
+			UnshippedOrdersSecured,
+
+			UnshippedOrdersCovered,
+
+			PendingShipmentsTotal,
+
+			PendingShipmentsSecured,
+
+			PendingShipmentsCovered,
+
+			OpenCreditTotal,
+
+			OpenCreditSecured,
+
+			OpenCreditCovered,
+
+			CreditLimit,
+
+			ExpDt,
+
+			Terms,
+
+			ActiveCreditProtocolID,
+
+			AgendaDate,
+
+			Status,
+
+			CreditInsurance,
+
+			UACashAmt,
+
+			AdvanceOrders,
+
+			CreditLimitCurrency,
+
+			CreditInsuranceCurrency,
+
+			DBNo
+
+		)
+
+	
+
+		SELECT 	
+
+			(isnull(@PendingOrdersSecured, 0) + isnull(@PendingOrdersCovered, 0)), 
+
+			@PendingOrdersSecured, 
+
+			@PendingOrdersCovered,
+
+			(isnull(@UnshippedOrdersSecured, 0) + isnull(@UnshippedOrdersCovered, 0)), 
+
+			isnull(@UnshippedOrdersSecured, 0), 
+
+			isnull(@UnshippedOrdersCovered, 0),
+
+			(isnull(@PendingShipmentsSecured, 0) +	isnull(@PendingShipmentsCovered, 0)), 
+
+			@PendingShipmentsSecured, 
+
+			@PendingShipmentsCovered,
+
+			(isnull(@OpenCreditSecured, 0) + isnull(@OpenCreditCovered, 0)), 
+
+			@OpenCreditSecured, 
+
+			@OpenCreditCovered,
+
+			counterparty.CreditLimit, 
+
+			ExpDt, 
+
+			credit.terms, 
+
+			activecreditprotocolid, 
+
+			agendadate, 
+
+			status, 
+
+			CreditInsurance, 
+
+			isnull(@UACashAmt, 0) ,
+
+			@AdvanceOrders,
+
+			CurCode,
+
+			credinsurancecur,
+
+			@DBNo		
+
+			FROM counterparty WITH(NOLOCK)	
+
+		LEFT JOIN credit WITH(NOLOCK) ON Counterparty.activecreditprotocolid = Credit.protocolid 
+
+		WHERE Counterparty.CpID = @CpID
+
+
+
+
+
+
+
+		SELECT *, Case When (PendingShipmentsTotal > CreditLimit And CreditLimit > 0) Then 'Y' Else 'N' End As ExceedsLimit ,
+
+		isnull((select sum(amount) FROM PODetail WITH(NOLOCK) where PODetail.PONumber = @SONo),0) as CurrentTiedSoAmount,
+
+		@UnshippedOrdersSecuredNegativeAllow as UnshippedOrdersSecuredNegativeAllow
+
+		FROM #CreditSummary WITH(NOLOCK) 
+
+END
+
+
+
+ELSE BEGIN
+
+	declare @OpenAR money
+
+	select @OpenAR = isnull(SUM(SBalanceDue-ISNULL(ARTrkPaymentAmt,0)) - sum(isnull(SalesTaxAmt, 0)) ,0)
+
+	FROM buysell
+
+	where buysell.CustID = @CpID
+
+	and buysell.[status]='I'
+
+	and SBalanceDue > 0
+
+
+
+		INSERT #CreditSummary(
+
+			PendingOrdersTotal, 
+
+			PendingOrdersSecured,
+
+			PendingOrdersCovered,
+
+			UnshippedOrdersTotal,
+
+			UnshippedOrdersSecured,
+
+			UnshippedOrdersCovered,
+
+			PendingShipmentsTotal,
+
+			PendingShipmentsSecured,
+
+			PendingShipmentsCovered,
+
+			OpenCreditTotal,
+
+			OpenCreditSecured,
+
+			OpenCreditCovered,
+
+			CreditLimit,
+
+			ExpDt,
+
+			Terms,
+
+			ActiveCreditProtocolID,
+
+			AgendaDate,
+
+			Status,
+
+			CreditInsurance,
+
+			UACashAmt,
+
+			AdvanceOrders,
+
+			CreditLimitCurrency,
+
+			CreditInsuranceCurrency,
+
+			DBNo
+
+		)
+
+	
+
+		SELECT 	
+
+			0, 
+
+			0, 
+
+			0,
+
+			0, 
+
+			0, 
+
+			0,
+
+			0, 
+
+			0, 
+
+			0,
+
+			@OpenAR, 
+
+			@OpenAR, 
+
+			0,
+
+			counterparty.CreditLimit, 
+
+			ExpDt, 
+
+			credit.terms, 
+
+			activecreditprotocolid, 
+
+			agendadate, 
+
+			status, 
+
+			CreditInsurance, 
+
+			isnull(@UACashAmt, 0) ,
+
+			@AdvanceOrders,
+
+			CurCode,
+
+			credinsurancecur,
+
+			@DBNo		
+
+			FROM counterparty WITH(NOLOCK)	
+
+		LEFT JOIN credit WITH(NOLOCK) ON Counterparty.activecreditprotocolid = Credit.protocolid 
+
+		WHERE Counterparty.CpID = @CpID
+
+
+
+
+
+
+
+		SELECT *, Case When (@OpenAR > CreditLimit And CreditLimit > 0) Then 'Y' Else 'N' End As ExceedsLimit ,
+
+		0 as CurrentTiedSoAmount,
+
+		0 as UnshippedOrdersSecuredNegativeAllow
+
+		FROM #CreditSummary WITH(NOLOCK) 
+
+
+
+
+
+
+
+
+
+END
+

@@ -1,0 +1,48 @@
+CREATE PROC [dbo].[cw_GetSalesTax]
+
+
+
+	--@UserName varchar(100),
+
+	--@Status char(1)
+
+
+
+AS
+
+
+
+--02/22/16 M.N: CREATED
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		SalesTaxID As [-Hidden- ID],
+
+		TaxDescription As [Tax Name],
+
+		TaxAuthority.AuthorityName As [Tax Authority],
+
+		CAST(100 * CAST(IsNull(TaxRate,0) As decimal(6,5)) As decimal(6,3)) As [Tax Rate],
+
+		SalesTaxAcct AS [-Hidden-SalesTaxAcct],
+
+		PurchTaxAcct As [-Hidden-PurchTaxAcct]
+
+		
+
+	FROM SalesTax INNER JOIN TaxAuthority ON TaxAuthority.ID = SalesTax.TaxAuthority
+
+	--Where 
+
+	--	And (@Status = '' OR (Active = @Status))
+
+
+

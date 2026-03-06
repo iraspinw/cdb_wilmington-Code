@@ -1,0 +1,42 @@
+CREATE   PROCEDURE [dbo].[cw_GetLCCertificate] @Title varchar(50)
+
+AS
+
+BEGIN
+
+
+
+-- 11/8/2016 MN: Created for cieTrade.net 
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT
+
+		Title,
+
+		Certification
+
+	FROM
+
+		LCCertificates With (NoLock)
+
+	WHERE
+
+		Title = @Title
+
+END
+
+
+
+
+
+
+
+
+

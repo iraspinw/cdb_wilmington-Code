@@ -1,0 +1,10 @@
+CREATE proc [dbo].[cw_GetEmailTemplateByTemplateType] @TemplateType varchar(50) as
+
+
+
+select top 1 EmailCC, EmailBCC, EmailFrom, EmailSubject, EmailBody, TemplateID,isnull(EmailTO,'') as EmailTO  from EmailTemplates 
+
+where TemplateType = @TemplateType 
+
+order by IsNull(isdefault,0) desc
+

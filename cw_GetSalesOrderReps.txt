@@ -1,0 +1,62 @@
+
+
+CREATE  PROCEDURE [dbo].[cw_GetSalesOrderReps]
+
+(
+
+	@POID int, @PONo char(15)
+
+)
+
+AS
+
+
+
+--5/18/2007 JW: added WITH(NOLOCK)s
+
+--10/08/2009 MCM: Added LEFT JOIN to Counterparty_Referrer for defaults
+
+--03/07/2013 MCM: Changed SP to pull both purchase order rep and counterparty default rep
+
+--04/25/2013 RS: Added : AND (ISNULL(POSalesReps.ReferrerNo,'') <> '' OR ISNULL(DefaultRef.ReferrerNo,'') <> '')
+
+--				to prevent returning blank Sales Rep
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	SELECT RefName.Name as name, POSalesReps.ReferrerNo, 
+
+		ISNULL(Counterparty_Referrer.Rate,0), ISNULL(Counterparty_Referrer.ChgPer,'('),
+
+		RefName.name, DefaultRef.ReferrerNo, ISNULL(DefaultRef.Rate,0), ISNULL(DefaultRef.ChgPer,'(')
+
+	FROM PO WITH(NOLOCK)
+
+	LEFT JOIN Counterparty_Referrer DefaultRef WITH(NOLOCK) ON DefaultRef.IsDefault = 1 AND DefaultRef.CpID = PO.CpID
+
+	
+
+	LEFT JOIN POSalesReps WITH(NOLOCK) ON POSalesReps.POID = PO.POID
+
+	LEFT JOIN referrer RefName WITH(NOLOCK) ON POSalesReps.referrerno = RefName.ReferrerNo
+
+	LEFT JOIN Counterparty_Referrer WITH(NOLOCK) ON Counterparty_Referrer.ReferrerNo = POSalesReps.ReferrerNo AND Counterparty_Referrer.CpID = PO.CpID
+
+	LEFT JOIN referrer WITH(NOLOCK) ON POSalesReps.referrerno = referrer.ReferrerNo
+
+	WHERE (@POID = 0 OR PO.POID = @POID) AND (@PONo = '' OR PO.PONumber = @PONo)
+
+	AND (ISNULL(POSalesReps.ReferrerNo,'') <> '' OR ISNULL(DefaultRef.ReferrerNo,'') <> '')
+
+	
+
+RETURN
+

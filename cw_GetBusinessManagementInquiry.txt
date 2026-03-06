@@ -1,0 +1,154 @@
+CREATE proc [dbo].[cw_GetBusinessManagementInquiry]
+
+@Account   varchar(100),
+
+@Grade     varchar(100),
+
+@UnitType  varchar(100),
+
+@BasisWtUOM varchar(3) = 'LB',
+
+@BasisWtFrom Decimal(22,3) = 0.0,
+
+@BasisWtTo Decimal(22,3) = 0.0,
+
+@CaliperFrom Decimal(22,3) = 0.0,
+
+@CaliperTo Decimal(22,3) = 0.0,
+
+@RollWdUOM varchar(3) = 'CM', 
+
+@RollWdFrom Decimal(22,3) = 0.0,
+
+@RollWdTo Decimal(22,3) = 0.0,
+
+@DiameterUOM varchar(3) = 'CM',
+
+@DiameterFrom Decimal(22,3) = 0.0,
+
+@DiameterTo Decimal(22,3) = 0.0,
+
+@TypeGrade varchar(25) = '',
+
+@MeltFlow varchar(25) = '',
+
+@Form varchar(25) = '',
+
+@Color varchar(48) = '',
+
+@InterestType varchar(15) = ''
+
+	AS
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED	
+
+
+
+--[dbo].[cw_GetBusinessManagementInquiry]
+
+
+
+select 
+
+CounterParty.CompanyNm as CounterParty,
+
+Grade.Description as Product,
+
+UnitType.UnitType,
+
+cast (PriceIdea as varchar(100))+'/'+[dbo].[CnvUOM_Names](PriceIdeaUOM) as Pirce, 
+
+--[dbo].[CnvUOM_Names](PriceIdeaUOM) as [Per/],
+
+PriceIdeaCurrency as Currency,
+
+InterestType as [Interest Type],
+
+[dbo].[FormatQty](Qty,QtyUOM)+'/'+ [dbo].[CnvUOM_Names](QtyUOM) as Quantity	,
+
+--[dbo].[CnvUOM_Names](QtyUOM) as [Quantity UOM],
+
+Notes,
+
+case  when dbo.RemoveTrailingZeros(Counterparty_ProductsOfInterest.BW) ='0' then '' else dbo.RemoveTrailingZeros(Counterparty_ProductsOfInterest.BW) end as [{UDF}BW],
+
+case  when dbo.RemoveTrailingZeros(Counterparty_ProductsOfInterest.Caliper) ='0' then '' else dbo.RemoveTrailingZeros(Counterparty_ProductsOfInterest.Caliper) end as  [{UDF}Caliper],
+
+case  when dbo.RemoveTrailingZeros( Counterparty_ProductsOfInterest.RW) ='0' then '' else dbo.RemoveTrailingZeros( Counterparty_ProductsOfInterest.RW)  end as  [{UDF}RW],
+
+case  when dbo.RemoveTrailingZeros(Counterparty_ProductsOfInterest.Diameter) ='0' then '' else dbo.RemoveTrailingZeros(Counterparty_ProductsOfInterest.Diameter) end as  [{UDF}Diameter],
+
+Counterparty_ProductsOfInterest.PlasticType as [{UDF}Type-Grade],
+
+Counterparty_ProductsOfInterest.PlasticForm as  [{UDF}Form] ,
+
+Counterparty_ProductsOfInterest.PlasticMelt as  [{UDF}Melt],
+
+Counterparty_ProductsOfInterest.COLOR as  [{UDF}color],
+
+Counterparty_ProductsOfInterest.GRADEID,
+
+Counterparty_ProductsOfInterest.UserDefined1,
+
+Counterparty_ProductsOfInterest.UserDefined2,
+
+Counterparty_ProductsOfInterest.UserDefined3,
+
+Counterparty_ProductsOfInterest.UserDefined4,
+
+Counterparty_ProductsOfInterest.UserDefined5,
+
+CounterParty.CpID as [-hiddeen-CpID]
+
+--Counterparty_ProductsOfInterest.*
+
+
+
+from Counterparty_ProductsOfInterest
+
+inner join CounterParty on CounterParty.CpID=Counterparty_ProductsOfInterest.CPID
+
+inner join Grade on  Grade.GradeID= Counterparty_ProductsOfInterest.GRADEID
+
+left join UnitType on UnitType.TypeID =Counterparty_ProductsOfInterest.UnitType
+
+where   (@Account ='' or @Account =CounterParty.CpID)
+
+    and (@Grade ='' or @Grade =Counterparty_ProductsOfInterest.GRADEID)
+
+	and (@UnitType ='' or @UnitType =Counterparty_ProductsOfInterest.UnitType)
+
+	AND (@BasisWtFrom = 0 OR Counterparty_ProductsOfInterest.BW >= @BasisWtFrom) 
+
+	AND (@BasisWtTo = 0 OR Counterparty_ProductsOfInterest.BW <= @BasisWtTo) 
+
+	AND (@CaliperFrom = 0 OR Counterparty_ProductsOfInterest.Caliper >= @CaliperFrom) 
+
+	AND (@CaliperTo = 0 OR Counterparty_ProductsOfInterest.Caliper <= @CaliperTo) 
+
+	AND (@RollWdFrom = 0 OR Counterparty_ProductsOfInterest.RW >= @RollWdFrom) 
+
+	AND (@RollWdTo = 0 OR Counterparty_ProductsOfInterest.RW <= @RollWdTo) 
+
+	AND (@DiameterFrom = 0 OR Counterparty_ProductsOfInterest.Diameter >= @DiameterFrom) 
+
+	AND (@DiameterTo = 0 OR Counterparty_ProductsOfInterest.Diameter <= @DiameterTo) 
+
+	and (@Color = '' or Counterparty_ProductsOfInterest.Color = @Color)
+
+	and (@TypeGrade = '' or Counterparty_ProductsOfInterest.plasticType = @TypeGrade)
+
+	and (@MeltFlow= '' or Counterparty_ProductsOfInterest.PlasticMelt = @MeltFlow)
+
+	and (@Form = '' or Counterparty_ProductsOfInterest.plasticForm = @Form)
+
+	and (@InterestType = '' or Counterparty_ProductsOfInterest.InterestType = @InterestType)
+
+ORDER BY CounterParty
+
+
+

@@ -1,0 +1,14 @@
+CREATE proc [dbo].[cw_GetTemplateDetail] @TemplateID int as
+
+set nocount on
+
+--3/26/2020 Alex:added OriginType
+
+set transaction isolation level read uncommitted
+
+select TemplateType,TemplateName, EmailCC, EmailBCC, EmailFrom, EmailSubject, EmailBody, AddSignature, IsDefault,isnull(OriginType,'') as OriginType,isnull(EmailTO,'') as EmailTO
+
+from EmailTemplates
+
+where TemplateID=@TemplateID
+

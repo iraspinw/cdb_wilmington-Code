@@ -1,0 +1,6 @@
+CREATE   PROCEDURE [dbo].[cw_GetTrucks] AS
+
+
+
+select * from trucks with(nolock)
+

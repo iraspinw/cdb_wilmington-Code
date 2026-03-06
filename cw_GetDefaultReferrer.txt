@@ -1,0 +1,30 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetDefaultReferrer] @CpID char(12) AS
+
+
+
+-- 11/30/2005 JW: Added ChgPer field
+
+-- 03/10/2010 RS: WITH(NOLOCK) added
+
+
+
+SET NOCOUNT ON
+
+
+
+SELECT Name, Counterparty_Referrer.ReferrerNo, Rate, Charge, IsDefault, ChgPer  
+
+FROM Counterparty_Referrer  WITH(NOLOCK) 
+
+INNER JOIN referrer WITH(NOLOCK) ON Counterparty_Referrer.ReferrerNo = referrer.ReferrerNo
+
+WHERE CpID = @CpID and IsDefault = 1 and Active = 1
+
+
+
+RETURN
+
+
+

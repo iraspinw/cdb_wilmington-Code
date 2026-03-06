@@ -1,0 +1,58 @@
+CREATE   PROCEDURE [dbo].[cw_GetWksBarcode] @wksNo char(12) AS 
+
+
+
+
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+-- cw_GetWorksheet '229914'
+
+
+
+-- 04/29/2016 MN: CREATED
+
+
+
+BEGIN 	
+
+    
+
+    SELECT
+
+		BuySell.BuySellNo, 
+
+		CounterParty.CompanyNm,
+
+		BuySell.ShippingDt,
+
+		ShipFromID,
+
+		Grade.Description,
+
+		WksDetail.GrossWt,
+
+		WksDetail.Units,
+
+		'*' + RTRIM(Grade.GradeID) + '*' As [GradeID]
+
+    From BuySell with(nolock) 
+
+	LEFT JOIN WksDetail WITH(NOLOCK) ON  WksDetail.BuySellNo = BuySell.BuySellNo
+
+	LEFT JOIN Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+	LEFT JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CPID
+
+    WHERE BuySell.BuySellNo = @wksNo
+
+
+
+END
+

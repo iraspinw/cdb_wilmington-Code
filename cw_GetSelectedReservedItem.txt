@@ -1,0 +1,186 @@
+CREATE   PROCEDURE [dbo].[cw_GetSelectedReservedItem] 
+
+	@PONumber char(15),
+
+	@CreationDate datetime 
+
+as
+
+
+
+--1/22/2021 Alex :Created
+
+--[dbo].[cw_GetSelectedReservedItem] '100096'
+
+--cw_InventoryPullForSale '11908                    '
+
+--cw_GetInventoryInquiryPick
+
+--cw_InventoryPullForSale
+
+set transaction isolation level read uncommitted
+
+
+
+
+
+	select Inventory.LotNo, inventory.UnitType, VendorID, inventory.GradeID, inventory.[Weight], WeightUOM, InvValue / inventory.[weight] Price, 
+
+			WeightUOM PriceUOm, Buysellno, rcvdt, qtyonhand, WarehouseNm, round(InvValue,2) InvValue, 
+
+			round(OrigInvValue,2) OrigInvValue, convert(int,inventory.LastEdit) as LastEdit,
+
+			[Description] as GradeNm, SerialNo, inventory.Units, OrigUnits, SpecString, inventory.LotNo, ISNULL(containerno,'') containerno, SpecString
+
+	from Inventory 
+
+	inner join ReserveStageSOIntoInvShip on ReserveStageSOIntoInvShip.LotNo = Inventory.LotNo
+
+	inner join grade on grade.gradeid = inventory.GradeID
+
+	left join ContainerContents on ContainerContents.LotNo = inventory.LotNo
+
+	left join container on ContainerContents.ContainerID=container.ContainerID
+
+    where ReserveStageSOIntoInvShip.PONumber = @PONumber and ReserveStageSOIntoInvShip.CreatedDateTime=  @CreationDate
+
+
+
+
+
+	
+
+
+
+
+
+
+
+
+
+--SELECT DISTINCT 
+
+--		Inventory.LotNo, 
+
+--		b.[Description], 
+
+--		wksInventory.ForGradeID, 
+
+--		dbo.formatweightUOM(WksInventory.[Weight], wksinventory.UOM) as [weight],
+
+--		WksInventory.UOM, 
+
+--		WksInventory.UnitCost*Inventory.FxRate HcPrice, 
+
+--		WksInventory.UnitCostUOM PriceUOM, 
+
+--		Inventory.Units, 
+
+--		Inventory.[WarehouseNm], 
+
+--		Inventory.SerialNo, 
+
+--		'' AS BookingNo, 
+
+--		CONVERT(CHAR(10),Inventory.RcvDt,101) AS RcvDt, 
+
+--		Inventory.NoSheets,
+
+--		dbo.cw_removeTrailingZeros(Inventory.Caliper,0) as Caliper, dbo.cw_removeTrailingZeros(Inventory.RollWd,0) as RollWd, Inventory.RollWdUOM, 
+
+--		dbo.cw_removeTrailingZeros(Inventory.LinearLen,0) as LinearLen, '' AS SealNo,
+
+--		dbo.cw_removeTrailingZeros(Inventory.[BasisWt],0) as BasisWt, Inventory.[BasisWtUOM], dbo.cw_removeTrailingZeros(Inventory.[Diameter],0) as Diameter, 
+
+--		Inventory.[DiameterUOM], 
+
+--		dbo.cw_removeTrailingZeros(Inventory.[CoreSize],0) as CoreSize,
+
+--		Inventory.[SheetSize], Inventory.[SheetSizeUOM], Inventory.[MWeight],
+
+--		Inventory.[SheetGrain], Inventory.[Color], Inventory.[Acid_Alkaline], Inventory.[InvClass],
+
+--		Inventory.[Finish], Inventory.[Mill], Inventory.[Brand], wksInventory.DetailID, 
+
+--		'' AS ContainerNo, Inventory.CoreSizeUOM, '' AS CreatedFrom,
+
+--		Supplier.CompanyNm,
+
+--		WKSDetail.PPO AS SourcePO,    
+
+--		Inventory.LengthUOM,
+
+--		WksInventory.WksInvID, 
+
+--		ISNULL(WksInventory.IsReturned,0) as IsReturned, 
+
+--		WksInventory.ReturnedAsLotNo,
+
+--		isnull(Inventory.IsStored, 0) as IsStored,
+
+--		Inventory.WarehouseLocation, 
+
+--		WksInventory.wksInvValue, 
+
+--		convert(int,Inventory.LastEdit) AS LastEdit,
+
+--		POReference	AS SORef,
+
+--		Inventory.GrossMT, 
+
+--		Inventory.AirDryPct, 
+
+--		Inventory.MoisturePct,
+
+		
+
+--		Inventory.Comments,
+
+--		Inventory.RefID As BuyReferrer,
+
+--		'' AS ContainerNoX,
+
+--		Inventory.TareWt,
+
+--		Inventory.GrossWt, 
+
+--		WksInventory.OrderLinkID,
+
+--		Inventory.GradeID,
+
+--		Inventory.QtyOnHand, 
+
+--		inventory.InvValue,
+
+--		inventory.origInvValue,
+
+--		Inventory.[Weight] as OrigWeight,
+
+		
+
+--		inventory.SerialNo as invSerial,
+
+--		0 as origunits,
+
+--		inventory.BarcodeNo,
+
+--		ContainerContents.ContainerID
+
+--		FROM Inventory  	
+
+--			inner join ReserveStageSOIntoInvShip on ReserveStageSOIntoInvShip.LotNo = Inventory.LotNo
+
+--			left JOIN WksInventory ON WksInventory.LotNo = Inventory.LotNo
+
+--			left JOIN Counterparty Supplier ON Inventory.VendorID = Supplier.CpID
+
+--			LEFT JOIN Grade b ON Inventory.GradeID = b.GradeID
+
+--			LEFT JOIN WKSDetail ON WksDetail.Lotno = Inventory.LotNo
+
+--			LEFT JOIN PO ON Inventory.ReservePoNumber = PO.PoNumber
+
+--			left join ContainerContents on ContainerContents.LotNo = inventory.LotNo
+
+--		where ReserveStageSOIntoInvShip.PONumber = @PONumber --and ReserveStageSOIntoInvShip.CreatedDateTime=  @CreatedDateTime
+

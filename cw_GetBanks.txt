@@ -1,0 +1,26 @@
+CREATE   PROCEDURE [dbo].[cw_GetBanks] AS
+
+--4/2/2019 MN: CREATED
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		BankID As [BankID],
+
+		RTRIM(BankName) AS [BankName],
+
+		RTRIM(BankAddress) AS [BankAddress], 
+
+		RTRIM(LCBank.[CountryID]) AS [CountryID]
+
+		FROM LCBank 
+
+		ORDER BY BankName
+
+
+

@@ -1,0 +1,206 @@
+CREATE   PROCEDURE [dbo].[cw_GetPODetails]  @qKey char(15), @GradeID char(15), @OrderBy bit = 0, @PO_ID int = null AS
+
+--4/24/2006 BM: Added FormulaID
+
+--7/11/2006 JW: Added LengthUOM
+
+--9/25/2006 JW: Modified ORDER BY to DetailOrderNo
+
+--10/11/2006 BM: Added PriceRegionID
+
+--11/8/2006 BM: Added Wood attributes
+
+--11/14/2006 bf: fixed misspelling in "woodwidth"
+
+--12/7/2006 JW: added woodgrade, woodgrain
+
+--02/21/2007 JW: added ContractExchangeRate, BudgetFxrate
+
+--06/08/2007 JW: added @PO_ID
+
+--06/25/2007 JW: added ApplySpec
+
+--07/10/07  DSH: Added Column for RollPriceUpdate flag.
+
+--08/24/2007 BF: added Comment field
+
+--02/14/2008 JW: added PO.ContractNo, BudgetContractNo fields'
+
+--06/11/2008 MCM: Added Color
+
+--12/22/2008 DSH Added Order Source to support worksheet check for wrong order type.  
+
+--05/11/2010 DSH Added Range fields for BasisWt,Caliper.RollWd
+
+--10/14/2010 MCM: Added DetailOrderNo
+
+--11/08/2010 MCM: Added UnitType.PropertySet
+
+--12/17/2013 Added Price basis to support worksheet field update (SP).
+
+--04/17/2018 MEC: Added CommodityDesc
+
+--2/14/2020 Alex: Added PlasticMelt,PlasticType,PlasticForm
+
+--10/04/2022 Nick: Added PriceFormula join
+
+--01/20/2023 Nick: Added MSF
+
+--03/03/2023 ZT: Added IsConfirmed
+
+--cw_GetPODetails '90497', '', 0
+
+
+
+if @OrderBy = 0         
+
+    SELECT 
+
+		PODetail.GradeID, Description, PODesc, Weight, WeightUOM, Amount, Price, PriceUOM, Units, 
+
+        PODetail.UnitType, Specifications, PODetail.CurrencyCd, FxAmount, BasisWt, BasisWtUOM, Diameter, 
+
+        DiameterUOM, RollWd, RollWdUOM, CoreSize, Caliper, PODetail.LinearLen, 
+
+        SheetSize, SheetSizeUOM, SheetGrain, PODetail.MWeight, NoSheets, PO_ID, 
+
+        WeightFactor, SPo, BudgetCost, BudgetGroup, BudgetCostCurCode,
+
+        CoresizeUOM, BudgetCostUOM, SpeciesID, Condition, PODetail.Finish, isnull(PODetail.FormulaID,'') as FormulaID, PODetail.LengthUOM, PriceRegionID,
+
+        PODetail.WoodThickness, PODetail.WoodWidth, PODetail.WoodSzUOM, PODetail.WoodLength, PODetail.WoodLengthUOM,
+
+        PODetail.WoodGrade, PODetail.WoodGrain, BudgetFxRate, ContractExchangeRate, PODate, ApplySpec, IsRollOverPriceUpdated, 
+
+		Comment, ContractNo, BudgetContractNo, BudgetContractExchangeRate, Color, Source, BasisWt2, Caliper2, RollWd2,
+
+		DetailOrderNo, isnull(UnitType.PropertySet,'') as PropertySet, PO.PriceBasis, grade.InventoryType, CommodityDesc,
+
+		PODetail.PlasticMelt as Melt,
+
+		PODetail.PlasticType as TypeGrade,
+
+		PODetail.PlasticForm as  Form,
+
+		PODetail.UserDefined1, PODetail.UserDefined2, PODetail.UserDefined3, PODetail.UserDefined4, PODetail.UserDefined5,
+
+		PODetail.UserDefinedSecond1,PODetail.UserDefinedSecond2,PODetail.UserDefinedSecond3,PODetail.UserDefinedSecond4,PODetail.UserDefinedSecond5,
+
+		PODetail.UserDefinedThird1,PODetail.UserDefinedThird2,PODetail.UserDefinedThird3,PODetail.UserDefinedThird4,PODetail.UserDefinedThird5,
+
+		PODetail.FP_MarketPrice,PODetail.FP_Discount,PODetail.FP_Rate,PODetail.FP_DaysToFix,PODetail.FP_Comments,
+
+		UserDefinedFourth1, UserDefinedFourth2, UserDefinedFourth3, UserDefinedFourth4, UserDefinedFourth5,
+
+		UserDefinedFourth6, UserDefinedFourth7, UserDefinedFourth8, UserDefinedFourth9, UserDefinedFourth10,
+
+		CONVERT(bit,IIF(PriceFormula.indexID = 0, 1, 0)) as SalesPriceFormula,
+
+		PriceFormula.FormulaID,
+
+		PriceFormula.MinPrice,
+
+		PriceFormula.MaxPrice,
+
+		PriceFormula.PriceDiscount,
+
+		PriceFormula.IsFixed,
+
+		isnull(PODetail.MSF, 0) as MSF,
+
+		PODetail.IsRollOverPriceUpdated AS [IsConfirmed]
+
+        FROM PODetail WITH(NOLOCK) INNER JOIN GRADE  WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID 
+
+	    INNER JOIN PO WITH(NOLOCK) ON PO.PONumber = PODetail.PONumber
+
+	    LEFT JOIN UnitType WITH(NOLOCK) ON UnitType.TypeID = PODetail.UnitType
+
+		left join PriceFormula WITH(NOLOCK) on PriceFormula.FormulaID = PODetail.FormulaID
+
+        WHERE PODetail.PONumber = @qKey   
+
+        AND (@GradeID = '' or @GradeID = PODetail.GradeID)
+
+	    AND (@PO_ID is null OR @PO_ID = PODetail.PO_ID)
+
+	Order By DetailOrderNo
+
+
+
+if @OrderBy = 1 
+
+    SELECT 
+
+		PODetail.GradeID, Description, PODesc, Weight, WeightUOM, Amount, Price, PriceUOM, Units, 
+
+        PODetail.UnitType, Specifications, PODetail.CurrencyCd, FxAmount, BasisWt, BasisWtUOM, Diameter, 
+
+        DiameterUOM, RollWd, RollWdUOM, CoreSize, Caliper, PODetail.LinearLen, 
+
+        SheetSize, SheetSizeUOM, SheetGrain, PODetail.MWeight, NoSheets, PO_ID, 
+
+        WeightFactor, SPo, BudgetCost, BudgetGroup, BudgetCostCurCode,
+
+        CoresizeUOM, BudgetCostUOM, SpeciesID, Condition, PODetail.Finish, PODetail.FormulaID, PODetail.LengthUOM, PriceRegionID,
+
+        PODetail.WoodThickness, PODetail.WoodWidth, PODetail.WoodSzUOM, PODetail.WoodLength, PODetail.WoodLengthUOM,
+
+        PODetail.WoodGrade, PODetail.WoodGrain, BudgetFxRate,ContractExchangeRate, PODate, ApplySpec, IsRollOverPriceUpdated, 
+
+		Comment,ContractNo, BudgetContractNo, BudgetContractExchangeRate, Color, Source, BasisWt2, Caliper2, RollWd2,
+
+		DetailOrderNo, UnitType.PropertySet, PO.PriceBasis, grade.InventoryType, CommodityDesc,
+
+		PODetail.PlasticMelt as Melt,
+
+		PODetail.PlasticType as TypeGrade,
+
+		PODetail.PlasticForm as  Form,
+
+		PODetail.UserDefined1, PODetail.UserDefined2, PODetail.UserDefined3, PODetail.UserDefined4, PODetail.UserDefined5,
+
+		PODetail.UserDefinedSecond1,PODetail.UserDefinedSecond2,PODetail.UserDefinedSecond3,PODetail.UserDefinedSecond4,PODetail.UserDefinedSecond5,
+
+		PODetail.UserDefinedThird1,PODetail.UserDefinedThird2,PODetail.UserDefinedThird3,PODetail.UserDefinedThird4,PODetail.UserDefinedThird5,
+
+		PODetail.FP_MarketPrice,PODetail.FP_Discount,PODetail.FP_Rate,PODetail.FP_DaysToFix,PODetail.FP_Comments,
+
+		UserDefinedFourth1, UserDefinedFourth2, UserDefinedFourth3, UserDefinedFourth4, UserDefinedFourth5,
+
+		UserDefinedFourth6, UserDefinedFourth7, UserDefinedFourth8, UserDefinedFourth9, UserDefinedFourth10,
+
+		CONVERT(bit,IIF(PriceFormula.indexID = 0, 1, 0)) as SalesPriceFormula,
+
+		PriceFormula.FormulaID,
+
+		PriceFormula.MinPrice,
+
+		PriceFormula.MaxPrice,
+
+		PriceFormula.PriceDiscount,
+
+		PriceFormula.IsFixed,
+
+		isnull(PODetail.MSF, 0) as MSF,
+
+		PODetail.IsRollOverPriceUpdated AS [IsConfirmed]
+
+        FROM PODetail WITH(NOLOCK) INNER JOIN GRADE  WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID 
+
+		INNER JOIN PO WITH(NOLOCK) ON PO.PONumber = PODetail.PONumber        
+
+		LEFT JOIN UnitType WITH(NOLOCK) ON UnitType.TypeID = PODetail.UnitType
+
+		left join PriceFormula WITH(NOLOCK) on PriceFormula.FormulaID = PODetail.FormulaID
+
+		WHERE PODetail.PONumber = @qKey   
+
+        AND (@GradeID = '' or @GradeID = PODetail.GradeID)
+
+		AND (@PO_ID is null OR @PO_ID = PODetail.PO_ID)
+
+	Order By Description ASC, cast('0' + BasisWt as decimal(18,5)) ASC , cast('0' + rollwd as decimal(18,5)) DESC
+
+
+

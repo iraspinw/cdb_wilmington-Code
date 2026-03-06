@@ -1,0 +1,84 @@
+CREATE   PROCEDURE [dbo].[cw_GetCpLocations]  @CpID char(12) AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--1/12/2015:	MEC: Created for cieTrade.net
+
+--11/20/2018:	MEC: Altered for new Contact model
+
+--1/11/2019		BF: fixed dupe contact info
+
+--01/23/2019 DSH Rewrite teh procedure top resolve error caused bu contact table join.
+
+	
+
+	CREATE TABLE #Locations(
+
+		[Location] VARCHAR(100),
+
+		[Address] VARCHAR(500),
+
+		Contact VARCHAR(100),
+
+		Phone VARCHAR(100),
+
+		Email VARCHAR(250),
+
+		ContactID INT
+
+    )
+
+	INSERT #Locations
+
+	SELECT 
+
+		[Address].[Type] As [Location], 
+
+		dbo.xDoc_GetAddress(@CpID, Address.[Type],0,0) as [Address],
+
+		'','','',
+
+	(SELECT TOP 1 C.CT_ID FROM Contact C 
+
+			LEFT JOIN ContactRoleAssignment WITH(NOLOCK) ON C.CT_ID = ContactRoleAssignment.CT_ID 
+
+			WHERE C.CPID = [Address].CPID 
+
+			AND C.Location = [Address].[Type]
+
+			Order By RoleNm)
+
+		--(SELECT TOP 1 C.CT_ID FROM Contact C INNER JOIN ContactRoleAssignment R ON C.CT_ID = R.CT_ID 
+
+		--	WHERE C.CPID = [Address].CPID 
+
+		--	AND C.Location = [Address].[Type]
+
+		--	AND (R.RoleNm = 'Primary' OR RoleNm = 'Billing'))
+
+    FROM [Address] WITH(NOLOCK) 
+
+	WHERE [Address].CpID = @CpID  AND InvoiceAddr <> 'Y'
+
+
+
+	UPDATE #Locations SET 
+
+		Contact = Contact.ContactNm ,
+
+		Phone = Contact.PhoneBusiness,
+
+		Email = Contact.Email
+
+		FROM #Locations INNER JOIN Contact ON #Locations.ContactID = Contact.CT_ID
+
+	
+
+	
+
+	SELECT [Location],[Address],Contact,Phone,Email FROM #Locations
+
+
+

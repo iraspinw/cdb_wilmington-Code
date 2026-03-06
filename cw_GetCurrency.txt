@@ -1,0 +1,16 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCurrency] @CurCode char(3) AS
+
+--10/29/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT Name,Symbol FROM Currency WHERE CurCode=@CurCode
+
+
+

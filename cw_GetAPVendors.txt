@@ -1,0 +1,16 @@
+CREATE proc [dbo].[cw_GetAPVendors] as
+
+
+
+--12/18/2019 BF: added nolocks and isolation level 
+
+set transaction isolation level read uncommitted
+
+
+
+select companynm, cpid from counterparty with(nolock) where cpid in(select cpid from payables with(nolock) where posted=0)
+
+and cpid <> '(INV)'
+
+order by companynm
+

@@ -1,0 +1,356 @@
+CREATE proc [dbo].[cw_GetCertificationReport]  @FromDt datetime, @ToDt datetime, @CertificationType int = 0
+
+ as
+
+	
+
+--2/19/2021 Alex: Created
+
+--[dbo].[cw_GetCertificationReport] '',''
+
+
+
+
+
+	SELECT 
+
+	    Supplier.CompanyNm as Supplier,
+
+		case when Rtrim(isnull(WKSDetail.InvoiceDesc,''))='' then Grade.Description else Rtrim(isnull(WKSDetail.InvoiceDesc,'')) end as Product,
+
+		WKSDetail.Specifications as Specifications,
+
+		case when BuySell.CustID ='(INV) ' then BuySell.ShipToID else '' end as  Warehouse ,
+
+		PayablesBatch.InvoiceNo as [Supplier Invoice No],
+
+		PayablesBatch.InvoiceDt as[Supplier Invoice Date],
+
+		BuySell.BuySellNo as [Worksheet No], 
+
+		BuySell.ShippingDt as [Ship Date],
+
+		[dbo].[FormatQty](WKSDetail.PWeight,WKSDetail.PWeightUOM) as [Purchase Tonnage],
+
+		
+
+	   Rtrim(Certification.Organization) +' - '+ Certification.CertificationType +' ' + Counterparty_Certification.RegistrationNo as  [Certification Claim],
+
+		case when BuySell.CustID ='(INV) ' then CustomerShipping.CompanyNm else Customer.CompanyNm end as Customer,
+
+		case when BuySell.CustID ='(INV) ' then
+
+		    case  when ((select count(*) from address where address.Type=shipping.ShipToID and address.CpID=shipping.CustID )>0) then
+
+		      [dbo].[xDoc_GetAddress](shipping.CustID,shipping.ShipToID,0,0) 
+
+			 else
+
+			  POShipping.ShipTo
+
+			 end			 
+
+		else 
+
+		    [dbo].[xDoc_GetAddress](BuySell.CustID,BuySell.ShipToID,0,0) 
+
+		
+
+		end as [Customer Address],
+
+		case when BuySell.CustID ='(INV) ' then [dbo].[FormatQty](WKSDetailshipping.SWeight,WKSDetailshipping.SWeightUOM) else [dbo].[FormatQty](WKSDetail.SWeight,WKSDetail.SWeightUOM) end as [Selling tonnage]	,
+
+	    case when BuySell.CustID ='(INV) ' then shipping.InvoiceDt else BuySell.InvoiceDt end as [Invoice Date],
+
+		BuySell.VendorID,
+
+		BuySell.CustID,
+
+		shipping.BuySellNo as [Sales Invoice No],
+
+		case when isnull(shipping.Uncertified,0)=1 then 'YES' else '' end  [Uncertified Sale]
+
+	FROM  BuySell 
+
+	inner join po on po.PONumber=BuySell.RefPONo
+
+	inner join Certification on Certification.CertificationID =po.CertifiedTypeID
+
+	inner join WKSDetail on WKSDetail.BuySellNo = BuySell.BuySellNo
+
+	inner join Grade on Grade.GradeID= WKSDetail.GradeID
+
+	left join CounterParty Supplier on Supplier.CpID = po.CpID
+
+	left join Counterparty_Certification on po.CertifiedTypeID=Counterparty_Certification.CertificationTypeID and po.CpID=Counterparty_Certification.CPID
+
+	left join CounterParty Customer on Customer.CpID = BuySell.CustID
+
+	left join Payables on Payables.ItemID = WKSDetail.DetailID
+
+	left join PayablesBatch on PayablesBatch.APBatchNo = Payables.APBatchNo
+
+	left join Container on Container.RcvBuySellNo =BuySell.BuySellNo
+
+	left join BuySell shipping on shipping.BuySellNo =Container.SaleBuySellNo
+
+	left join po POShipping on POShipping.PONumber = shipping.RefSONo
+
+	left join CounterParty CustomerShipping on CustomerShipping.CpID = shipping.CustID
+
+	left join WKSDetail WKSDetailshipping on shipping.BuySellNo =WKSDetailshipping.BuySellNo
+
+	
+
+
+
+	where po.CertifiedTypeID is not null
+
+    AND (@FromDt='' or BuySell.ShippingDt >= @FromDt )
+
+	AND (@ToDt='' or BuySell.ShippingDt <= @ToDt)
+
+	AND (@CertificationType=0 or po.CertifiedTypeID = @CertificationType)
+
+	AND  BuySell.status = 'I'  
+
+	and BuySell.CustID<> '(INV)' 
+
+
+
+
+
+	Union all
+
+	SELECT 
+
+	    Supplier.CompanyNm as Supplier,
+
+		case when Rtrim(isnull(WKSDetail.InvoiceDesc,''))='' then Grade.Description else Rtrim(isnull(WKSDetail.InvoiceDesc,'')) end as Product,
+
+		WKSDetail.Specifications as Specifications,
+
+		case when BuySell.CustID ='(INV)' then BuySell.ShipToID else '' end as  Warehouse ,
+
+		PayablesBatch.InvoiceNo as [Supplier Invoice No],
+
+		PayablesBatch.InvoiceDt as[Supplier Invoice Date],
+
+		BuySell.BuySellNo as [Worksheet No], 
+
+		BuySell.ShippingDt as [Ship Date],
+
+		[dbo].[FormatQty](WKSDetail.PWeight,WKSDetail.PWeightUOM) as [Purchase Tonnage],
+
+		
+
+	   Rtrim(Certification.Organization) +' - '+ Certification.CertificationType +' ' + Counterparty_Certification.RegistrationNo as  [Certification Claim],
+
+		case when BuySell.CustID ='(INV) ' then CustomerShipping.CompanyNm else Customer.CompanyNm end as Customer,
+
+		case when BuySell.CustID ='(INV) ' then
+
+		    case  when ((select count(*) from address where address.Type=shipping.ShipToID and address.CpID=shipping.CustID )>0) then
+
+		      [dbo].[xDoc_GetAddress](shipping.CustID,shipping.ShipToID,0,0) 
+
+			 else
+
+			  POShipping.ShipTo
+
+			 end			 
+
+		else 
+
+		    [dbo].[xDoc_GetAddress](BuySell.CustID,BuySell.ShipToID,0,0) 
+
+		
+
+		end as [Customer Address],
+
+		case when BuySell.CustID ='(INV) ' then [dbo].[FormatQty](WKSDetailshipping.SWeight,WKSDetailshipping.SWeightUOM) else [dbo].[FormatQty](WKSDetail.SWeight,WKSDetail.SWeightUOM) end as [Selling tonnage]	,
+
+	    case when BuySell.CustID ='(INV) ' then shipping.InvoiceDt else BuySell.InvoiceDt end as [Invoice Date],
+
+		BuySell.VendorID,
+
+		BuySell.CustID,
+
+		shipping.BuySellNo as [Sales Invoice No],
+
+		case when isnull(shipping.Uncertified,0)=1 then 'YES' else '' end  [Uncertified Sale]
+
+	FROM  BuySell 
+
+	inner join po on po.PONumber=BuySell.RefPONo
+
+	inner join Certification on Certification.CertificationID =po.CertifiedTypeID
+
+	inner join WKSDetail on WKSDetail.BuySellNo = BuySell.BuySellNo
+
+	inner join Grade on Grade.GradeID= WKSDetail.GradeID
+
+	left join CounterParty Supplier on Supplier.CpID = po.CpID
+
+	left join Counterparty_Certification on po.CertifiedTypeID=Counterparty_Certification.CertificationTypeID and po.CpID=Counterparty_Certification.CPID
+
+	left join CounterParty Customer on Customer.CpID = BuySell.CustID
+
+	left join Payables on Payables.ItemID = WKSDetail.DetailID
+
+	left join PayablesBatch on PayablesBatch.APBatchNo = Payables.APBatchNo
+
+	left join Container on Container.RcvBuySellNo =BuySell.BuySellNo
+
+	left join BuySell shipping on shipping.BuySellNo =Container.SaleBuySellNo
+
+	left join po POShipping on POShipping.PONumber = shipping.RefSONo
+
+	left join CounterParty CustomerShipping on CustomerShipping.CpID = shipping.CustID
+
+	left join WKSDetail WKSDetailshipping on shipping.BuySellNo =WKSDetailshipping.BuySellNo
+
+	--left join Payables on Payables.BuySellNo = BuySell.BuySellNo
+
+
+
+	where po.CertifiedTypeID is not null
+
+    AND (@FromDt='' or BuySell.ShippingDt >= @FromDt )
+
+	AND (@ToDt='' or BuySell.ShippingDt <= @ToDt)
+
+	AND (@CertificationType=0 or po.CertifiedTypeID = @CertificationType)
+
+	AND  BuySell.status = 'I'  
+
+	and BuySell.CustID='(INV)'
+
+	and BuySell.ShipToID='(CONTAINER)'
+
+	
+
+	Union all
+
+
+
+
+
+
+
+
+
+    SELECT 
+
+	    Supplier.CompanyNm as Supplier,
+
+		case when Rtrim(isnull(WKSDetail.InvoiceDesc,''))='' then Grade.Description else Rtrim(isnull(WKSDetail.InvoiceDesc,'')) end as Product,
+
+		WKSDetail.Specifications as Specifications,
+
+		case when BuySell.CustID ='(INV) ' then BuySell.ShipToID else '' end as  Warehouse,
+
+		PayablesBatch.InvoiceNo as [Supplier Invoice No],
+
+		PayablesBatch.InvoiceDt as[Supplier Invoice Date],
+
+		BuySell.BuySellNo as [Worksheet No], 
+
+		BuySell.ShippingDt as [Ship Date],
+
+		[dbo].[FormatQty](WKSDetail.PWeight,WKSDetail.PWeightUOM) as [Purchase Tonnage],		
+
+		Rtrim(Certification.Organization) +' - '+ Certification.CertificationType +' ' + Counterparty_Certification.RegistrationNo as  [Certification Claim],
+
+		case when BuySell.CustID ='(INV) ' then CustomerShipping.CompanyNm else Customer.CompanyNm end as Customer,
+
+		case when BuySell.CustID ='(INV) ' then
+
+		    case  when ((select count(*) from address where address.Type=shipping.ShipToID and address.CpID=shipping.CustID )>0) then
+
+		      [dbo].[xDoc_GetAddress](shipping.CustID,shipping.ShipToID,0,0) 
+
+			 else
+
+			  POShipping.ShipTo
+
+			 end			 
+
+		else 
+
+		    [dbo].[xDoc_GetAddress](BuySell.CustID,BuySell.ShipToID,0,0) 
+
+		
+
+		end as [Customer Address],
+
+		case when BuySell.CustID ='(INV) ' then [dbo].[FormatQty](WKSDetailshipping.SWeight,WKSDetailshipping.SWeightUOM) else [dbo].[FormatQty](WKSDetail.SWeight,WKSDetail.SWeightUOM) end as [Selling tonnage]	,
+
+	    case when BuySell.CustID ='(INV) ' then shipping.InvoiceDt else BuySell.InvoiceDt end as [Invoice Date],
+
+		BuySell.VendorID,
+
+		BuySell.CustID,
+
+		shipping.BuySellNo as [Sales Invoice No],
+
+		case when isnull(shipping.Uncertified,0)=1 then 'YES' else '' end  [Uncertified Sale]
+
+	
+
+	FROM  BuySell 
+
+		inner join WKSDetail on WKSDetail.BuySellNo = BuySell.BuySellNo
+
+		inner join Grade on Grade.GradeID= WKSDetail.GradeID
+
+		inner join po on po.PONumber=BuySell.RefPONo
+
+		inner join Certification on Certification.CertificationID =po.CertifiedTypeID
+
+		INNER join CounterParty Supplier on Supplier.CpID = po.CpID
+
+		left join Counterparty_Certification on po.CertifiedTypeID=Counterparty_Certification.CertificationTypeID and po.CpID=Counterparty_Certification.CPID
+
+		left join CounterParty Customer on Customer.CpID = BuySell.CustID
+
+		left join Payables on Payables.ItemID = WKSDetail.DetailID
+
+		left join PayablesBatch on PayablesBatch.APBatchNo = Payables.APBatchNo
+
+		left join Inventory on Inventory.BuySellNo=BuySell.BuySellNo
+
+		left join  WksInventory on WksInventory.LotNo=Inventory.LotNo
+
+		left join BuySell shipping on shipping.BuySellNo =WksInventory.BuySellNo
+
+		left join po POShipping on POShipping.PONumber = shipping.RefSONo
+
+		left join CounterParty CustomerShipping on CustomerShipping.CpID = shipping.CustID
+
+		left join WKSDetail WKSDetailshipping on shipping.BuySellNo =WKSDetailshipping.BuySellNo
+
+	
+
+
+
+	where po.CertifiedTypeID is not null
+
+    AND (@FromDt='' or BuySell.ShippingDt >= @FromDt )
+
+	AND (@ToDt='' or BuySell.ShippingDt <= @ToDt)
+
+	AND (@CertificationType=0 or po.CertifiedTypeID = @CertificationType)
+
+	AND  BuySell.status = 'I'
+
+	and BuySell.CustID='(INV)'
+
+	and BuySell.ShipToID<>'(CONTAINER)'
+
+
+
+	
+
+
+

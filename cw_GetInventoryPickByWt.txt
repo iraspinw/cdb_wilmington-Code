@@ -1,0 +1,168 @@
+CREATE proc [dbo].[cw_GetInventoryPickByWt] @GradeID varchar(15), @Warehouse varchar(65), @LIFOFIFO char(4), @Quantity decimal(18,5) as
+
+set nocount on 
+
+set transaction isolation level read uncommitted
+
+--cw_GetInventoryPickByWt '2374', '', 'LIFO', 10000
+
+	CREATE TABLE #InventoryList (
+
+		LotNo CHAR(25),
+
+		[Description] VARCHAR(65),
+
+		QtyOnHand DECIMAL(18,5),
+
+		WeightUOM CHAR(1),
+
+		Units INT,		
+
+		Price DECIMAL(25,14),
+
+		PriceUOM CHAR(1),		
+
+		GradeID CHAR(15),
+
+		--NoSheets INT,
+
+		--Caliper CHAR(25),
+
+		--RollWd VARCHAR(10),
+
+		--RollWdUOM CHAR(1), 
+
+		--LinearLen CHAR(15), 
+
+		--BasisWt VARCHAR(10), 
+
+		--BasisWtUOM CHAR(1),  
+
+		PONumber CHAR(15),
+
+		CompanyNm VARCHAR(65), 
+
+		--SheetSize VARCHAR(25), 
+
+		--SheetSizeUOM CHAR(2), 
+
+		InvValue MONEY, 
+
+		LastEdit INT,
+
+		RcvDt DATETIME, 
+
+		VendorID varchar(12),
+
+		GradeNm varchar(65),
+
+		OrigInvValue money,
+
+		SerialNo varchar(18),
+
+		OrigUnits int
+
+	)
+
+
+
+
+
+
+
+	--GET INVENTORY DATA.
+
+	INSERT #InventoryList
+
+	SELECT 
+
+		Inventory.Lotno, 
+
+		[Description], 
+
+		QtyOnhand, 
+
+		WeightUOM, 
+
+		Units, 		
+
+		Price, 
+
+		PriceUOM, 		
+
+		Inventory.GradeID, 
+
+		--NoSheets, 
+
+		--Caliper, 
+
+		--RollWd,
+
+		--RollWdUOM, 
+
+		--Inventory.LinearLen, 
+
+		--BasisWt, 
+
+		--BasisWtUOM, 
+
+		RefPONo,    --(SELECT PPo FROM wksDetail WITH(NOLOCK) WHERE wksDetail.BuySellNo = Inventory.BuySellNo AND wksDetail.LotNo = Inventory.LotNo),
+
+		Counterparty.CompanyNm, 
+
+		--SheetSize, 
+
+		--SheetSizeUOM, 
+
+		InvValue, 
+
+		convert(int, Inventory.LastEdit),
+
+		RcvDt,
+
+		inventory.VendorID,
+
+		grade.[Description] GradeNm,
+
+		OrigInvValue,
+
+		SerialNo,
+
+		OrigUnits
+
+		
+
+	FROM 
+
+		Inventory WITH (NOLOCK) INNER JOIN Grade WITH (NOLOCK) ON Inventory.GradeID = Grade.GradeID 
+
+			INNER JOIN Counterparty ON Counterparty.CpID = Inventory.VendorID
+
+			LEFT JOIN BUYSELL ON Inventory.BuySellNo = BuySell.BuySellNo
+
+	WHERE 
+
+		Inventory.GradeID = @GradeID 
+
+		AND (@Warehouse = '' or inventory.WarehouseNm = @Warehouse)				
+
+		And QtyOnHand > 0 
+
+
+
+	SELECT round(Sum( dbo.CALCLBS(QtyOnhand,WeightUOM) ),5) TotalQtyOnHand FROM #InventoryList
+
+	
+
+	IF @LIFOFIFO = 'FIFO'			
+
+		SELECT * FROM #InventoryList ORDER BY RcvDt
+
+	ELSE			
+
+		SELECT * FROM #InventoryList ORDER BY RcvDt DESC
+
+	
+
+
+

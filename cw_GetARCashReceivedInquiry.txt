@@ -1,0 +1,82 @@
+CREATE   PROCEDURE [dbo].[cw_GetARCashReceivedInquiry] 
+
+
+
+	@postingfromdt datetime, 
+
+	@postingtodt datetime , 
+
+	@vendorid char(12), 
+
+	@COID char(2) = '', 
+
+	@Status varchar(15) = 'POSTED'
+
+
+
+AS 
+
+
+
+	SET NOCOUNT ON
+
+	SET ANSI_WARNINGS OFF
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+--MEC 11/21/2017 Created 
+
+
+
+	SELECT 
+
+        convert(varchar(15),ARBatchNo) as [Batch No], 
+
+        PostingDt as [Posting Date], 
+
+        Counterparty.CompanyNm as [Customer Name], 
+
+        CheckNo as [Payment-No], 
+
+        PostType as [Post-Type], 
+
+        NumOfItems as [#-Items],
+
+        FxApplyAmt as [{C}Amount], 
+
+        Currency as [Currency],		
+
+		CompanyInfo.CompanyDesc As [Dept],
+
+        UserNm as [User Name],
+
+        ReversedDt As [Reversed Date]
+
+	FROM ReceiptBatch 
+
+		INNER JOIN counterparty on ReceiptBatch.cpid = counterparty.cpid
+
+		INNER JOIN userdef on userdef.userid = ReceiptBatch.UserID
+
+		LEFT JOIN CompanyInfo on CompanyInfo.COID = ReceiptBatch.COID
+
+	WHERE 
+
+		(@postingfromdt = '' or (postingdt >= @postingfromdt) and (postingdt <= @postingtodt))
+
+		AND (ReceiptBatch.cpid = @vendorid or @vendorID ='')
+
+		AND (@COID = '' OR ReceiptBatch.coid = @COID)
+
+		AND ((@Status = 'POSTED' and isnull(ReceiptBatch.Reversed,0) = 0) OR (@Status='REVERSED' and isnull(ReceiptBatch.Reversed, 0) = 1) OR @Status='ALL')
+
+		and PostType <> 'UACASH' 
+
+		and posttype <> 'UACASH'
+
+		and posttype <> 'UACASH-UNDO'
+
+	ORDER BY PostingDt Desc
+

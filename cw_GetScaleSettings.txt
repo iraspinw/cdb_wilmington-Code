@@ -1,0 +1,34 @@
+CREATE   PROCEDURE [dbo].[cw_GetScaleSettings]
+
+AS
+
+BEGIN
+
+-- 7/28/2017 MN: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	SELECT 
+
+		ScaleNm As [Scale], 
+
+		ScaleMode AS [Scale Mode],
+
+		IPAddress AS [IP Address],
+
+		Port
+
+	FROM ScaleSettings
+
+	
+
+	ORDER BY ScaleNm
+
+END
+
+
+

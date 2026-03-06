@@ -1,0 +1,168 @@
+CREATE   PROCEDURE [dbo].[cw_GetInventoryInquiryProductsUnique] 
+
+	@WhseID varchar(300),
+
+	@Class varchar(50),
+
+	@RcvFromDt datetime,
+
+	@RcvToDt datetime,
+
+	@InFromDt datetime,
+
+	@InToDt datetime,
+
+	@GradeID char(15),
+
+	@SupplierID char(12),
+
+	@SalesRep char(10),
+
+	@ForSale bit = 0,
+
+	@PONO varchar(15) = '',
+
+	@ItemNo varchar(20) = '',
+
+	@UOMType char(1) = '',
+
+	@BarcodePickList varchar(8000) = '',
+
+	@PackingSlip varchar(12) = '',
+
+	@Color varchar(48) = '',
+
+	@Melt varchar(30) = '',
+
+	@Form varchar(30) = '',
+
+	@TypeGrade varchar(30) = '',
+
+	@Location varchar(20) = ''
+
+	AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+	
+
+-- 01/26/2016 MEC: Created for cieTrade.net Inventory Manager
+
+-- 12/29/2016 DSH Fixed single item pick to exclude zero quantity
+
+-- 03/30/2017 MEC: Added -Hidden-WeightUOM and -Hidden-UnitType for Packing Slip selection
+
+-- 08/25/2020 Alex: AddedColor,PlasticMelt,PlasticType,PlasticForm 
+
+-- 10
+
+
+
+-- cw_GetInventoryInquiryPick '', '', '', '', '', '', '', '', '',''
+
+--select unittype, units, * from inventory where lotno = '230886-1'
+
+	
+
+
+
+
+
+		SELECT  
+
+			DISTINCT(Grade.GradeID),
+
+			(Grade.[Description]) AS [Product]
+
+		FROM 
+
+			Inventory WITH(NOLOCK) 
+
+			INNER JOIN GRADE WITH(NOLOCK) ON Inventory.GradeID = Grade.GradeID		
+
+			LEFT JOIN Counterparty Supplier WITH(NOLOCK) ON Inventory.VendorID = Supplier.CpID
+
+			left JOIN BuySell WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo 		
+
+			LEFT JOIN ProductGroup WITH(NOLOCK) ON ProductGroup.GroupID = Grade.ProductGroupID
+
+			LEFT JOIN Counterparty Customer  WITH(NOLOCK) ON Customer.CpID = Inventory.DesignatedCpID 
+
+			LEFT JOIN CompanyInfo Dept WITH (NOLOCK) ON Dept.COID = Inventory.COID
+
+			LEFT JOIN Referrer WITH(NOLOCK) ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+			LEFT JOIN WarehouseLocation WITH(NOLOCK) ON WarehouseLocation.ID = Inventory.WarehouseLocation
+
+		
+
+		WHERE inventory.QtyOnHand > 0
+
+			and lotno not in(select lotno from ContainerContents)
+
+			and isnull(Grade.IsInactive,0) = 0
+
+			AND 
+
+			(
+
+				(@ItemNo = inventory.LotNo ) 
+
+				OR 
+
+				(@Itemno = '' AND
+
+					(@WhseID = '' OR @WhseID = inventory.warehousenm)
+
+					AND (@RcvFromDt = '' OR Inventory.RcvDt >= @RcvFromDt)
+
+					AND (@RcvToDt = '' OR Inventory.RcvDt <= @RcvToDt)
+
+					AND (@InFromDt = '' OR Inventory.InDate >= @InFromDt)
+
+					AND (@InToDt = '' OR Inventory.InDate <= @InToDt)
+
+					AND (@GradeID = '' OR @GradeID = Inventory.GradeID)
+
+					AND (@SupplierID = '' OR @SupplierID = Inventory.VendorID)
+
+					AND (@SalesRep = '' OR @SalesRep = Inventory.RefID)
+
+					AND (@Class = '' OR @Class = Inventory.InvClass)
+
+					AND (@PONO= '' OR @PONO = Inventory.PONumber)			
+
+					AND (@UOMType='' or ((@UOMType='E' and inventory.WeightUOM='E') or (@UOMType='W' and inventory.WeightUOM <> 'E')))
+
+
+
+					AND (@Color= '' OR @Color = Inventory.Color)	
+
+					AND (@TypeGrade= '' OR @TypeGrade = Inventory.PlasticType)	
+
+					AND (@Form= '' OR @Form = Inventory.PlasticForm)	
+
+					AND (@Melt= '' OR @Melt = Inventory.PlasticMelt)	
+
+					AND (@Location= '' OR @Location = Inventory.WarehouseLocation)	
+
+				)
+
+			)
+
+		ORDER BY
+
+			Grade.[Description]
+
+
+
+
+
+
+
+
+

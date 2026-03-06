@@ -1,0 +1,106 @@
+CREATE   PROCEDURE [dbo].[cw_GetCashDisbursementsLedgerDetails] 
+
+
+
+	@BatchNo varchar(15)
+
+
+
+AS
+
+	
+
+--11/18/2020 Alex: Created
+
+--[dbo].[cw_GetCashDisbursementsLedgerDetails]  '102530'
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT  
+
+		   [CDID]
+
+		  ,Case When IsNull([CheckNo],0) = 0 Then 'CASH' Else cast([CheckNo] as varchar) End as [Check No]
+
+		  ,[CDBatchNo]  as  [Batch No]   
+
+		  ,GLAccount.Name as [GLAcctName]
+
+		  ,CompanyInfo.CompanyNm as Department
+
+		  ,Case When PublicTradeCustomer.FileAs is null Then Counterparty.CompanyNm Else PublicTradeCustomer.FileAs End as Account
+
+		  ,[PostingDt] as [Posting Dt]
+
+		  ,format([PaymentAmt] , '0.00') as [Payment Amt]
+
+		  ,[CurrencyCd] as [Currency]
+
+		  ,[Source]
+
+		  , PaymentType
+
+		  ,CashDisbursements.CPID
+
+		  ,CashDisbursements.COID
+
+		  ,(SELECT TOP 1  GLAcct FROM GLAccount WHERE Cat = 'A/P ACCRUAL') as GLAcct
+
+	FROM  CashDisbursements
+
+	left join GLAccount  on GLAccount.GLAcct = CashDisbursements.GLAcct
+
+	left join CompanyInfo on CompanyInfo.COID = CashDisbursements.COID
+
+	left join CounterParty on CounterParty.CPID = CashDisbursements.CPID
+
+	left join PublicTradeCustomer on CashDisbursements.PTCustID = PublicTradeCustomer.PTCustID
+
+	where CashDisbursements.CDBatchNo = @BatchNo
+
+
+
+
+
+	SELECT  
+
+		Case When PublicTrade.TradeID is null Then BuySell.BuySellNo Else Convert(varchar(12), PublicTradeID) End as [Trade#],
+
+		Payables.FxAmount as Amount,
+
+		BuySell.VendorID as [-Hidden-VendorID],
+
+		BuySell.CustID as [-Hidden-CustID] ,
+
+		IsUndo as [-Hidden-IsUndo],
+
+		IsNull(TradeID,0) as [-Hidden-IsPT]
+
+	FROM  CashDisbursements
+
+	inner join CashDisbursementDetails on CashDisbursementDetails.CDID  = CashDisbursements.CDID
+
+	inner join Payables on Payables.PayableID = CashDisbursementDetails.PayableID OR Payables.Reversed_PayableID = CashDisbursementDetails.PayableID
+
+	inner join BuySell on Payables.BuySellNo = BuySell.BuySellNo
+
+	left join GLAccount  on GLAccount.GLAcct = CashDisbursements.GLAcct
+
+	left join CompanyInfo on CompanyInfo.COID = CashDisbursements.COID
+
+	left join CounterParty on CounterParty.CPID = CashDisbursements.CPID
+
+	left join PublicTrade on BuySell.PublicTradeID = PublicTrade.TradeID
+
+	where CashDisbursements.CDBatchNo = @BatchNo
+
+
+
+
+

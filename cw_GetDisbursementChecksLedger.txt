@@ -1,0 +1,50 @@
+CREATE   PROCEDURE [dbo].[cw_GetDisbursementChecksLedger] 
+
+
+
+	AS
+
+	
+
+--11/18/2020 Alex: Created
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SELECT  
+
+       [CDID]
+
+      ,cast([CheckNo] as varchar) as [Check No]
+
+      ,[CDBatchNo]  as  [Batch No]   
+
+	  ,GLAccount.Name as GLAcct
+
+      ,CompanyInfo.CompanyNm as Department
+
+      ,CounterParty.CompanyNm as Account
+
+      ,[PostingDt] as [Posting Dt]
+
+      ,[PaymentAmt] as [{C} Payment Amt]
+
+      ,[CurrencyCd] as [Currency]
+
+      ,[Source]
+
+	  , PaymentType as [Payment Type]
+
+  FROM  CashDisbursements
+
+  left join GLAccount  on GLAccount.GLAcct = CashDisbursements.GLAcct
+
+  left join CompanyInfo on CompanyInfo.COID = CashDisbursements.COID
+
+  left join CounterParty on CounterParty.CPID = CashDisbursements.CPID
+
+
+

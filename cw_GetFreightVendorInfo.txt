@@ -1,0 +1,96 @@
+CREATE   PROCEDURE [dbo].[cw_GetFreightVendorInfo] @WksNo char(12) AS
+
+--11/10/2015 RS: Created
+
+--12/18/2015 RS: Use first delivery vendor if none are Freight vendors
+
+--05/26/2016 RS: Use WksDelivery.isFreight
+
+--05/01/2018 MN: Added Contact
+
+--03/10/2023 Nick: Added TaxID
+
+
+
+-- cw_GetFreightVendorInfo '229794'
+
+-- select * from Address where CPID = '1010'
+
+-- select * from WksDelivery where VendorID = '1010'
+
+
+
+	--GET THE 1ST FREIGHT VENDOR 
+
+	DECLARE @VendorID char(12)
+
+
+
+	SELECT TOP 1 @VendorID = isnull(VendorID,'')
+
+	FROM WksDelivery WITH(NOLOCK) 
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON WksDelivery.VendorID = Counterparty.CPID
+
+	WHERE BuySellNo = @WksNo 
+
+	--AND ISNULL(Counterparty.isFreight,0) = 1
+
+	AND ISNULL(WksDelivery.isFreight,0) = 1
+
+	
+
+	if DB_NAME() <> 'cdb_OatleyResourcesLTD'
+
+	begin
+
+		IF ISNULL(@VendorID,'') = ''
+
+				SELECT TOP 1 @VendorID = isnull(VendorID,'')
+
+				FROM WksDelivery WITH(NOLOCK) 
+
+				INNER JOIN Counterparty WITH(NOLOCK) ON WksDelivery.VendorID = Counterparty.CPID
+
+				WHERE BuySellNo = @WksNo 
+
+	end
+
+	
+
+	
+
+	SELECT Counterparty.CompanyNm as FRTVendorNm, 
+
+	Replace(dbo.xDoc_GetAddress(Counterparty.CPID,'',0,0), CounterParty.CompanyNm + CHAR(13) + CHAR(10), '') as FRTVendorAddr,
+
+	--IsNull((Select Top 1 ContactNm From Contact WITH (NOLOCK) Where Contact.CpID = @VendorID AND ISNULL(InvoiceAddr,'') = 'Y'),'') Contact,
+
+	--IsNull((Select Top 1 Email From Contact WITH (NOLOCK) Where Contact.CpID = @VendorID AND ISNULL(InvoiceAddr,'') = 'Y'),'') Email,
+
+	--IsNull((Select Top 1 PhoneBusiness From Contact WITH (NOLOCK) Where Contact.CpID = @VendorID AND ISNULL(InvoiceAddr,'') = 'Y'),'') Telephone
+
+	IsNull((Select Top 1 ContactNm From Contact WITH (NOLOCK) Where Contact.CpID = @VendorID AND ISNULL(IsPrimary,0) = 1),'') Contact,
+
+	IsNull((Select Top 1 Email From Contact WITH (NOLOCK) Where Contact.CpID = @VendorID AND ISNULL(IsPrimary,0) = 1),'') Email,
+
+	IsNull((Select Top 1 PhoneBusiness From Contact WITH (NOLOCK) Where Contact.CpID = @VendorID AND ISNULL(IsPrimary,0) = 1),'') Telephone,
+
+	[Address].TaxID
+
+	
+
+	FROM Counterparty WITH(NOLOCK)
+
+	INNER JOIN [ADDRESS] WITH(NOLOCK) ON [ADDRESS].CPID = Counterparty.CPID AND ISNULL(InvoiceAddr,'') = 'Y'
+
+	 
+
+
+
+	WHERE Counterparty.CPID = @VendorID 
+
+
+
+	--cw_GetFreightVendorInfo '10006'
+

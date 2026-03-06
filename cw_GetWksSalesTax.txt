@@ -1,0 +1,12 @@
+CREATE proc cw_GetWksSalesTax @Buysellno varchar(15) as
+
+
+
+select TaxDescription, TaxAmount, PmtCurCode, FxRate,FxPmtAmount, wksSalesTaxID as '-Hidden-WksSalesTaxID'
+
+from wkssalestax
+
+inner join salestax on salestax.SalesTaxID = wkssalestax.SalesTaxID
+
+where buysellno = @buysellno
+

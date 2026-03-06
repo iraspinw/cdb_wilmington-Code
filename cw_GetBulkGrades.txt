@@ -1,0 +1,5 @@
+create proc [dbo].[cw_GetBulkGrades] as
+
+set transaction isolation level read uncommitted
+
+select gradeid, [description] from grade where InventoryType <> 'SERIAL'

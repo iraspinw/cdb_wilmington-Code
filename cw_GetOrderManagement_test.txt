@@ -1,0 +1,853 @@
+CREATE   PROCEDURE [dbo].[cw_GetOrderManagement_test] 
+
+	@FromDt datetime,
+
+	@ToDt datetime,
+
+	@Type char(2),
+
+	@Status char(10),
+
+	@GradeID char(15) = '',
+
+	@ToWtUOM char(1)= 'L', 
+
+	@RefNo char(10) = '',
+
+	@SchFromDate datetime = '', 
+
+	@SchToDate datetime = '', 
+
+	@CpID char(12) = '', 
+
+	@COID char(2) = '',
+
+	@PriceType varchar(30)='', 
+
+	@ProductType CHAR(10) = 'GRADE',
+
+	@SalesRepNo CHAR(10) = '',
+
+	@TradeType varchar(25) = '',
+
+	@OrderType varchar(12) = 'SPOT'
+
+AS
+
+
+
+--BM Created
+
+--7/12/2005 BM: Added Weight UOM parameter
+
+--9/23/2005 JW: Added update of shippedwt to orders where no unittype matched between the order and its worksheets
+
+--1/13/2006: Exclude "WORK"order when @Status = "OPEN" - per UDOM
+
+--1/13/2006: Added STATUS to output
+
+--BF: Added ShipToLocation
+
+--1/22/2007 BM: Fixed Joins that were used to get Country
+
+--3/21/2007 BM: Added CounterpartyID to recordset
+
+--7/12/2007 JW: Modify "Shipped Weights" sections to use new order ID foreign key on wksDetail
+
+--7/24/2007 BM: Added Scheduled Date parameter and column to resultset
+
+--8/6/2007 BM: Added Notes field, Supplier/Customer Reference fields, Supp/Cust Name; 
+
+--			   Use Allocation Period vs. Schedule Date..(system option)
+
+--4/8/2008: BF Added COID filter
+
+--4/16/2008 DSH Edited to correct handling of multiple reps causing dups.
+
+--4/16/2008 DSH When viewing "EA" qty, only show EA orders. 
+
+--05/05/2008 DSH - Modified to support getting supplier name and order number from linked order.
+
+--05/13/2008 DSH - Modified to support getting  customer from linked order.
+
+--06/25/2008 RS: Modified to use new converting functions that include lumber UOM, OriginalWtUOM added
+
+--09/03/2008 RS: CurrencyCd added
+
+--01/12/2009 RS: @PriceType (Contract / Spot) filter  and FormulaID added
+
+--07/20/2009 MCM: Added AddrType as requested by Urban Impact
+
+--04/12/2010 RS: Comment added
+
+--05/24/2010 MCM: Added Committed Qty
+
+--05/29/2010 MCM: Revised Committed Qty section to prevent over stating when multiple items of same grade on one order
+
+--06/17/2010 MCM: Modified Committed Qty section to be compatible with older SQL versions (2000)
+
+--08/02/2010 RS: ExpirationDt added
+
+--10/11/2010 MCM: Committed Qty section modified per IFPs requests
+
+--11/07/2010 MCM: Added UnitTypePpt to the report
+
+--11/23/2010 RS: OriginalAmount and OpenAmount added per EBAR
+
+--05/17/2011 PG: Columns were added w/o any SP comments
+
+--05/30/2012 RS: MinWt,LLQty added
+
+--12/05/2012 MCM: Added Ship Status A & R
+
+--02/27/2014 MEC: Added limitation to shipped weights for cancelled buysells
+
+--03/06/2014 RS: CounterpartyName fixed
+
+--03/14/2014 RS: Exclude final Bale Route Wks
+
+--04/16/2014 DSH: Corrected above to handle null values.
+
+--04/30/2014 RS: Always show both Sched. Dt and Alloc Period (ShowAllocPeriod was eliminated)
+
+--08/19/2014 DSH: Added product category filter.
+
+--01/23/2015 RS: Added User Name
+
+--09/02/2015 MEC: Copied for cieTrade.net
+
+--10/28/2015 DSH Fixed Reference column
+
+--15/10/2018 alex: when @ToWtUOM = L or @ToWtUOM = K then return 0 decimals ELSE return 3
+
+--10/01/2019 MEC: Added restriction for committed to exclude shipments in Invoice Status or Cancelled ( AND BuySell.[status] Not In ('I', 'X'))
+
+--10/16/2019 DSH Added filter by Sales Rep
+
+--04/09/2021 DSH Updated procedure to correct incorrect rpeorting of OPEN QTY  --Removed committed quantity section uysed in desktop
+
+--10/22/2021 MN Added trade type
+
+--9/29/2022 ZT: Changed inner joins to PODetail and Grade tables to left joins
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+DECLARE @filler decimal(18,5), @Cnt bigint, @i bigint
+
+SELECT @filler = 0.000
+
+
+
+
+
+DECLARE @PType bit
+
+SET @PType = 0
+
+IF @PriceType = 'Contract' SET @PType = 1
+
+
+
+	
+
+	
+
+		SELECT DISTINCT PODetail.PO_ID as pID,
+
+        PO.PONumber,
+
+        PO.[Source],
+
+        PODate,
+
+        Grade.Description,
+
+        PODesc, 
+
+        dbo.CnvFromBaseQtyUOM(dbo.CnvToBaseQtyUOM(Weight,WeightUOM),@ToWtUOM) as OrderQty,
+
+      Units,
+
+PODetail.UnitType,
+
+        Price,
+
+        PriceUOM,
+
+	 PriceBasis as ShippingTerm,
+
+        REPLACE(REPLACE(Specifications,char(10),''),char(13),' ') Specifications,
+
+        @filler as ShippedQty,
+
+        (SELECT TOP 1 referrer.name FROM POSalesReps INNER JOIN referrer ON POSalesReps.ReferrerNo = referrer.ReferrerNo WHERE POSalesReps.POID = PO.POID) As SalesRep,        
+
+        PO.Status,
+
+        c.CompanyNm,
+
+        PO.POReference,
+
+        PO.MonthlyContract, 
+
+        Grade.GradeID,
+
+		ProductGroupID,
+
+        Address.country, 
+
+	    SHIPADDRTYPE, 
+
+        c.CpID as CounterpartyID, 
+
+        PO.SchShipDate as ScheduleDate, 
+
+        REPLACE(REPLACE(PO.Notes,char(10),''),char(13),' ') Notes, 
+
+        SPACE(30) as CounterpartyReference, 
+
+        ShipTo.CompanyNm as CounterpartyName, 
+
+        SPACE(15) as CounterpartyOrder, 
+
+        PO.AllocPeriod,
+
+		WeightUOM as OriginalWtUOM,
+
+		PODetail.CurrencyCd,
+
+		PriceFormula.FormulaDesc,
+
+		PO.AddrType,Comment,
+
+		CONVERT(Decimal(18,5),0) AS [Committed],
+
+		ExpirationDt,
+
+		UnitType.PropertySet AS UnitTypePpt,
+
+		PODetail.Amount as OriginalAmount,
+
+		PODetail.Amount as OpenAmount,
+
+		dbo.CnvFromBaseQtyUOM(dbo.CnvToBaseQtyUOM(PO.MinWeight,PO.MinWeightUOM),@ToWtUOM) as MinWt,
+
+		@filler as LLQty,
+
+		CompanyDesc Dept,
+
+		BasisWt, 
+
+		BasisWtUOM,
+
+		Caliper,
+
+		RollWd, 
+
+		RollWdUOM,  
+
+		Color,
+
+		Diameter, 
+
+		DiameterUOM,
+
+	    dbo.RemoveTrailingZeros(CoreSize) CoreSize,
+
+		CoresizeUOM,
+
+		LinearLen,
+
+		LengthUOM,
+
+		SheetSize, 
+
+	    SheetSizeUOM,
+
+		NoSheets,
+
+		dbo.RemoveTrailingZeros(MWeight) MWeight,
+
+		PlasticMelt,
+
+		PlasticType,
+
+		PlasticForm,
+
+		PODetail.FormulaID
+
+	INTO #Report
+
+	FROM PO WITH(NOLOCK)
+
+	INNER JOIN PODetail WITH(NOLOCK) on PO.PONumber = PODetail.PONumber
+
+	INNER JOIN Grade WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID
+
+	INNER JOIN Counterparty c WITH(NOLOCK) on PO.CpID = c.CpID
+
+	LEFT JOIN Address WITH(NOLOCK) ON PO.ShipAddrID = Address.CpID AND PO.ShipAddrType = Address.[Type]
+
+	LEFT JOIN POSalesReps p WITH(NOLOCK) ON p.POID = PO.POID
+
+	LEFT JOIN PriceFormula WITH(NOLOCK) ON PODetail.FormulaID = PriceFormula.FormulaID		
+
+	LEFT JOIN UnitType WITH(NOLOCK) ON UnitType.TypeID = PODetail.UnitType
+
+	LEFT JOIN Counterparty ShipTo WITH(NOLOCK) on PO.ShipAddrID = ShipTo.CpID
+
+	LEFT JOIN CompanyInfo ON PO.COID = CompanyInfo.COID	
+
+	WHERE (@Type = '' OR PO.Source = @Type)
+
+	AND (@Status = '' OR @Status = PO.Status)
+
+	AND (@RefNo = '' OR p.ReferrerNo = @RefNo)
+
+	AND (@TradeType = '' OR PO.TradeType = @TradeType)
+
+	AND (@GradeID = '' OR (PODetail.GradeID = @GradeID AND @ProductType = 'GRADE')	OR (Grade.ProductCategoryID = @GradeID AND @ProductType = 'CATEGORY'))		
+
+	AND (@FromDt = ''  OR (@FromDt <= PO.PODate AND PO.PODate <=@ToDt))
+
+	AND (@SchFromDate = '' OR (@SchFromDate <= PO.SchShipDate AND PO.SchShipDate <= @SchToDate))
+
+	AND (@CpID = '' OR PO.CpID = @CpID)
+
+	AND (@COID = '' OR PO.COID = @COID)
+
+	AND (@ToWtUOM NOT IN ('E','Q') OR (@ToWtUOM = PoDetail.WeightUOM))
+
+	AND (@PriceType='' OR @PType = ISNULL(PO.MonthlyContract,0))
+
+	AND (@SalesRepNo = '' OR (@SalesRepNo <> '' AND EXISTS(SELECT * FROM POSalesReps WHERE POSalesReps.POID = PO.POID AND POSalesReps.ReferrerNo = @SalesRepNo))) 
+
+
+
+	AND(@OrderType = 'ALL' or(
+
+		(@OrderType = 'SPOT' AND (PO.MonthlyContract <> 1)) OR (@OrderType = 'CONTRACT' AND (PO.MonthlyContract = 1)) OR (@OrderType = 'PROVISIONAL' AND (PO.IsProvisional = 1))
+
+		))
+
+	
+
+
+
+	--GET SHIPPED WEIGHTS FROM WORKSHEET DETAIL
+
+	CREATE TABLE #ShippedWeight(
+
+		pID INT,
+
+		Wt DECIMAL(22,8),
+
+		NumItems INT,
+
+		CONSTRAINT pkShippedWeight PRIMARY KEY (pID)
+
+	)
+
+
+
+	IF @Type = 'SO' BEGIN
+
+		INSERT #ShippedWeight
+
+		SELECT PODetail.PO_ID as pID,
+
+			Sum(dbo.CnvFromBaseQtyUOM(dbo.CnvToBaseQtyUOM(SWeight,SWeightUOM),@ToWtUOM)) as Wt, 
+
+			Count(*) as NumItems			
+
+			FROM WksDetail WITH(NOLOCK) 
+
+				INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = WksDetail.BuySellNo
+
+				INNER JOIN PODetail WITH(NOLOCK) ON PODetail.PO_ID = wksDetail.SPO_ID 
+				INNER JOIN #Report ON PODetail.PO_ID = #Report.pID
+
+			WHERE BuySell.[status] <> 'X'
+
+			GROUP BY PODetail.PO_ID	
+
+	END
+
+	
+
+	IF @Type = 'PO' BEGIN	
+
+		INSERT #ShippedWeight
+
+		SELECT PODetail.PO_ID as pID, 
+
+			Sum(dbo.CnvFromBaseQtyUOM(dbo.CnvToBaseQtyUOM(PWeight,PWeightUOM),@ToWtUOM)) as Wt,
+
+			Count(*) as NumItems
+
+			FROM WksDetail WITH(NOLOCK) 
+
+				INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = WksDetail.BuySellNo
+
+				INNER JOIN PODetail WITH(NOLOCK) ON PODetail.PO_ID = wksDetail.PPO_ID 
+
+				INNER JOIN #Report ON PODetail.PO_ID = #Report.pID
+
+			WHERE BuySell.[status] <> 'X'
+
+			AND (COALESCE(BuySell.BaleRouteID,0)=0 OR (COALESCE(BuySell.BaleRouteID,0) <> 0 AND BuySell.VendorID <> '(INV)' AND BuySell.ShipFromID <> '[IN TRANSIT]'))
+
+			GROUP BY PODetail.PO_ID
+
+	END
+
+
+
+
+
+		
+
+	--INSERT SHIPPED WEIGHTS (BASED ON ORDER NO., GRADE, AND UNITTYPE)
+
+	UPDATE #Report SET ShippedQTY = #ShippedWeight.Wt
+
+	FROM #Report 
+
+	INNER JOIN #ShippedWeight ON #Report.pID = #ShippedWeight.pID
+
+
+
+
+
+	
+
+	
+
+	
+
+
+
+
+
+
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	----GET COMMITTED WEIGHTS	IF SYSTEM OPTION ENABLED
+
+	---- (THIS OPTION SLOWS THE INQUIRY CREATED FOR IFP)
+
+	--IF (SELECT optionValue FROM Options WITH(NOLOCK) WHERE optionName = 'CommittedInOrderMgmt') = '1' BEGIN
+
+
+
+
+
+	--	CREATE TABLE #Committed (	pID int,
+
+	--								Wt Decimal(18,5), 
+
+	--								PONumber char(15),
+
+	--								GradeID char(15), 
+
+	--								UnitType char(1),
+
+	--								ID int identity
+
+	--							)
+
+	
+
+	--	INSERT INTO #Committed (pID,Wt,PONumber,GradeID,UnitType)
+
+	--		SELECT PODetail.PO_ID as pID,Sum(dbo.CnvFromBaseQtyUOM(dbo.CnvToBaseQtyUOM(SWeight,SWeightUOM),@ToWtUOM)) as Wt, PO.PONumber,
+
+	--		PODetail.GradeID, PODetail.UnitType
+
+	--		FROM WksDetail WITH(NOLOCK) 
+
+	--		INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = WksDetail.BuySellNo
+
+	--		INNER JOIN Booksheet WITH(NOLOCK) ON BuySell.BookingNo = Booksheet.BookingNo
+
+	--		INNER JOIN PO WITH(NOLOCK) ON PO.PONumber = Booksheet.PONumber AND PO.[Source] = 'SO'
+
+	--		INNER JOIN PODetail WITH(NOLOCK) ON PODetail.PONumber = PO.PONumber AND PODetail.GradeID = WksDetail.GradeID AND PODetail.UnitType = WksDetail.UnitType
+
+	--		INNER JOIN #Report WITH(NOLOCK) ON PODetail.PO_ID = #Report.pID
+
+	--		WHERE BuySell.ShippingOK IN ('S','A','R') AND @Type = 'SO'  AND BuySell.[status] Not In ('I', 'X')
+
+	--		AND NOT EXISTS(SELECT LotNo FROM WksInventory WITH(NOLOCK) WHERE WksInventory.LotNo = WksDetail.LotNo)
+
+	--		GROUP BY PODetail.PO_ID, PO.PONumber, PODetail.GradeID, PODetail.UnitType
+
+			
+
+	--	SELECT @Cnt = COUNT(*) FROM #Committed WITH(NOLOCK) 
+
+		
+
+	--	SET @i = 1
+
+	--	-- LOOP THROUGH AND UPDATE COMIT WT AND DELETE ANY DUPE RECORDS
+
+	--	WHILE @i <= @Cnt
+
+	--	BEGIN
+
+	--		UPDATE #Report SET [Committed] = #Committed.Wt FROM #Report 
+
+	--			INNER JOIN #Committed ON #Report.pID = #Committed.pID
+
+	--			WHERE #Committed.ID = @i
+
+			
+
+	--		DELETE FROM #Committed WHERE PONumber = (SELECT PONumber FROM #Committed WITH(NOLOCK) WHERE #Committed.ID = @i)
+
+	--			AND GradeID = (SELECT GradeID FROM #Committed WITH(NOLOCK) WHERE #Committed.ID = @i)
+
+	--			AND UnitType = (SELECT UnitType FROM #Committed WITH(NOLOCK) WHERE #Committed.ID = @i)
+
+			
+
+	--		SET @i = @i + 1
+
+	--	END
+
+		
+
+	--	DROP TABLE #Committed
+
+	--END	
+
+
+
+
+
+
+
+	--GET SUPPLIER'S ORDER NO.
+
+	IF @Type = 'SO' BEGIN
+
+		UPDATE #Report SET CounterpartyOrder = 
+
+			(SELECT TOP 1 PO.PONumber
+
+			FROM PO INNER JOIN  WksDetail ON PO.PONumber = WksDetail.PPO
+
+			WHERE WksDetail.SPO = #Report.PONumber)		
+
+
+
+        -- From Linked Purchase Order to Sales Order --
+
+		UPDATE #Report SET CounterpartyOrder = 
+
+			(SELECT TOP 1 PO.PONumber FROM PO INNER JOIN  PODetail ON PO.PONumber = PoDetail.PoNumber WHERE PoDetail.SPO = #Report.PONumber) 
+
+            WHERE (CounterpartyOrder = '' OR CounterpartyOrder IS NULL)
+
+	
+
+	END
+
+
+
+    -- GET CUSTOMERS ORDER NO.
+
+	IF @Type = 'PO' BEGIN    
+
+	
+
+            -- Get Order Number from Drop-Ship Worksheet.
+
+		    UPDATE #Report SET CounterpartyOrder = 
+
+			    (SELECT TOP 1 PO.PONumber
+
+			    FROM PO INNER JOIN WksDetail ON PO.PONumber = WksDetail.SPO
+
+			    WHERE WksDetail.PPO = #Report.PONUmber)		
+
+
+
+            -- From Linked Purchase Order to Sales Order --
+
+	      	UPDATE #Report SET CounterpartyOrder = 
+
+		    	(SELECT TOP 1 SPO FROM PODETAIL WHERE PoDetail.PONumber = #Report.PONumber) 
+
+                WHERE (CounterpartyOrder = '' OR CounterpartyOrder IS NULL)
+
+
+
+	END
+
+
+
+
+
+	--GET CUSTOMER/SUPPLIER NAME AND REF. NO 
+
+	UPDATE #Report SET CounterpartyName = Counterparty.CompanyNm, CounterpartyReference = PO.POReference
+
+		FROM #Report 
+
+		INNER JOIN PO ON #Report.CounterpartyOrder = PO.PONumber
+
+		INNER JOIN Counterparty ON PO.CpID = Counterparty.CpID	
+
+
+
+
+
+	--IF NOT MONTHLY CONTRACT FORMULA DESC SHOULD BE EMPTY
+
+	UPDATE #Report SET FormulaDesc = '' WHERE MonthlyContract<>1
+
+
+
+	-- WHEN REPORTING BY SALES REP SET NAME	COLUMN.
+
+	IF @SalesRepNo <> '' BEGIN
+
+		DECLARE @SalesRepNm VARCHAR(30)
+
+		SELECT @SalesRepNm = [Name] FROM Referrer WHERE ReferrerNo = @SalesRepNo
+
+		UPDATE #REPORT SET SalesRep = @SalesRepNm 
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	--RETURN DATA
+
+	if (@ToWtUOM = 'L' or @ToWtUOM='K') 	begin
+
+	SELECT
+
+		MonthlyContract,
+
+		PONumber As [Order No],
+
+		[Source] As [-Hidden- ORDER TYPE],
+
+		POReference As Reference,
+
+		Dept,
+
+		PODate As [Order Date],
+
+		CompanyNm As Account,
+
+		AddrType As Location,
+
+		[Description] As Product,
+
+		IsNull(dbo.CnvUnitName(UnitType), '') As [Packaging],
+
+		dbo.cw_RemoveTrailingZeros(Price, 0) + '/' + dbo.CnvUOM_Names(PriceUOM) As Price,
+
+		ShippingTerm As [Terms],
+
+
+
+		dbo.cw_RemoveTrailingZeros(IsNull(cast((OrderQty) as decimal(16,0)),0),0) As [Order Qty],
+
+		dbo.cw_RemoveTrailingZeros(IsNull(cast((ShippedQty) as decimal(16,0)) ,0), 0) As [Shipped Qty],
+
+		dbo.cw_RemoveTrailingZeros(IsNull(cast(([Committed]) as decimal(16,0)),0), 0) As [Committed Qty],
+
+		dbo.cw_RemoveTrailingZeros((cast((IsNull(OrderQty, 0)-IsNull(ShippedQty,0)-IsNull([Committed],0)) as  decimal(16,0))),0) as [Remaining Qty],
+
+		IsNull(SalesRep,'') As [Sales Rep],
+
+		CONVERT(varchar, CAST(OriginalAmount AS money), 1) As [Order Value],
+
+		CONVERT(varchar, CAST(OpenAmount AS money), 1) As [Remaining Value],
+
+		pID As [-Hidden- POID],
+
+		BasisWt [Basis Wt], 
+
+		BasisWtUOM [Basis UOM],
+
+		Caliper  [{C}Caliper],
+
+		RollWd [Roll Width], 
+
+		RollWdUOM [Roll Width UOM],  
+
+		#Report.color,
+
+		Diameter, 
+
+		DiameterUOM [Diameter UOM],
+
+		CoreSize [Core Size],
+
+		CoresizeUOM [Core Size UOM],
+
+		LinearLen [Length],
+
+		LengthUOM [Length UOM],
+
+		SheetSize [Sheet Size], 
+
+	    SheetSizeUOM [Sheet Size UOM],
+
+		NoSheets Sheets,
+
+		MWeight [M-Weight],
+
+		PlasticMelt [Meltflow Index],
+
+		PlasticType [Type-Grade],
+
+		PlasticForm [Form],
+
+		FormulaID AS [Index Pricing]
+
+		FROM #Report ORDER BY PODate,PONumber,Description
+
+	end
+
+
+
+	ELSE 
+
+	begin
+
+	SELECT
+
+	PONumber As [Order No],
+
+		[Source] As [-Hidden- ORDER TYPE],
+
+		POReference As Reference,
+
+		Dept,
+
+		PODate As [Order Date],
+
+		CompanyNm As Account,
+
+		AddrType As Location,
+
+		[Description] As Product,
+
+		IsNull(dbo.CnvUnitName(UnitType), '') As [Packaging],
+
+		dbo.cw_RemoveTrailingZeros(Price, 0) + '/' + dbo.CnvUOM_Names(PriceUOM) As Price,
+
+		ShippingTerm As [Terms],
+
+
+
+		dbo.cw_RemoveTrailingZeros(IsNull(cast((OrderQty) as decimal(16,3)),0),0) As [Order Qty],
+
+		dbo.cw_RemoveTrailingZeros(IsNull(cast((ShippedQty) as decimal(16,3)) ,0), 0) As [Shipped Qty],
+
+		--dbo.cw_RemoveTrailingZeros(IsNull(cast(([Committed]) as decimal(16,3)),0), 0) As [Committed Qty],
+
+		dbo.cw_RemoveTrailingZeros((cast((IsNull(OrderQty, 0)-IsNull(ShippedQty,0)-IsNull([Committed],0)) as  decimal(16,3))),0) as [Remaining Qty],
+
+		IsNull(SalesRep,'') As [Sales Rep],
+
+		CONVERT(varchar, CAST(OriginalAmount AS money), 1) As [Order Value],
+
+		CONVERT(varchar, CAST(OpenAmount AS money), 1) As [Remaining Value],
+
+		pID As [-Hidden- POID],
+
+		BasisWt [Basis Wt], 
+
+		BasisWtUOM [Basis UOM],
+
+		Caliper  [Caliper],
+
+		RollWd [Roll Width], 
+
+		RollWdUOM [Roll Width UOM],  
+
+		#Report.Color,
+
+	    Diameter, 
+
+		DiameterUOM [Diameter UOM],
+
+		CoreSize [Core Size],
+
+		CoresizeUOM [Core Size UOM],
+
+		LinearLen [Length],
+
+		LengthUOM [Length UOM],
+
+		SheetSize [Sheet Size], 
+
+	    SheetSizeUOM [Sheet Size UOM],
+
+		NoSheets Sheets,
+
+		MWeight [M-Weight],
+
+		PlasticMelt [Meltflow Index],
+
+		PlasticType [Type-Grade],
+
+		PlasticForm [Form],
+
+		FormulaID AS [Index Pricing]
+
+	FROM #Report ORDER BY PODate,PONumber,Description
+
+	end
+
+
+

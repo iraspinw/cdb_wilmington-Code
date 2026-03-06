@@ -1,0 +1,3 @@
+CREATE  procedure [dbo].[cw_GetUACTimeStamp] @LedgerID int, @EditStamp int OUTPUT, @Balance money output, @CurCode varchar(5) output AS
+
+select @EditStamp = convert( int,lastedit), @Balance = Fxbalance, @CurCode=CurrencyCd FROM UACashLedger WITH (NOLOCK) Where LedgerID = @LedgerID

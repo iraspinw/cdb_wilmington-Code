@@ -1,0 +1,32 @@
+CREATE proc [dbo].[cw_GetEquipmentContainersByWh] @WarehouseID char(45) = '', @ContainerType varchar(30) = '', @CpID char(12) = '', @Location char(45) = '', @Status char(10) = '' as
+
+
+
+-- 3/28/22 MN: CREATED
+
+
+
+		SELECT 
+
+				
+
+			Equipment.EquipmentID, EquipmentNo, EqType, [Status], ISNULL(DefaultWarehouseID, '') AS DefaultWarehouseID
+
+		FROM Equipment WITH(NOLOCK) 		
+
+		LEFT JOIN Equipment_Location ON Equipment_Location.EquipmentID = Equipment.EquipmentID AND Equipment.CurrentLocationEventID = Equipment_Location.LocationEventID
+
+		WHERE (@ContainerType = '' OR EqType = @ContainerType)
+
+		AND (@WarehouseID = '' OR DefaultWarehouseID = @WarehouseID)
+
+		AND (@CpID = '' OR Equipment_Location.Customer = @CpID)
+
+		AND (@Status = '' OR Equipment.[Status] = @Status)
+
+		--AND (@Location = '' OR Equipment_Location.Location = @Location)
+
+
+
+
+

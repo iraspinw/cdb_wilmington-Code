@@ -1,0 +1,368 @@
+CREATE PROC [dbo].[cw_GetPhotoInquiry] @FromDt datetime, @ToDt datetime, @AllDates bit, @RefID varchar(255), @RefType char(1), @Status int,
+
+	@CpID varchar(12) = '', @SalesRep varchar(10) = '', @COID char(2) = '' AS 
+
+--03/27/2012 MCM: Created for ciePhoto project
+
+--04/18/2012 MCM: changed to return container No for RefID on containers and added Reference
+
+--05/07/2012 MCM: Fixed date filter
+
+--06/06/2012 MCM: ToDt increased by 1 day to include all photos taken throughout the day
+
+--07/03/2012 MCM: Added to RefID Case when container (#) is open use refID from DocumentImage table
+
+--06/23/2012 DSH Added support for document database.
+
+--10/26/2012 MEC: Added Worksheet RefType
+
+--06/08/2015 MCM: Added @CpID and @SalesRep filters and union for certain objects
+
+--10/24/2022 Nick: Removed Amgiguity from SessionID column
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SET @ToDt = DATEADD(DAY,1,@ToDt)
+
+
+
+	
+
+		IF @Status <> 0
+
+			SELECT DISTINCT 	
+
+				(SELECT TOP 1 CreatedDt FROM DocumentImage D1 WHERE D1.SessionID = d.SessionID) AS [Upload Date], 
+
+				--CASE WHEN RefType = 'W' THEN RefID 
+
+				--		WHEN RefType = '#' AND IsConfirmed = 0 THEN RefID 
+
+				--		ELSE b.RefEquipNo 
+
+				--	END AS [Reference No],
+
+				CASE WHEN RefType = '#' THEN 'Container No' ELSE 'Worksheet' END AS [Subject-Type],
+
+				IsNull(UserNm,'ciePhoto') AS [User],
+
+				CASE WHEN IsConfirmed = 1 THEN 'Yes' ELSE 'No' END AS [Linked],
+
+				d.SessionID AS [Session No],
+
+				d.SessionID AS [-Hidden-Session No],
+
+				(SELECT COUNT(*) FROM DocumentImage E WHERE E.SessionID = d.SessionID) AS [# Images],
+
+				RefID AS Reference,
+
+					RefID AS '-Hidden-Reference',
+
+				RefType,
+
+				c.CompanyNm As [Counterparty],
+
+				ciePhotoTareWt AS [Tare-Weight],
+
+				IsConfirmed AS [-Hidden-IsConfirmed],
+
+				Case When CustID = '(INV)' Then 'RCV' Else Case When VendorID = '(INV)' Then 'SHIP' Else 'WKS' End End [-Hidden-WksType]
+
+			FROM DocumentImage d
+
+				INNER JOIN BuySell b ON b.BuySellNo = d.RefID AND RefType = 'W'
+
+				INNER JOIN Counterparty c ON c.CpID = b.VendorID
+
+				LEFT JOIN UserDef ON UserDef.UserID = CreatedBy
+
+				LEFT JOIN Counterparty_Referrer cr ON cr.CpID = c.CpID AND cr.IsDefault = 1
+
+			WHERE ciePhoto = 1
+
+				AND (@AllDates = 1 OR (@FromDt <= CreatedDt))
+
+				AND (@AllDates = 1 OR (@ToDt >= CreatedDt))
+
+				AND (@RefID = '' OR RefID = @RefID)
+
+				AND (@RefType = '' OR RefType = @RefType)
+
+				AND (@Status = 2 OR (@Status = 0 AND IsConfirmed = 0) OR (@Status = 1 AND IsConfirmed = 1))
+
+				AND (@CpID = '' OR b.VendorID = @CpID)
+
+				AND (@SalesRep = '' OR cr.ReferrerNo = @SalesRep)
+
+			GROUP BY d.SessionID,RefID,RefType,CreatedBy,IsConfirmed,c.CompanyNm, ciePhotoTareWt, UserNm, CustID, VendorID
+
+		UNION ALL
+
+			SELECT DISTINCT 	
+
+				(SELECT TOP 1 CreatedDt FROM DocumentImage D1 WHERE D1.SessionID = d.SessionID) AS [Upload Date], 
+
+				--CASE 
+
+				--	WHEN RefType = 'D' THEN RefID 
+
+				--	WHEN RefType = '#' AND IsConfirmed = 0 THEN RefID 
+
+				--	ELSE (SELECT TOP 1 ContainerNo FROM Container WHERE BuySellNo = RefID) 
+
+				--	END AS [Reference No],
+
+				CASE WHEN RefType = '#' THEN 'Container No' ELSE 'Worksheet' END AS [Subject-Type],
+
+				IsNull(UserNm,'ciePhoto') AS [User],
+
+				CASE WHEN IsConfirmed = 1 THEN 'Yes' ELSE 'No' END AS [Linked],
+
+				d.SessionID AS [Session No],
+
+				d.SessionID AS [-Hidden-Session No],
+
+				(SELECT COUNT(*) FROM DocumentImage E WHERE E.SessionID = d.SessionID) AS [# Images],
+
+				RefID AS Reference,
+
+					RefID AS '-Hidden-Reference',
+
+				RefType,
+
+				c.CompanyNm As [Counterparty],
+
+				ciePhotoTareWt AS [Tare-Weight],
+
+				IsConfirmed AS [-Hidden-IsConfirmed],
+
+				Case When CustID = '(INV)' Then 'RCV' Else Case When VendorID = '(INV)' Then 'SHIP' Else 'WKS' End End [-Hidden-WksType]
+
+			FROM DocumentImage d
+
+				INNER JOIN BuySell b ON b.BuySellNo = d.RefID AND RefType = '#'
+
+				INNER JOIN Counterparty c ON c.CpID = b.CustID
+
+				LEFT JOIN UserDef ON UserDef.UserID = CreatedBy
+
+				LEFT JOIN Counterparty_Referrer cr ON cr.CpID = c.CpID AND cr.IsDefault = 1
+
+			WHERE ciePhoto = 1
+
+				AND (@AllDates = 1 OR (@FromDt <= CreatedDt))
+
+				AND (@AllDates = 1 OR (@ToDt >= CreatedDt))
+
+				AND (@RefID = '' OR RefID = @RefID)
+
+				AND (@RefType = '' OR RefType = @RefType)
+
+				AND (@Status = 2 OR (@Status = 0 AND IsConfirmed = 0) OR (@Status = 1 AND IsConfirmed = 1))
+
+				AND (@CpID = '' OR b.CustID = @CpID)
+
+				AND (@SalesRep = '' OR cr.ReferrerNo = @SalesRep)
+
+			GROUP BY d.SessionID,RefID,RefType,CreatedBy,IsConfirmed,c.CompanyNm, ciePhotoTareWt, UserNm, CustID, VendorID
+
+		--UNION ALL
+
+			--SELECT DISTINCT 	
+
+			--	(SELECT TOP 1 CreatedDt FROM DocumentImage D1 WHERE D1.SessionID = d.SessionID) AS [Upload Date], 
+
+			--	--CASE 
+
+			--	--	WHEN RefType = 'D' THEN RefID 
+
+			--	--	WHEN RefType = '#' AND IsConfirmed = 0 THEN RefID 
+
+			--	--	ELSE (SELECT TOP 1 ContainerNo FROM Container WHERE BuySellNo = RefID) 
+
+			--	--	END AS [Reference No],
+
+			--	CASE WHEN RefType = '#' THEN 'Container No' ELSE 'Worksheet' END AS [Subject-Type],
+
+			--	IsNull(UserNm,'ciePhoto') AS [User],
+
+			--	CASE WHEN IsConfirmed = 1 THEN 'Yes' ELSE 'No' END AS [Linked],
+
+			--	SessionID AS [Session No],
+
+			--	(SELECT COUNT(*) FROM DocumentImage E WHERE E.SessionID = d.SessionID) AS [# Images],
+
+			--	RefID AS Reference,
+
+			--	RefType,
+
+			--	c.CompanyNm As [Counterparty],
+
+			--	ciePhotoTareWt AS [Tare-Weight],
+
+			--	IsConfirmed AS [-Hidden-IsConfirmed],
+
+			--	Case When CustID = '(INV)' Then 'RCV' Else Case When VendorID = '(INV)' Then 'SHIP' Else 'WKS' End End [-Hidden-WksType]
+
+			--FROM DocumentImage d
+
+			--	INNER JOIN Receiving r ON CONVERT(varchar(50),r.ScaleTicketNo) = d.RefID AND RefType = 'D'
+
+			--	INNER JOIN Counterparty c ON c.CpID = r.CpID
+
+			--	LEFT JOIN UserDef ON UserDef.UserID = CreatedBy
+
+			--	LEFT JOIN Counterparty_Referrer cr ON cr.CpID = c.CpID AND cr.IsDefault = 1
+
+			--WHERE ciePhoto = 1
+
+			--	AND (@AllDates = 1 OR (@FromDt <= CreatedDt))
+
+			--	AND (@AllDates = 1 OR (@ToDt >= CreatedDt))
+
+			--	AND (@RefID = '' OR RefID = @RefID)
+
+			--	AND (@RefType = '' OR RefType = @RefType)
+
+			--	AND (@Status = 2 OR (@Status = 0 AND IsConfirmed = 0) OR (@Status = 1 AND IsConfirmed = 1))
+
+			--	AND (@CpID = '' OR r.CpID = @CpID)
+
+			--	AND (@SalesRep = '' OR cr.ReferrerNo = @SalesRep)
+
+			--GROUP BY SessionID,RefID,RefType,CreatedBy,IsConfirmed,c.CompanyNm, ciePhotoTareWt, UserNm
+
+		UNION ALL
+
+			SELECT DISTINCT 	
+
+				(SELECT TOP 1 CreatedDt FROM DocumentImage D WHERE D.SessionID = DocumentImage.SessionID) AS [Upload Date], 
+
+				--CASE 
+
+				--	WHEN RefType = 'D' THEN RefID 
+
+				--	WHEN RefType = '#' AND IsConfirmed = 0 THEN RefID 
+
+				--	ELSE (SELECT TOP 1 ContainerNo FROM Container WHERE BuySellNo = RefID) 
+
+				--	END AS [Reference No],
+
+				CASE WHEN RefType = '#' THEN 'Container No' ELSE 'Worksheet' END AS [Subject-Type],
+
+				IsNull(UserNm,'ciePhoto') AS [User],
+
+				CASE WHEN IsConfirmed = 1 THEN 'Yes' ELSE 'No' END AS [Linked],
+
+				DocumentImage.SessionID AS [Session No],
+
+				DocumentImage.SessionID AS [-Hidden-Session No],
+
+				(SELECT COUNT(*) FROM DocumentImage E WHERE E.SessionID = DocumentImage.SessionID) AS [# Images],
+
+				RefID AS Reference,
+
+			    RefID AS '-Hidden-Reference',
+
+				RefType,
+
+				'' As [Counterparty],
+
+				ciePhotoTareWt AS [Tare-Weight],
+
+				IsConfirmed AS [-Hidden-IsConfirmed],
+
+				'' [-Hidden-WksType]
+
+			FROM DocumentImage 
+
+				LEFT JOIN UserDef ON UserDef.UserID = CreatedBy
+
+			WHERE ciePhoto = 1 
+
+				AND (@AllDates = 1 OR (@FromDt <= CreatedDt))
+
+				AND (@AllDates = 1 OR (@ToDt >= CreatedDt))
+
+				AND (@RefID = '' OR RefID = @RefID)
+
+				AND (@RefType = '' OR RefType = @RefType)
+
+				AND (@Status = 2 OR (@Status = 0 AND IsConfirmed = 0) OR (@Status = 1 AND IsConfirmed = 1))
+
+				AND (RefType NOT IN ('D','W','#') OR IsConfirmed = 0)
+
+				AND @CpID = '' AND @SalesRep = ''
+
+			GROUP BY DocumentImage.SessionID,RefID,RefType,CreatedBy,IsConfirmed,ciePhotoTareWt, UserNm
+
+				
+
+		ELSE
+
+			SELECT DISTINCT 	
+
+				(SELECT TOP 1 CreatedDt FROM DocumentImage D WHERE D.SessionID = DocumentImage.SessionID) AS [Upload Date], 
+
+				--CASE 
+
+				--	WHEN RefType = 'D' THEN RefID 
+
+				--	WHEN RefType = '#' AND IsConfirmed = 0 THEN RefID 
+
+				--	ELSE (SELECT TOP 1 ContainerNo FROM Container WHERE BuySellNo = RefID) 
+
+				--	END AS [Reference No],
+
+				CASE WHEN RefType = '#' THEN 'Container No' ELSE 'Worksheet' END AS [Subject-Type],
+
+				IsNull(UserNm,'ciePhoto') AS [User],
+
+				CASE WHEN IsConfirmed = 1 THEN 'Yes' ELSE 'No' END AS [Linked],
+
+				DocumentImage.SessionID AS [Session No],
+
+				DocumentImage.SessionID AS [-Hidden-Session No],
+
+				(SELECT COUNT(*) FROM DocumentImage E WHERE E.SessionID = DocumentImage.SessionID) AS [# Images],
+
+				RefID AS Reference,
+
+				RefID AS '-Hidden-Reference',
+
+				RefType,
+
+				'' As [Counterparty],
+
+				ciePhotoTareWt AS [Tare-Weight],
+
+				IsConfirmed AS [-Hidden-IsConfirmed],
+
+				'' [-Hidden-WksType]
+
+			FROM DocumentImage 
+
+				LEFT JOIN UserDef ON UserDef.UserID = CreatedBy
+
+			WHERE ciePhoto = 1
+
+				AND (@AllDates = 1 OR (@FromDt <= CreatedDt))
+
+				AND (@AllDates = 1 OR (@ToDt >= CreatedDt))
+
+				AND (@RefID = '' OR RefID = @RefID)
+
+				AND (@RefType = '' OR RefType = @RefType)
+
+				AND (@Status = 2 OR (@Status = 0 AND IsConfirmed = 0) OR (@Status = 1 AND IsConfirmed = 1))
+
+			GROUP BY DocumentImage.SessionID,RefID,RefType,CreatedBy,IsConfirmed,ciePhotoTareWt, UserNm
+
+
+
+
+

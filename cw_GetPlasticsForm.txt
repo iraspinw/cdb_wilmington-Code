@@ -1,0 +1,16 @@
+CREATE PROC [dbo].[cw_GetPlasticsForm] as
+
+--06/03/2016 MN: Created for cieTrade.net
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT UPPER(rtrim(PlasticsForm)) As PlasticsForm FROM PlasticsForm
+
+
+
+
+

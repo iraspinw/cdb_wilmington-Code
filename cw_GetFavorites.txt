@@ -1,0 +1,32 @@
+CREATE   PROCEDURE [dbo].[cw_GetFavorites] 
+
+	@UserID char(10),
+
+	@FavoriteType varchar(30) = ''
+
+AS
+
+-- 01/03/2023 Nick: Created
+
+SET NOCOUNT ON;
+
+
+
+	select  cwFavorites.FavoriteName,
+
+			cwFavoritesMaster.URL,
+
+			cwFavoritesMaster.DisplayName
+
+	from cwFavorites
+
+	inner join cwFavoritesMaster on cwFavorites.FavoriteName = cwFavoritesMaster.FavoriteName
+
+	where cwFavorites.UserID = @UserID
+
+	and (@FavoriteType = '' OR cwFavoritesMaster.FavoriteType = @FavoriteType)
+
+	and cwFavorites.IsFavorite = 1
+
+	order by Sequence
+

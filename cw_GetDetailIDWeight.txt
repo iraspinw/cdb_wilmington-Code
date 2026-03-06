@@ -1,0 +1,22 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetDetailIDWeight] @DetailID int AS
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+Select SWeight, SWeightUOM, SFxAmount, SPrice, SPriceUOM, PODetail.FP_Discount, PODetail.FP_Rate from WKSDetail
+
+	Left Join PODetail ON WKSDetail.SPO_ID = PODetail.PO_ID 
+
+where DetailID = @DetailID
+
+
+
+
+

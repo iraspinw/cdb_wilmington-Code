@@ -1,0 +1,30 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetPOD]
+
+AS
+
+BEGIN
+
+--11/11/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+
+
+    SELECT DISTINCT 
+
+		UPPER(PortOfDischg) As POD
+
+	FROM 
+
+		BookSheet 
+
+	LEFT JOIN Ports POL WITH(NOLOCK) ON POL.portnm = Booksheet.LoadPort
+
+	WHERE 
+
+		ISNULL(PortOfDischg,'') <> ''
+
+END
+

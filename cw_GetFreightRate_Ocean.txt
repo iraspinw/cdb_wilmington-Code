@@ -1,0 +1,571 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetFreightRate_Ocean]  @CpID char(12), @Expiration datetime = '1/1/1900',
+
+									 @ExpirationType int = 0, @POL varchar(50) = '', @POD varchar(50) = '', 
+
+									 @POR varchar(50) = '', @PlaceOfDeliv varchar(50) = '',
+
+									 @ExpFromDt datetime = '', @ExpToDt datetime = '',
+
+									 @FreightFwdr char(12) = '',@PerUOM varchar(15)='',
+
+									 @POLCountryID char(3) = '',@PODCountryID char(3) = '', @RateID int = 0, @FreightExpID int = 0, @isExport char(1) = '0'
+
+
+
+AS
+
+SET NOCOUNT ON
+
+--08/27/2009 RS: Created from [q_GetFreightRate] for Ocean Freight
+
+--11/17/2009 RS: @FreightFwdr and FreightFwdr added
+
+--02/25/2010 RS: @PerUOM added
+
+--02/26/2010 RS: FFName added
+
+--03/02/2010 RS: FFName fixed
+
+--05/19/2010 RS: ExpiryDate range changed to effective period range
+
+--02/25/2011 RS: ExpiryDate range fixed
+
+--04/07/2011 RS: effective period range changed per KC 
+
+--09/09/2011 RS: EqType added
+
+--05/09/2012 RS: PortFreetime added
+
+--06/19/2012 RS: @POLCountryID,@PODCountryID added
+
+--06/27/2013 RS: @FreightFwdr = (None) option added per 3Stone
+
+--12/12/2013 RS: TransitTime added
+
+--11/29/2018 Alex: change @ExpFromDt and @ExpToDt to datetime type
+
+--7/29/2019 Alex: added StickyNotes
+
+--05/16/2023 DN: Added Is export for re-worked import/export exec cw_GetFreightRate_Ocean '','','','','','','','05/31/2023','05/31/2023','','','','','','','1'
+
+--07/31/2023 DN: Added CPActive, FCPActive
+
+
+
+-- exec cw_GetFreightRate_Ocean '','1/1/1900',1,'','','','','10/29/2018','11/29/2018','','','','',1,0
+
+
+
+
+
+declare @CountNewImport int 
+
+
+
+select @CountNewImport = count(*) from FreightRate_Ocean where NewImport =1
+
+
+
+
+
+if @isExport = '1' begin
+
+	create table #FreightRateExport(
+
+		Carrier varchar(50),
+
+		Rate money,
+
+		[Per/] varchar(10),
+
+		PortOfLoading varchar(50),
+
+		PortOfDelivery varchar(50),
+
+		EffectiveDate datetime,
+
+		ExpiryDate datetime,
+
+		RefNo varchar(50),
+
+		Forwarder varchar(100),
+
+		PlaceOfDelivery varchar(100),
+
+		PlaceOfReceipt varchar(100),
+
+		TransitTime varchar(100),
+
+		PortFreetime varchar(50),
+
+		EquipType varchar(30),
+
+		ExpenseRate1 money,
+
+		ExpenseRate1UOM varchar(15),
+
+		ExpenseVendor1 varchar(100),
+
+		ExpenseDescription1 varchar(250),
+
+		ExpenseRate2 money,
+
+		ExpenseRate2UOM varchar(15),
+
+		ExpenseVendor2 varchar(50),
+
+		ExpenseDescription2 varchar(250),
+
+		RateID varchar(5),
+
+		[-Hidden-Expense1RateID] varchar(5),
+
+		[-Hidden-Expense2RateID] varchar(5),
+
+
+
+	)
+
+
+
+	create table #FreightRateExpense(
+
+		ExpenseRate1 char(100),
+
+		ExpenseRate1UOM varchar(15),
+
+		ExpenseVendor1 varchar(100),
+
+		[-Hidden-Expense1RateID] varchar(5),
+
+		ExpenseDescription1 varchar(250),
+
+		rateid varchar(5),
+
+		used char(1)
+
+	)
+
+
+
+
+
+
+
+	insert into #FreightRateExport(carrier,rate,[Per/],PortOfLoading,PortOfDelivery,EffectiveDate,ExpiryDate,RefNo,Forwarder,PlaceOfDelivery,PlaceOfReceipt,TransitTime,PortFreetime,EquipType,ExpenseRate1,ExpenseRate1UOM,ExpenseVendor1,ExpenseDescription1, Ex
+penseRate2,ExpenseRate2UOM,ExpenseVendor2,ExpenseDescription2,RateID)
+
+	SELECT 
+
+		 Counterparty.CompanyNm as [Ocean Carrier],
+
+		 isnull(charge,'0.00'),
+
+		 case when PerUOM ='' then 'Flat' when PerUOM ='M'  then 'MT' when PerUOM ='S' then 'ST' else 'CONTAINER' end as [Per /],
+
+		 (isnull(POL,'') + case when isnull(CPol.Name,'') <>'' then  ', ' +  isnull(CPol.Name,'') else '' end) as [Port of Loading],
+
+		 (isnull(POD,'') + case when isnull(Cpod.Name,'') <>'' then  ', ' +    isnull(Cpod.Name,'')else '' end) as [Port of Discharge],		 
+
+		 RateDate as [Date], 
+
+		 ExpiryDate as [Expiry Date],
+
+		 ReferenceNo as [Ref No],
+
+		 FF.CompanyNm as   [Freight Forwarder],
+
+		 (isnull(PlOfDeliv,'') + case when isnull(CPlOfDeliv.Name,'') <>'' then ', ' +    isnull(CPlOfDeliv.Name,'')else '' end) as [Place of Delivery],
+
+		 (isnull(PlOfRcpt,'') + case when isnull(CPlOfRcpt.Name,'') <>'' then ', ' +  isnull(CPlOfRcpt.Name,'')else '' end) as [Place of Receipt],
+
+		 TransitTime as [Transit Time],
+
+		 PortFreetime as [Port Freetime],
+
+		 equip.EqType as [Equip. Type],
+
+		 '','','','','','','','', --expense section.	
+
+		 FreightRate_Ocean.RateID
+
+    FROM FreightRate_Ocean WITH(NOLOCK)
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON FreightRate_Ocean.CarrierID = Counterparty.CpID
+
+	LEFT JOIN Counterparty FF WITH(NOLOCK) ON FreightRate_Ocean.FreightFwdr = FF.CpID
+
+	LEFT JOIN Ports POL WITH(NOLOCK) ON POL.PortNm = FreightRate_Ocean.POL
+
+	LEFT JOIN Ports POD WITH(NOLOCK) ON POD.PortNm = FreightRate_Ocean.POD
+
+	LEFT JOIN Ports PlOfRcpt WITH(NOLOCK) ON PlOfRcpt.PortNm = FreightRate_Ocean.PlOfRcpt
+
+	LEFT JOIN Ports PlOfDeliv WITH(NOLOCK) ON PlOfDeliv.PortNm = FreightRate_Ocean.PlOfDeliv
+
+	left join Country CPol on CPol.CountryID = POL.CountryID
+
+	left join Country Cpod on Cpod.CountryID = POD.CountryID
+
+	left join Country CPlOfRcpt on CPlOfRcpt.CountryID = PlOfRcpt.CountryID
+
+		left join Country CPlOfDeliv on CPlOfDeliv.CountryID = PlOfDeliv.CountryID
+
+	left join EquipmentType equip on FreightRate_Ocean.EqType = equip.ShortName
+
+
+
+	WHERE (
+
+			(@RateID <> 0 and RateID = @RateID) OR ((@RateID = 0 and
+
+			(@CpID = '' OR @CpID = FreightRate_Ocean.CarrierID)
+
+			AND (@POL = '' OR FreightRate_Ocean.POL = @POL)
+
+			AND (@POD = '' OR FreightRate_Ocean.POD = @POD)
+
+			AND (@POR = '' OR FreightRate_Ocean.PlOfRcpt = @POR)
+
+			AND (@PlaceOfDeliv = '' OR FreightRate_Ocean.PlOfDeliv = @PlaceOfDeliv)
+
+			AND (@FreightFwdr = '' OR (@FreightFwdr = '(None)' AND RTRIM(ISNULL(FreightRate_Ocean.FreightFwdr,'')) = '') OR FreightRate_Ocean.FreightFwdr = @FreightFwdr)
+
+			AND (@POLCountryID = '' OR POL.CountryID = @POLCountryID)
+
+			AND (@PODCountryID = '' OR POD.CountryID = @PODCountryID)
+
+			--EXCLUDE EXPIRED
+
+			AND (@Expiration = '1/1/1900' 
+
+				OR ((@ExpirationType = 0 
+
+					AND 
+
+					(FreightRate_Ocean.ExpiryDate >= @Expiration 
+
+						OR FreightRate_Ocean.ExpiryDate = '' 
+
+						OR FreightRate_Ocean.ExpiryDate is null)) 
+
+				OR (@ExpirationType = 1 AND FreightRate_Ocean.ExpiryDate < @Expiration)))
+
+			AND (@ExpFromDt = '' 
+
+				OR ((FreightRate_Ocean.RateDate >= @ExpFromDt AND FreightRate_Ocean.RateDate <= @ExpToDt) 
+
+					OR FreightRate_Ocean.RateDate = '' OR FreightRate_Ocean.RateDate is null))))
+
+			--	OR ((FreightRate_Ocean.ExpiryDate >= @ExpFromDt AND FreightRate_Ocean.ExpiryDate <= @ExpToDt) 
+
+					--OR FreightRate_Ocean.ExpiryDate = '' OR FreightRate_Ocean.ExpiryDate is null))))
+
+		and @CountNewImport =0)
+
+		or
+
+	   (NewImport=1)
+
+
+
+	   declare @currExpenseID char(5)
+
+
+
+	   insert into #FreightRateExpense(ExpenseRate1,ExpenseRate1UOM,ExpenseVendor1,[-Hidden-Expense1RateID],ExpenseDescription1,rateid)	   
+
+			select
+
+				expense.Charge,
+
+				case when UOM ='' then 'Flat' when UOM ='M'  then 'MT' when UOM ='S' then 'ST' else 'CONTAINER' end,
+
+				vendor.CompanyNm,
+
+				expense.RateExpenseID,
+
+				expense.Description,
+
+				expense.RateID
+
+		    from #FreightRateExport dump 
+
+		    left join OceanFreightRate_Expense expense on dump.RateID = expense.rateid
+
+		    left join CounterParty vendor on expense.VendorID = vendor.CpID
+
+	   
+
+	   declare @expenseID char(10)
+
+	   set @expenseID = (select top 1 [-Hidden-Expense1RateID] from #FreightRateExpense)
+
+
+
+
+
+	   update #FreightRateExport 
+
+	   set ExpenseRate1 = e.ExpenseRate1,
+
+	   ExpenseRate1UOM = e.ExpenseRate1UOM,
+
+	   ExpenseVendor1 = e.ExpenseVendor1,
+
+	   [-Hidden-Expense1RateID] = e.[-Hidden-Expense1RateID],
+
+	   ExpenseDescription1 = e.ExpenseDescription1
+
+	   from #FreightRateExpense as e
+
+	   where e.rateid = #FreightRateExport.RateID
+
+
+
+
+
+	   delete from #FreightRateExpense where [-Hidden-Expense1RateID] in (Select [-Hidden-Expense1RateID] from #FreightRateExport)
+
+	    
+
+
+
+	   update #FreightRateExport 
+
+	   set ExpenseRate2 = e.ExpenseRate1,
+
+	   ExpenseRate2UOM = e.ExpenseRate1UOM,
+
+	   ExpenseVendor2 = e.ExpenseVendor1,
+
+	   [-Hidden-Expense2RateID] = e.[-Hidden-Expense1RateID],
+
+	   ExpenseDescription2 = e.ExpenseDescription1
+
+	   from #FreightRateExpense as e
+
+	   where e.rateid = #FreightRateExport.RateID
+
+
+
+	   select * from #FreightRateExport order by RateID asc
+
+
+
+end
+
+
+
+else begin
+
+
+
+
+
+
+
+
+
+	SELECT RateID, FreightRate_Ocean.CarrierID,
+
+	 Counterparty.CompanyNm as [Ocean Carrier],
+
+	 RateDate as [Date], 
+
+	 --convert(char(10),RateDate,101) as [Date], 
+
+	       POL as [POL],
+
+		   POD  as [POD],
+
+		   PlOfRcpt  as [PlOfRcpt],
+
+		   PlOfDeliv  as [PlOfDeliv],
+
+		     (isnull(POL,'') + case when isnull(CPol.Name,'') <>'' then  ', ' +  isnull(CPol.Name,'') else '' end) as [Port of Loading],
+
+		     (isnull(POD,'') + case when isnull(Cpod.Name,'') <>'' then  ', ' +    isnull(Cpod.Name,'')else '' end) as [Port of Discharge],
+
+		     (isnull(PlOfRcpt,'') + case when isnull(CPlOfRcpt.Name,'') <>'' then ', ' +  isnull(CPlOfRcpt.Name,'')else '' end) as [Place of Receipt],
+
+		     (isnull(PlOfDeliv,'') + case when isnull(CPlOfDeliv.Name,'') <>'' then ', ' +    isnull(CPlOfDeliv.Name,'')else '' end) as [Place of Delivery],
+
+		   ExpiryDate as [Expiry Date],
+
+		    Notes,
+
+			 Charge as [{C}Charge],
+
+			 ChargeCurCode,ReferenceNo as [Ref No],
+
+		   FreightFwdr,
+
+		  -- dbo.CnvUOM_Names(PerUOM) as [Per /],
+
+		  case when PerUOM ='' then 'FLAT' when PerUOM ='M'  then 'MT' when PerUOM ='S' then 'ST' else 'CONTAINER' end as [Per /],
+
+		  PerUOM as PerValue,
+
+		   isnull(FF.CompanyNm,'') as   [Freight Forwarder],
+
+		   isnull(FF.CompanyNm,'') as   [-hidden-Freight Forwarder],
+
+		   EqType as [Equip. Type],
+
+		   PortFreetime as [Port Freetime],
+
+		   CPol.Name as [POL Country],
+
+		   Cpod.Name as [POD Country],
+
+		   TransitTime as [Transit Time],
+
+		   FreightRate_Ocean.StickyNotes,
+
+		   (select count(*) from BookSheet where BookSheet.FreightRateID=FreightRate_Ocean.RateID) as '-hidden-NoAssigned',
+
+		   CounterParty.ActiveStatus as CPActive,
+
+		   isnull(ff.ActiveStatus,'') as FCPActive
+
+    FROM FreightRate_Ocean WITH(NOLOCK)
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON FreightRate_Ocean.CarrierID = Counterparty.CpID
+
+	LEFT JOIN Counterparty FF WITH(NOLOCK) ON FreightRate_Ocean.FreightFwdr = FF.CpID
+
+	LEFT JOIN Ports POL WITH(NOLOCK) ON POL.PortNm = FreightRate_Ocean.POL
+
+	LEFT JOIN Ports POD WITH(NOLOCK) ON POD.PortNm = FreightRate_Ocean.POD
+
+	LEFT JOIN Ports PlOfRcpt WITH(NOLOCK) ON PlOfRcpt.PortNm = FreightRate_Ocean.PlOfRcpt
+
+	LEFT JOIN Ports PlOfDeliv WITH(NOLOCK) ON PlOfDeliv.PortNm = FreightRate_Ocean.PlOfDeliv
+
+	left join Country CPol on CPol.CountryID = POL.CountryID
+
+	left join Country Cpod on Cpod.CountryID = POD.CountryID
+
+	left join Country CPlOfRcpt on CPlOfRcpt.CountryID = PlOfRcpt.CountryID
+
+	left join Country CPlOfDeliv on CPlOfDeliv.CountryID = PlOfDeliv.CountryID
+
+
+
+	WHERE (
+
+			(@RateID <> 0 and RateID = @RateID) OR ((@RateID = 0 and
+
+			(@CpID = '' OR @CpID = FreightRate_Ocean.CarrierID)
+
+			AND (@POL = '' OR FreightRate_Ocean.POL = @POL)
+
+			AND (@POD = '' OR FreightRate_Ocean.POD = @POD)
+
+			AND (@POR = '' OR FreightRate_Ocean.PlOfRcpt = @POR)
+
+			AND (@PlaceOfDeliv = '' OR FreightRate_Ocean.PlOfDeliv = @PlaceOfDeliv)
+
+			AND (@FreightFwdr = '' OR (@FreightFwdr = '(None)' AND RTRIM(ISNULL(FreightRate_Ocean.FreightFwdr,'')) = '') OR FreightRate_Ocean.FreightFwdr = @FreightFwdr)
+
+			AND (@POLCountryID = '' OR POL.CountryID = @POLCountryID)
+
+			AND (@PODCountryID = '' OR POD.CountryID = @PODCountryID)
+
+			--EXCLUDE EXPIRED
+
+			AND (@Expiration = '1/1/1900' 
+
+				OR ((@ExpirationType = 0 
+
+					AND 
+
+					(FreightRate_Ocean.ExpiryDate >= @Expiration 
+
+						OR FreightRate_Ocean.ExpiryDate = '' 
+
+						OR FreightRate_Ocean.ExpiryDate is null)) 
+
+				OR (@ExpirationType = 1 AND FreightRate_Ocean.ExpiryDate < @Expiration)))
+
+			AND (@ExpFromDt = '' 
+
+				OR ((FreightRate_Ocean.RateDate >= @ExpFromDt AND FreightRate_Ocean.RateDate <= @ExpToDt) 
+
+					OR FreightRate_Ocean.RateDate = '' OR FreightRate_Ocean.RateDate is null))))
+
+			--	OR ((FreightRate_Ocean.ExpiryDate >= @ExpFromDt AND FreightRate_Ocean.ExpiryDate <= @ExpToDt) 
+
+					--OR FreightRate_Ocean.ExpiryDate = '' OR FreightRate_Ocean.ExpiryDate is null))))
+
+		and @CountNewImport =0)
+
+		or
+
+	   (NewImport=1)
+
+
+
+
+
+	update FreightRate_Ocean
+
+	set NewImport = 0
+
+
+
+
+
+    SELECT e.RateID, VendorID, c.CompanyNm, GL.GLAcct, GL.Name, e.[Description], isnull(Charge,0) as Charge, CurrencyCd, UOM, e.[RateExpenseID]
+
+    FROM OceanFreightRate_Expense e WITH(NOLOCK)
+
+    INNER JOIN Counterparty c WITH(NOLOCK) ON e.VendorID = c.CpID
+
+    left JOIN GLAccount GL WITH(NOLOCK) ON e.GLAcct = GL.GLAcct
+
+	where e.RateID =@RateID
+
+		And (@FreightExpID = 0 Or e.[RateExpenseID] = @FreightExpID)
+
+
+
+
+
+end
+
+	--select * from ports
+
+	-- where portID = 'INLAND'
+
+
+
+	--		select * from Country
+
+	--		where CountryID = 'KR'
+
+
+
+	--select pol.CountryID ,C.CountryID,c.Name from	FreightRate_Ocean
+
+	--LEFT JOIN Ports POL WITH(NOLOCK) ON POL.PortNm = FreightRate_Ocean.POL
+
+	--inner join Country C on C.CountryID = POL.CountryID
+
+
+
+	--select * from	FreightRate_Ocean where RateID =13
+
+
+
+
+
+	--select * from	FreightRate_Ocean 
+
+	--select * from OceanFreightRate_Expense
+
+	--select * from GLAccount
+

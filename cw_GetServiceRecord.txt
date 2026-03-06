@@ -1,0 +1,246 @@
+CREATE   PROCEDURE [dbo].[cw_GetServiceRecord] @KeyNo int AS 
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+-- 06/26/2019 MN: CREATED
+
+-- 08/31/2020 Alex: Added CreateJobs
+
+-- 10/07/2020 Alex: Added TargetWeight,IsWeightOvercharge
+
+-- 10/14/2022 Nick: Added billsheetid
+
+-- 10/14/2022 MEC: Added dispatch job count
+
+-- 05/03/2023 Nick: Added ReasonCode, ReasonDescription
+
+-- 07/26/2023 DN: Added CPActive, LocationInactive, RCPActive, RLocationInactive
+
+
+
+	SELECT 
+
+		Account,
+
+		A.CompanyNm AS [AccountNm],
+
+		Location,
+
+		ServiceRecord.COID,
+
+		CompanyInfo.CompanyDesc AS [Dept],
+
+		Receiver,
+
+		R.CompanyNm AS [ReceiverNm],
+
+		ReceiverLocation,
+
+		EquipmentType,
+
+		EquipNo,
+
+		GR.GradeID, 
+
+		JobType,
+
+		[RequestedBy],
+
+		[DispatchNotes],
+
+		[InternalNotes],
+
+		[DispatchEmails],
+
+		[FrtCarrierID],
+
+		CAR.CompanyNm AS [CarrierNm],
+
+		SchdStartDt,
+
+		SchdExpirationDt,
+
+		Active,
+
+		ISNULL(dbo.xDoc_GetAddress(Account, ServiceRecord.[Location],0,0), '') AS [AccountAddr],
+
+		WeightPerYard,
+
+		SiteRef,
+
+		NoOfPickups,
+
+		JobTypeNm,
+
+		GR.[Description] As [GradeNm],
+
+		Disposition,
+
+		SchdExpires,
+
+
+
+		[SchdOccurs],
+
+		[SchdDailyInterval],
+
+		[SchdDailyIntervalFreq],
+
+		[SchdWeeklyInterval],
+
+		[SchdWeeklyMonday],
+
+		[SchdWeeklyTuesday],
+
+		[SchdWeeklyWednesday],
+
+		[SchdWeeklyThursday],
+
+		[SchdWeeklyFriday],
+
+		[SchdWeeklySaturday],
+
+		[SchdWeeklySunday],
+
+		[SchdMonthOpt],
+
+		[SchdMonthDay],
+
+		[SchdMonthInterval],
+
+		[SchdMonthOccur],
+
+		[SchdMonthDayNm],
+
+		[SchdMonthInterval2],
+
+
+
+		ServiceRecord.[Description],
+
+		ServiceRecord.CreateJobs,
+
+		ServiceRecord.Notes,
+
+		dbo.RemoveTrailingZeros(ServiceRecord.TargetWeight) as TargetWeight,
+
+		isnull(TargetWeightUOM,'') as TargetWeightUOM,
+
+		ISNULL(ServiceRecord.WarehouseID, '') AS WarehouseID,
+
+		ServiceRecord.UserDefined1,
+
+		ServiceRecord.UserDefined2
+
+		,UserID
+
+		,BinSensorID,
+
+		(select top 1 billsheetid from billsheetdetail where BillSheetDetail.serviceid = servicerecord.DispatchScheduleKey) as billsheetid,
+
+		(select Count(*) from DispatchJob where DispatchJob.ServiceID = servicerecord.DispatchScheduleKey) as DispatchCount
+
+		,TimesAWeek
+
+		,EquipmentCnt
+
+		,DispatchQuestionsToAsk,
+
+		ServiceRecord.ReasonCode,
+
+		ServiceRecord.ReasonDescription,
+
+		a.ActiveStatus as CPActive,
+
+		isnull(address.Inactive,0) as LocationInactive,
+
+		r.ActiveStatus as RCPActive,
+
+		isnull(RcvAddr.Inactive,0) as RLocationInactive
+
+	 FROM ServiceRecord 
+
+		LEFT JOIN CounterParty A ON A.CpID = ServiceRecord.Account
+
+		LEFT JOIN CounterParty R ON R.CpID = ServiceRecord.Receiver
+
+		--LEFT JOIN CounterParty CAR ON CAR.CpID = DispatchJob.CarrierID
+
+		LEFT JOIN CounterParty CAR ON CAR.CpID = FrtCarrierID
+
+		LEFT JOIN CompanyInfo ON CompanyInfo.COID = ServiceRecord.COID
+
+		LEFT JOIN JobType JT ON JT.JobID = ServiceRecord.JobType
+
+		LEFT JOIN Grade GR ON GR.GradeID = ServiceRecord.GradeID
+
+		left join address on ServiceRecord.Location = address.Type and ServiceRecord.Account = address.CpID
+
+		left join address RcvAddr with(nolock) on  ServiceRecord.ReceiverLocation = RcvAddr.Type and ServiceRecord.Receiver = RcvAddr.CpID
+
+		--LEFT JOIN CurrencyRate on CurrencyRate.CurCode = A.CurrCode and exchdate <= GETDATE()
+
+	WHERE DispatchScheduleKey = @KeyNo
+
+	
+
+	SELECT 
+
+		DSE_ID,
+
+		DispatchScheduleKey,
+
+		VendorID,
+
+		InvoiceDesc,
+
+		GLAcct,
+
+		GLAcct_Sales,
+
+		Price,
+
+		PriceUOM,
+
+		PriceCust,
+
+		PriceCustUOM,
+
+		IsRecurring,
+
+		IsTaxable,
+
+		InclFuelSurcharge,
+
+		AdvBilling,
+
+		Benchmark,
+
+		BenchmarkPer,
+
+		ForOnCallService,
+
+		FxCostAmount,
+
+		isnull(ServiceRecordExpense.IsWeightOvercharge,0) as IsWeightOvercharge,
+
+		GradeID
+
+	FROM ServiceRecordExpense
+
+	WHERE DispatchScheduleKey = @KeyNo
+
+	ORDER BY IsRecurring, InvoiceDesc, DSE_ID ASC
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,152 @@
+CREATE proc [dbo].[cw_GetConvertingJob] @JobNo varchar(10) as
+
+
+
+--cw_GetConvertingJob '2181'
+
+-- 6/21/2022 Nick: Added FoundStatus from ConvertingJob_Source
+
+-- 10/14/2022 Nick: Added UserDefined2
+
+--08/4/2023 DN: added CPActive
+
+
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+
+
+select jobno, LotDesc, a.GradeID, [weight], dbo.RemoveTrailingZeros(price) as price, PriceUOM, amount, [Description], units, UnitType, weightUOM, specstring, GrossWt, TareWt,basiswt, 
+
+basiswtuom, caliper, RollWd, RollWdUOM, color, diameter, DiameterUOM, CoreSize, CoreSizeUOM, a.LinearLen, LengthUOM, a.typegrade,a.form, a.meltindex,
+
+serialno, InvClass, WarehouseLocation, comments, condition, InventoryType, Bulk_Location, Bulk_InvClass, Bulk_Supplier, Bulk_Warehouse, BarcodeNo,
+
+a.UserDefined1 ,a.UserDefined2,a.UserDefined3,a.UserDefined4,a.UserDefined5,
+
+a.UserDefinedSecond1 ,a.UserDefinedSecond2,a.UserDefinedSecond3,a.UserDefinedSecond4,a.UserDefinedSecond5,
+
+a.UserDefinedThird1 ,a.UserDefinedThird2,a.UserDefinedThird3,a.UserDefinedThird4,a.UserDefinedThird5,a.SheetSize,a.SheetSizeUOM,a.Sheets,a.MWeight,a.FixedCost,
+
+a.UserDefinedFourth1 ,a.UserDefinedFourth2,a.UserDefinedFourth3,a.UserDefinedFourth4,a.UserDefinedFourth5,
+
+a.UserDefinedFourth6 ,a.UserDefinedFourth7,a.UserDefinedFourth8,a.UserDefinedFourth9,a.UserDefinedFourth10
+
+from ConvertingAllocation a
+
+left join grade on grade.GradeID = a.GradeID 
+
+where JobNo=@JobNo
+
+order by LotDesc asc
+
+
+
+select jobno, a.lotno, a.[Weight], a.[WeightUOM], a.units, dbo.RemoveTrailingZeros(a.UnitCost) as unitcost, a.UnitCostUOM, coalesce(inventory.gradeid, bulk_gradeid) as gradeid, ISNULL(inventory.UnitType, '') AS [UnitType], grade.[Description],UnitAmountCh
+ange Amount, 
+
+a.weightuom, a.[Weight] as OrigWt, inventory.OrigUnits as OrigUnits, InventoryType, InvClass, WarehouseLocation, 
+
+BalanceID, BarcodeNo, SerialNo,
+
+(select OutputUOM from convertingjob where jobno = @JobNo) as outputuom, inventory.QtyOnHand, Bulk_GradeID, Bulk_InvClass, Bulk_Location, Bulk_Supplier, Bulk_Warehouse, FoundStatus
+
+from ConvertingJob_Source a
+
+left join inventory on a.LotNo = inventory.LotNo
+
+left join grade on grade.gradeid = coalesce(inventory.gradeid, bulk_gradeid)
+
+where jobno = @JobNo
+
+
+
+select ID,JobNo,GLAcct,CpID,Amount,FxAmount,PriceUom,convert(float,Charge) as Charge,CurrencyCd,FxRate from ConvertingJob_Expenses where jobno = @JobNo
+
+
+
+
+
+select JobNo,BuySellNo,CoID,TradeType,[Description],JobDate,WarehouseNm,[Status],PostDt,isnull( Equipment,'') as Equipment ,OperatorNm,StartTime,EndTime,SupplierID,OutputUOM,Instructions, Disclaimer,
+
+UserID,Notes,WasteQty, convert( int,lastedit) AS LastEdit, IsNull(RefConvertingCpID,'') RefConvertingCpID, IsNull(RefCarrierCPID,'') RefCarrierCPID, DeliveryAddress, PickupAddress, WarehouseStatus, BuyRep,convertingjob.UserDefined1,convertingjob.UserDefin
+ed2,isnull(CounterParty.ActiveStatus,'') as CPActive
+
+from convertingjob
+
+left join CounterParty with(nolock) on ConvertingJob.SupplierID = CounterParty.CpID
+
+where jobno = @JobNo
+
+
+
+if exists(select buysellno from wksinventory where lotno in(select lotdesc from ConvertingAllocation where jobno=@JobNo)) 
+
+	select 1 InvSold
+
+else
+
+	select 0 InvSold
+
+
+
+
+
+if exists(select payableid from payables where buysellno='CJ-' + LTrim(RTrim(@JobNo)) and posted=1) 
+
+	select 1 SupplierPaid
+
+else
+
+	select 0 SupplierPaid
+
+
+
+
+
+if exists(select lotno from inventory where lotno in(select lotdesc from ConvertingAllocation where jobno=@JobNo and ConvertingAllocation.Amount <> inventory.invvalue))
+
+	select 1 InvExpAlloc
+
+else
+
+	select 0 InvExpAlloc
+
+
+
+if exists(select lotno from ConvertingJob_Source where lotno in(select lotdesc from ConvertingAllocation where jobno=@JobNo))
+
+	select 1 InvConv
+
+else
+
+	select 0 InvConv
+
+
+
+
+
+declare @PostDt datetime 
+
+select @postDt = postdt from convertingjob where jobno = @JobNo
+
+declare @OpenDt datetime
+
+select @opendt = openmonth from SystemInfo
+
+
+
+if @PostDt < @OpenDt 
+
+	select 1 IsClosed
+
+else 
+
+	select 0 isClosed
+
+
+
+
+

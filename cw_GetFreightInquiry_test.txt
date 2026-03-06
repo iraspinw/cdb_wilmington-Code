@@ -1,0 +1,660 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetFreightInquiry_test] @FromCity varchar(35), @FromRegion varchar(35), @FromRegionAbbr varchar(3), 
+
+											@ToCity varchar(35), @ToRegion varchar(35), @ToRegionAbbr varchar(3), 
+
+											@FromPostalCd varchar(15), @ToPostalCd varchar(15), 
+
+											@FilterCarrier char(12), @FromDate Datetime, @ToDate datetime, 
+
+											@DateType int,  @View int,
+
+											@FromCountry char(3) = '', @ToCountry char(3) = '' , @Checked char(3) ='', @isExport bit = 0
+
+											AS
+
+--7/24/2023 DN: added export for the import tool
+
+
+
+
+
+--cw_GetFreightInquiry '', '', '', '', '', '', '', '', '', '1/1/1900', '1/1/2900', 2,0
+
+
+
+--cw_GetFreightInquiry '', '', '', '', '', '', '', '', '', '1/1/1900', '1/1/2900', 1,2
+
+
+
+--cw_GetFreightInquiry '', '', '', '', '', '', '', '', '', '11/02/2018', '1/1/2900', 2,0,'','',0
+
+--where itemID = 14678
+
+
+
+--cw_GetFreightInquiry_test '', '', '', '', '', '', '', '', '', '11/02/2020', '1/1/2900', 1,0,'','',0,1		--import export tool code.
+
+
+
+Create Table #FREIGHTRATES(
+
+	BuySellNo CHAR(25),
+
+	ShipDate DATETIME,
+
+	CompanyNm VARCHAR(65),	
+
+	ShipFromCity VARCHAR(50),
+
+	ShipFromRegion VARCHAR(35),
+
+	ShipFromZip VARCHAR(15),
+
+	ShipToCity VARCHAR(50),
+
+	ShipToRegion VARCHAR(35),
+
+	ShipToZip VARCHAR(15),
+
+	Contact VARCHAR(30),
+
+	VoiceNo VARCHAR(30),
+
+	Cost MONEY,
+
+	GLAcct VARCHAR(12),
+
+	Mileage INT,
+
+	SalesAmt MONEY,
+
+	pSupplierCost MONEY,
+
+	GrossProfit MONEY,
+
+	Tonnage Decimal(22,5),
+
+	Price MONEY,
+
+	PricePer CHAR(10),
+
+	Notes VARCHAR(100),
+
+	ExpiryDate DATETIME,
+
+	Instructions VARCHAR(255),
+
+	CurrencyCd CHAR(3),
+
+	ShipFromType VARCHAR(100),
+
+	ShipTOType VARCHAR(100),
+
+	FromCountryID CHAR(35),
+
+	TOCountryID CHAR(35),
+
+	EqType VARCHAR(30),
+
+	BaseWtPerMile varchar(30),
+
+	SurchargeWtPerMile varchar(30),
+
+	Refrence varchar(30),
+
+	FreightRateID varchar(30),
+
+	CpID varchar(30),
+
+	Rate decimal(18,10),
+
+	OldOrNew bit , --0 = old and 1 = new
+
+	ItemID int
+
+	)
+
+	
+
+
+
+Begin
+
+
+
+if @isExport = 1 begin		--import/export tool
+
+	select
+
+		c.CompanyNm as [Freight Carrier],
+
+		r.Reference as [Reference],
+
+		cast(r.RateDate as datetime) as [Effective Date],
+
+		cast(r.ExpiryDate as datetime) as [Expiry Date],
+
+		r.FromCity as [Pickup City],
+
+		Rpickup.Name as [Pickup Region],
+
+		cast(FromPostalCd as char(10)) as [Pickup Postal],
+
+		CPickup.Name as [Pickup Country],
+
+		r.ToCity as [Deliver City],
+
+		RDeliver.Name as [Deliver Region],
+
+		cast(r.ToPostalCd as char(10)) as [Deliver Postal],
+
+		CDeliver.Name as [Deliver Country],
+
+		r.EqType as [Equip Type],
+
+		r.Mileage as [Mileage],
+
+		r.BaseWtPerMile as [Base Rate],
+
+		r.SurchargeWtPerMile as [Surcharge],
+
+		r.CurrencyCd as [Currency],
+
+		r.Amount as [Amount],
+
+		r.Instructions as [Instruction],
+
+		r.FreightRateID as [Rate ID]
+
+	from FreightRate R
+
+	left join CounterParty C on r.CpID = c.CpID 
+
+	left join region RPickup on r.FromRegion = Rpickup.RegionAbbr
+
+	left join region RDeliver on r.ToRegion = RDeliver.RegionAbbr
+
+	left join country Cpickup on r.FromCountryID = Cpickup.CountryID
+
+	left join country CDeliver on r.ToCountryID = CDeliver.CountryID
+
+	where
+
+	  (@FilterCarrier = '' OR @FilterCarrier = r.CpID )
+
+	  and (r.RateDate >= @FromDate AND r.RateDate <= @ToDate)
+
+        AND
+
+        (		
+
+			( 
+
+				(
+
+					(@FromRegion <> '' OR @FromCity <> '' OR @ToRegion <> '' OR @ToCity <> '' OR @FromCountry <> '' OR @ToCountry <> '' )
+
+					AND (@FromRegion = '' OR lower(r.FromRegion) Like @FromRegion + '%')
+
+					AND (@FromCity= '' OR lower(r.FromCity) Like @FromCity + '%' )
+
+					AND (@ToRegion = '' OR lower(r.ToRegion) Like @ToRegion + '%')
+
+					AND (@ToCity = '' OR lower(r.ToCity) Like @ToCity + '%') 
+
+					AND (@FromCountry = '' OR lower(r.FromCountryID) Like RTRIM(@FromCountry) + '%')
+
+					AND (@ToCountry = '' OR lower(r.ToCountryID) Like RTRIM(@ToCountry) + '%')
+
+				)
+
+			)
+
+			OR
+
+            ( 
+
+				((@FromPostalCd <> '' OR @ToPostalCd <> '') AND r.FromPostalCd <> '' )
+
+				AND ((r.FromPostalCd Like substring(@FromPostalCd,1,5) + '%' ))
+
+				AND ((r.ToPostalCd Like substring(@ToPostalCd,1,5) + '%'))
+
+			)
+
+			OR
+
+			(
+
+				(@FromPostalCd = '' AND @ToPostalCd = '' AND @FromRegion='' AND @FromCity='' AND @ToRegion='' AND @ToCity='' AND @FromCountry='' AND @ToCountry = '')
+
+			)
+
+        )
+
+end
+
+else begin
+
+	
+
+
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	--if(@NewOrOldOrAll='1' or @NewOrOldOrAll='2')
+
+	--begin
+
+	
+
+        --(TRANSACTION ACTIVITY)
+
+        INSERT #FREIGHTRATES
+
+        Select         
+
+			WksDelivery.BuySellNo, 
+
+			ShippingDt As Ship_Date, 
+
+			CompanyNm,   			      
+
+			CASE RTRIM(ISNULL(ShipFrom.City,'')) WHEN '' THEN ShipFromA.City ELSE ShipFrom.City END AS ShipFromCity, 
+
+			CASE RTRIM(ISNULL(ShipFrom.Region,'')) WHEN '' THEN ShipFromA.Region ELSE ShipFrom.Region END AS ShipFromRegion, 
+
+			CASE RTRIM(ISNULL(ShipFrom.PostalCd,'')) WHEN '' THEN ShipFromA.PostalCd ELSE ShipFrom.PostalCd END AS ShipFromZip,  
+
+			CASE RTRIM(ISNULL(ShipTo.City,'')) WHEN '' THEN ShipToA.City ELSE ShipTo.City END AS ShipToCity, 
+
+			CASE RTRIM(ISNULL(ShipTo.Region,'')) WHEN '' THEN ShipToA.Region ELSE ShipTo.Region END AS ShipToRegion, 
+
+			CASE RTRIM(ISNULL(ShipTo.PostalCd,'')) WHEN '' THEN ShipToA.PostalCd ELSE ShipTo.PostalCd END  AS ShipToZip, 	        
+
+			address.ContactX,address.TelephoneX as VoiceNo, 
+
+			WksDelivery.Cost, wksDelivery.GLAcct, WksDelivery.Mileage, SalesAmt, pSupplierCost, SalesAmt+SFreightChg-PSupplierCost-PFreightChg AS GrossProfit,
+
+			(BuySell.TotalWeightLbs /2000) AS Tonnage, 
+
+			Price, 
+
+			PricePer, 
+
+			'' AS Notes, 
+
+			NULL AS ExpiryDate, 
+
+			'' AS Instructions, 
+
+			WksDelivery.CurrencyCd, 
+
+			ShipFrom.Type as ShipFromType,ShipTo.Type as ShipToType,
+
+			--'' as FromCountryID,'' as ToCountryID,
+
+			CASE RTRIM(ISNULL(ShipFrom.Country,'')) WHEN '' THEN ShipFromA.Country ELSE ShipFrom.Country END AS FromCountryID, 
+
+			CASE RTRIM(ISNULL(ShipTo.Country,'')) WHEN '' THEN ShipToA.Country ELSE ShipTo.Country END  AS ToCountryID, 
+
+			'' as EqType,
+
+			0,0, '','',WksDelivery.VendorID,1,0,WksDelivery.ItemID
+
+        from (((((WksDelivery WITH(NOLOCK) 
+
+			inner JOIN BuySell WITH(NOLOCK)  ON WksDelivery.BuySellNo = BuySell.buySellno)
+
+			inner join counterparty WITH(NOLOCK) ON WksDelivery.vendorID = Counterparty.cpid
+
+			inner join address WITH(NOLOCK) on counterparty.cpid = address.cpid and address.invoiceaddr = 'Y')
+
+			INNER JOIN [ADDRESS] ShipTo WITH(NOLOCK) ON BuySell.ShipToID = ShipTo.[Type] AND BuySell.CustID = ShipTo.CpID)
+
+			INNER JOIN [ADDRESS] ShipFrom WITH(NOLOCK) ON BuySell.ShipFromID = ShipFrom.Type AND BuySell.VendorID = ShipFrom.CpID
+
+			LEFT JOIN [ADDRESS] ShipToA WITH(NOLOCK) ON ShipToA.CpID = ShipTo.WarehouseID AND ShipToA.InvoiceAddr = 'Y'
+
+			LEFT JOIN [ADDRESS] ShipFromA WITH(NOLOCK) ON ShipFromA.CpID = ShipFrom.WarehouseID AND ShipFromA.InvoiceAddr = 'Y'        
+
+			INNER JOIN GLAccount WITH(NOLOCK) ON GLAccount.GlAcct = wksDelivery.GLAcct AND CAT = 'FREIGHT'))
+
+        WHERE 
+
+        --@UseCurrentRatesOnly <> 1
+
+       -- AND
+
+        (@FilterCarrier = '' OR @FilterCarrier = WksDelivery.VendorID)
+
+        AND
+
+        (		
+
+			( 
+
+				(
+
+					(@FromRegion <> '' OR @FromCity <> '' OR @ToRegion <> '' OR @ToCity <> '' OR @FromCountry <> '' OR @ToCountry <> '' )
+
+					--AND (@FromRegion = '' OR lower(ShipFrom.Region) Like @FromRegion + '%' OR lower(ShipFrom.Region) = @FromRegionAbbr OR lower(ShipFromA.Region) Like @FromRegion + '%' OR lower(ShipFromA.Region) = @FromRegionAbbr)
+
+					AND (@FromRegion = '' OR lower(ShipFrom.Region) Like @FromRegion + '%'  OR lower(ShipFromA.Region) Like @FromRegion + '%')-- OR lower(ShipFromA.Region) = @FromRegionAbbr)
+
+					AND (@FromCity= '' OR lower(ShipFrom.City) Like @FromCity + '%' OR lower(ShipFromA.City) Like @FromCity + '%' )
+
+					--AND (@ToRegion = '' OR lower(ShipTo.Region) Like @ToRegion + '%' OR lower(ShipTo.Region) = @ToRegionAbbr OR lower(ShipToA.Region) Like @ToRegion + '%' OR lower(ShipToA.Region) = @ToRegionAbbr)
+
+					AND (@ToRegion = '' OR lower(ShipTo.Region) Like @ToRegion + '%'  OR lower(ShipToA.Region) Like @ToRegion + '%')-- OR lower(ShipToA.Region) = @ToRegionAbbr)
+
+					AND (@ToCity = '' OR lower(ShipTo.City) Like @ToCity + '%' OR lower(ShipToA.City) Like @ToCity + '%') 
+
+					AND (@FromCountry = '' OR lower(ShipFrom.Country) Like RTRIM(@FromCountry) + '%' OR lower(ShipFromA.Country) Like RTRIM(@FromCountry) + '%')
+
+					AND (@ToCountry = '' OR lower(ShipTo.Country) Like RTRIM(@ToCountry) + '%' OR lower(ShipToA.Country) Like RTRIM(@ToCountry) + '%')
+
+				)
+
+			)
+
+			OR
+
+            ( 
+
+				((@FromPostalCd <> '' OR @ToPostalCd <> '') AND ShipFrom.PostalCd <> '' )
+
+				AND ((ShipFrom.PostalCd Like substring(@FromPostalCd,1,5) + '%' ) OR (ShipFromA.PostalCd Like substring(@FromPostalCd,1,5) + '%' ))
+
+				AND ((ShipTo.PostalCd Like substring(@ToPostalCd,1,5) + '%') OR (ShipToA.PostalCd Like substring(@ToPostalCd,1,5) + '%'))
+
+			)
+
+			OR
+
+			(
+
+				(@FromPostalCd = '' AND @ToPostalCd = '' AND @FromRegion='' AND @FromCity='' AND @ToRegion='' AND @ToCity='' AND @FromCountry='' AND @ToCountry = '')
+
+			)
+
+        )
+
+        AND 
+
+        (
+
+		(@DateType=2
+
+		or
+
+            (@DateType = 1 AND (BuySell.ShippingDt >= @FromDate AND BuySell.ShippingDt <= @ToDate))
+
+            OR (@DateType = 0 AND (BuySell.InvoiceDt >= @FromDate AND BuySell.InvoiceDt <= @ToDate)) )
+
+        )
+
+       AND (@View = 1 OR @View = 2)
+
+        AND Price <> 0 
+
+        
+
+--end
+
+
+
+
+
+--if(@NewOrOldOrAll='0' or @NewOrOldOrAll='2')
+
+--begin
+
+
+
+
+
+        --(FREIGHT RATES)       
+
+       INSERT #FREIGHTRATES
+
+			Select 
+
+				'FRT' + convert(varchar(20),FreightRateID), 
+
+				RateDate, 
+
+				CompanyNm, 								
+
+				FromCity AS ShipFromCity, 
+
+				FromRegion AS ShipFromRegion, 
+
+				FromPostalCd AS ShipFromZip,  
+
+				ToCity AS ShipToCity, 
+
+				ToRegion AS ShipToRegion, 
+
+				ToPostalCd  AS ShipToZip, 
+
+				address.ContactX,address.TelephoneX as VoiceNo, 
+
+				FreightRate.Amount, 
+
+				'', 
+
+				Mileage, 
+
+				0, 
+
+				0, 
+
+				0 AS GrossProfit,
+
+				0 as Tonnage, 
+
+				FreightRate.Amount as Price,
+
+				'FLAT' as PricePer, 
+
+				'' AS Notes, 
+
+				ExpiryDate, 
+
+				FreightRate.Instructions, 
+
+				CurrencyCd,
+
+				'',
+
+				'',
+
+				FromCountryID, 
+
+				ToCountryID,EqType,
+
+				BaseWtPerMile,
+
+				SurchargeWtPerMile,
+
+				Reference,
+
+				FreightRateID,
+
+				FreightRate.CpID,
+
+				ISNULL((select TOP 1 FxRate from currencyrate WHERE CurCode =  FreightRate.CurrencyCd ORDER BY ExchDate DESC),1),
+
+				1,0
+
+        FROM FreightRate WITH(NOLOCK)
+
+			inner join counterparty WITH(NOLOCK) ON FreightRate.CpID = Counterparty.cpid
+
+			inner join address WITH(NOLOCK) on counterparty.cpid = address.cpid and address.invoiceaddr = 'Y'
+
+        WHERE 
+
+        (@FilterCarrier = '' OR @FilterCarrier = FreightRate.CpID)
+
+        AND
+
+        (		
+
+            (
+
+				((@FromRegion <> '' OR @FromCity <> '' OR @ToRegion <> '' OR @ToCity <> '') AND (FromCity <> '' OR ToCity <> ''))
+
+				AND (@FromRegion = '' OR lower(FromRegion) Like @FromRegion + '%') --OR lower(FromRegion) = @FromRegionAbbr)
+
+				AND (@FromCity= '' OR (lower(FromCity) Like @FromCity + '%') OR (lower(FromRegion) Like @FromCity + '%' AND RateType = 'O') )  --Support POR Ocean Rate search
+
+				AND (@ToRegion = '' OR lower(ToRegion) Like @ToRegion + '%' )--OR lower(ToRegion) = @ToRegionAbbr)
+
+				AND (@ToCity = '' OR (lower(ToCity) Like @ToCity + '%') OR (lower(ToRegion) Like @ToCity + '%' AND RateType = 'O') )  --Support Place Of Delivery Ocean Rate search
+
+			)        
+
+	        OR
+
+	        ( 
+
+				((@FromPostalCd <> '' OR @ToPostalCd <> '') AND FromPostalCd <> '' )
+
+			    AND (FromPostalCd Like substring(@FromPostalCd,1,5) + '%')
+
+				AND (ToPostalCd Like substring(@ToPostalCd,1,5) + '%')
+
+			)
+
+	        OR
+
+            (
+
+				(@FromPostalCd = '' AND @ToPostalCd = '' AND @FromRegion='' AND @FromCity='' AND @ToRegion='' AND @ToCity='')
+
+			)        
+
+		) 
+
+		AND
+
+        (
+
+		(@Checked='1'        -------all day ckeck box(returns  all dates when =@Checked='1)
+
+		or (@Checked='0' and (ExpiryDate >= @FromDate or ExpiryDate IS NULL))                     -------When @Checked='0' then   Return and date range of days and null(not expired rates). Usage: add rate as expenses  in Trade.Aspx
+
+		or
+
+			((@DateType = 1 AND (RateDate >= @FromDate AND RateDate <= @ToDate ))
+
+			OR (@DateType = 2 AND ((ExpiryDate >= @FromDate AND ExpiryDate <= @ToDate)))
+
+			OR @DateType = 0))
+
+		)     
+
+		AND (@View = 0 OR @View = 2)
+
+        AND (@FromCountry = '' OR @FromCountry = FromCountryID)
+
+        AND (@ToCountry = '' OR @ToCountry = ToCountryID)
+
+    --end
+
+	--SELECT * FROM #FREIGHTRATES ORDER BY ShipDate DESC
+
+
+
+	SELECT ISNULL(ShipDate,'') as 'Effective Date',
+
+	CompanyNm as 'Carrier',
+
+	CAST(Price AS DECIMAL(18,2)) as '{C}Price',
+
+	PricePer as 'Basis',
+
+	Cost as '{C}Extension',
+
+	ShipFromCity as 'PU CITY',
+
+	ShipFromRegion as 'PU Region',
+
+	ShipFromZip as 'PU Zip',
+
+	ShipToCity as 'DEL City',
+
+	ShipToRegion as 'DEL Region',
+
+	ShipToZip as 'DEL Zip',
+
+	Mileage,
+
+	VoiceNo as 'Phone',
+
+	Contact,
+
+	Notes,
+
+	ExpiryDate as 'Expiration', 
+
+	Instructions,
+
+	FromCountryID as 'PU Ctry',
+
+	TOCountryID as 'DEL Ctry',
+
+	EqType as 'Equip Type',
+
+	BuySellNo as 'Wks NO',
+
+	--BaseWtPerMile as '{C}Base Rate Per Mile',
+
+	--SurchargeWtPerMile as '{C}Surcharge Per Mile',
+
+	CAST(BaseWtPerMile AS DECIMAL(18,2)) as '{C}Base Rate Per Mile',
+
+    CAST(SurchargeWtPerMile AS DECIMAL(18,2)) as '{C}Surcharge Per Mile',
+
+	Refrence ,
+
+	FreightRateID,
+
+	CurrencyCd,
+
+	CpID,
+
+	Rate,
+
+	OldOrNew,
+
+	BuySellNo,
+
+	ItemID
+
+ 
+
+	FROM #FREIGHTRATES   ORDER BY ShipDate DESC
+
+	
+
+End
+
+
+
+end
+
+--select * from WksDelivery
+
+
+

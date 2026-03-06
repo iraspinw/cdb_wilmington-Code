@@ -1,0 +1,27 @@
+create PROCEDURE [dbo].[cw_GetCounterpartyLocation] @CpID char(12), @AddrType char(45) AS
+
+SET NOCOUNT ON
+
+--03/24/2010 MCM: Created
+
+--05/16/2011 MCM: Added Directions, LoadingHours and SpcInstruc
+
+--06/23/2011 MCM: Added Email
+
+
+
+	SELECT [Address].Addr1, [Address].Addr2, [Address].Addr3, City, Region, PostalCd, Country.Name, [Address].Contact, [Address].Telephone, 
+
+	Country.CountryID, [Address].Fax, [Address].Directions, [Address].LoadingHours, [Address].SpcInstruc, [Address].Email
+
+	FROM [Address] WITH (NOLOCK) 
+
+	INNER JOIN Counterparty WITH (NOLOCK) ON [Address].CpID = Counterparty.CpID 
+
+	LEFT JOIN COUNTRY WITH (NOLOCK) ON [Address].Country = COuntry.CountryID  
+
+	WHERE [Address].CpID = @CpID AND [Type] = @AddrType
+
+
+
+--q_GetCounterpartyLocation 'BACK', 'LANE AVENUE'

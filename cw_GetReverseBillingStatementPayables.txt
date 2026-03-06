@@ -1,0 +1,332 @@
+CREATE PROC [dbo].[cw_GetReverseBillingStatementPayables] 
+
+
+
+	@ReverseBatchNo int,
+
+	@TopCount int = -1
+
+
+
+--12/09/2019 MEC: Created for cieTrade.net Reverse Billing Postings
+
+--05/31/2032 MEC: Added -1 to ByPass Top selection 
+
+
+
+AS
+
+
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+
+
+
+
+Create Table #Accounts
+
+(
+
+	CpID char(12),
+
+	ReverseBatchNo int
+
+)
+
+
+
+If @TopCount = -1 BEGIN
+
+	Insert #Accounts (CpID, ReverseBatchNo)
+
+	(Select distinct CpID, ReverseBatchNo From ReverseBillingStatement Where ReverseBatchNo = @ReverseBatchNo)
+
+END
+
+ELSE BEGIN
+
+	Insert #Accounts (CpID, ReverseBatchNo)
+
+	(Select distinct top (@TopCount) CpID, ReverseBatchNo From ReverseBillingStatement Where ReverseBatchNo = @ReverseBatchNo)
+
+END
+
+
+
+CREATE TABLE #PayablesTemp
+
+(
+
+	CPID			CHAR(12),
+
+	CurrCode		CHAR(3),
+
+	BuySellNo 		CHAR(12),
+
+	PostingDt		DATETIME,
+
+	Posted			BIT,
+
+	FxAmount		MONEY,
+
+	HcAmount		MONEY,
+
+	APBatchNo		varchar(15),
+
+	PayableID		int,
+
+	ItemSource		char(1),
+
+	TranType		varchar(10),
+
+	WksType			char(1),
+
+	PostType		char(2)
+
+)
+
+
+
+
+
+INSERT #PayablesTemp
+
+SELECT	
+
+	Payables.CPID,
+
+	Payables.CurrencyCd,
+
+	Payables.BuySellNo,
+
+	Payables.InvoiceDt,
+
+	Payables.Posted,
+
+	Payables.FxAmount,
+
+	Payables.Amount,
+
+	Payables.APBatchNo,
+
+	Payables.PayableID,
+
+	Payables.ItemIDSource,
+
+	'Pur',
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END,
+
+	PostType
+
+FROM Payables 
+
+	Inner Join #Accounts on Payables.CpID = #Accounts.CpID 
+
+	INNER JOIN BuySell ON BuySell.BuySellNo = Payables.BuySellNo
+
+	LEFT JOIN ReverseBillingStatement RBS ON RBS.ReverseBatchNo = Payables.ReverseBatchNo And RBS.CpID = Payables.CpID
+
+where Payables.ReverseBatchNo = @ReverseBatchNo AND IsNull(Payables.APBatchNo,'') = '' 
+
+	AND ItemIDSource = 'S'
+
+Order By CpID, PayableID
+
+
+
+INSERT #PayablesTemp
+
+SELECT	
+
+	Payables.CPID,
+
+	Payables.CurrencyCd,
+
+	Payables.BuySellNo,
+
+	Payables.InvoiceDt,
+
+	Payables.Posted,
+
+	Payables.FxAmount,
+
+	Payables.Amount,
+
+	Payables.APBatchNo,
+
+	Payables.PayableID,
+
+	Payables.ItemIDSource,
+
+	'Exp',
+
+	CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END,
+
+	PostType
+
+FROM Payables 
+
+	Inner Join #Accounts on Payables.CpID = #Accounts.CpID 
+
+	INNER JOIN BuySell ON BuySell.BuySellNo = Payables.BuySellNo
+
+	LEFT JOIN ReverseBillingStatement RBS ON RBS.ReverseBatchNo = Payables.ReverseBatchNo And RBS.CpID = Payables.CpID
+
+where Payables.ReverseBatchNo = @ReverseBatchNo AND IsNull(Payables.APBatchNo,'') = '' 
+
+	AND ItemIDSource = 'D'
+
+Order By CpID, PayableID
+
+
+
+INSERT #PayablesTemp
+
+SELECT	
+
+	Payables.CPID,
+
+	Payables.CurrencyCd,
+
+	Payables.BuySellNo,
+
+	Payables.InvoiceDt,
+
+	Payables.Posted,
+
+	Payables.FxAmount,
+
+	Payables.Amount,
+
+	Payables.APBatchNo,
+
+	Payables.PayableID,
+
+	Payables.ItemIDSource,
+
+	'Exp-Alloc',
+
+	'E',
+
+	PostType
+
+FROM Payables 
+
+	Inner Join #Accounts on Payables.CpID = #Accounts.CpID
+
+	LEFT JOIN ReverseBillingStatement RBS ON RBS.ReverseBatchNo = Payables.ReverseBatchNo And RBS.CpID = Payables.CpID
+
+where Payables.ReverseBatchNo = @ReverseBatchNo AND IsNull(Payables.APBatchNo,'') = '' 
+
+	AND ItemIDSource = 'E'
+
+Order By CpID, PayableID
+
+
+
+INSERT #PayablesTemp
+
+SELECT	
+
+	Payables.CPID,
+
+	Payables.CurrencyCd,
+
+	Payables.BuySellNo,
+
+	Payables.InvoiceDt,
+
+	Payables.Posted,
+
+	Payables.FxAmount,
+
+	Payables.Amount,
+
+	Payables.APBatchNo,
+
+	Payables.PayableID,
+
+	Payables.ItemIDSource,
+
+	'Convert',
+
+	'C',
+
+	PostType
+
+FROM Payables 
+
+	Inner Join #Accounts on Payables.CpID = #Accounts.CpID
+
+	LEFT JOIN ReverseBillingStatement RBS ON RBS.ReverseBatchNo = Payables.ReverseBatchNo And RBS.CpID = Payables.CpID 
+
+where Payables.ReverseBatchNo = @ReverseBatchNo AND IsNull(Payables.APBatchNo,'') = ''
+
+	AND ItemIDSource = 'C'
+
+Order By CpID, PayableID
+
+
+
+
+
+
+
+
+
+INSERT #PayablesTemp
+
+Select 
+
+	GPLedger.AdjCpID,
+
+	GPLedger.AdjCurrencyCd,
+
+	GPLedger.BuySellNo,
+
+	GPLedger.AdjPostDt,
+
+	Case When IsNull(GPLedger.AdjPosted,'') = 'P' Then 1 Else 0 End,
+
+	GPLedger.AdjFxAmount,
+
+	GPLedger.Cost,
+
+	GPLedger.APBatchNo,
+
+	GPLedger.LedgerID,
+
+	GPLedger.[Source],
+
+	'Adj',
+
+	'',
+
+	PostType
+
+from GPLedger 
+
+	Inner Join #Accounts on GPLedger.AdjCpID = #Accounts.CpID 
+
+	inner join payables on payables.ItemID = GPLedger.LedgerID
+
+	LEFT JOIN ReverseBillingStatement RBS ON RBS.ReverseBatchNo = Payables.ReverseBatchNo And RBS.CpID = GPLedger.AdjCpID
+
+where GPLedger.ReverseBatchNo = @ReverseBatchNo AND IsNull(GPLedger.APBatchNo,'') = '' 
+
+Order By AdjCpID, LedgerID
+
+
+
+Select * from #PayablesTemp Order By CPID, ItemSource
+
+
+
+Drop Table #PayablesTemp
+
+Drop Table #Accounts
+

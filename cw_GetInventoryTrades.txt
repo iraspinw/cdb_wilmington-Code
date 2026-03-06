@@ -1,0 +1,140 @@
+CREATE  Procedure [dbo].[cw_GetInventoryTrades] @LotNo char(25) AS
+
+SET NOCOUNT ON
+
+--10/19/2005 (dsh): Fixed "get converting..' for changes on when converting job pulls inventory.
+
+--02/26/2006 DSH: Changed "Get Sales Tx" section to show sales worksheet invoice date.
+
+--2/8/2007 BM: Added IsReturned, ReturnDate, ReturnBuySell, ReturnWt, ReturnWtUOM
+
+--04/01/2009 RS: wksInvValue,ReturnInvValue,UnitAmountChange added
+
+--09/09/2010 RS: WITH(NOLOCK) added
+
+--02/18/2016 MEC: Copied for cieTrade.net
+
+--10/11/2016 DSH Rewritten to support COnverting Job Depletions
+
+--03/28/2023 DN: converting tanid on invnetory adjustments to varchar
+
+
+
+
+
+	-- GET SALES TRANSACTIONS.
+
+	SELECT	convert(varchar, WksInventory.BuySellNo) ReferenceNo, 
+
+			'SALE' [Action],
+
+			CompanyNm as Customer, 
+
+			BuySell.InvoiceDt as [Date], 
+
+			WksInventory.[Weight], 
+
+			WksInventory.UOM, 
+
+			WksInventory.Units, 
+
+			wksInventory.wksInvValue as Value		
+
+		FROM WksInventory WITH(NOLOCK) 
+
+		INNER JOIN BuySell WITH(NOLOCK) ON WksInventory.BuySellNo = BuySell.BuySellNo
+
+		INNER JOIN COUNTERPARTY WITH(NOLOCK) ON CounterParty.CpID = BuySell.CustID
+
+		LEFT JOIN Inventory I WITH(NOLOCK) ON WksInventory.ReturnedAsLotNo = I.LotNo
+
+		WHERE WksInventory.LotNo = @LotNo 
+
+
+
+	-- GET CONVERTING JOBS.
+
+	UNION ALL 
+
+	SELECT  
+
+		convert(varchar, ConvertingJob.buysellno) ReferenceNo,
+
+		'CONV' [Action],
+
+		warehousenm As Customer,						
+
+		PostDt As [Date], 		
+
+		ConvertingJob_Source.[Weight], 
+
+		ConvertingJob_Source.WeightUOM,
+
+		ConvertingJob_Source.Units,
+
+		UnitAmountChange as Value
+
+	FROM ConvertingJob WITH(NOLOCK) INNER JOIN ConvertingJob_Source WITH(NOLOCK) ON ConvertingJob.JobNO = ConvertingJob_Source.JobNo
+
+	WHERE ConvertingJob_Source.LotNo = @LotNo 
+
+
+
+	-- INVENTORY WRITE-OFFS
+
+	UNION ALL 
+
+	SELECT  
+
+		convert(varchar, LedgerID) ReferenceNo,
+
+		'ADJ' [Action],
+
+		'Adjustment',						
+
+		TradeDt, 		
+
+		AdjWeight, 
+
+		AdjWeightUOM WeightUOM,
+
+		'',
+
+		GrossProfit
+
+	FROM GPLedger
+
+	Where LotNo = @LotNo 
+
+
+
+
+
+	--INVENTORY ADJUSTMENTS
+
+	UNION ALL 
+
+	SELECT  
+
+		convert(varchar,TranID) ReferenceNo,
+
+		'WTADJ' [Action],
+
+		'Adjustment',						
+
+		AdjDate, 		
+
+		WeightAdjust, 
+
+		WeightUOM,
+
+		'',
+
+		0
+
+	FROM Inventoryadjustment
+
+	inner join inventory on inventory.LotNo = inventoryadjustment.lotno
+
+	Where Inventoryadjustment.LotNo = @LotNo 
+

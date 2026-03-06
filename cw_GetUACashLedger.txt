@@ -1,0 +1,288 @@
+CREATE   PROCEDURE [dbo].[cw_GetUACashLedger] @FromDt datetime, @ToDt datetime, @CustID char(12), @CurrencyCd char(3), @GLAcct char(12), @COID char(2), @OmitZero bit, @InclReversal bit,  @ReportType varchar(12) = '' AS
+
+-- 05/16/2008 JW+RS: created
+
+-- 06/16/2008 DSH Corrected mixup with include reversals
+
+--06/26/2008 DSH (UAC-Bank Fee Prj): Added support for Bank Fees.
+
+--07/03/2008 DSH Corrected column list ( removed bank fee - not needed by report)
+
+--11/03/2008 DSH Changed 1.) to gather cash applications by Payment (posting) Date -- Not data entry date.
+
+--11/04/2008 DSH Fixed exclude zero balance filter on "as of" report option.
+
+--02/03/2009 RS: @OmitZero would be looking at FxBalance instead of Balance for the ASOF report
+
+--09/10/2009 DSH: Added CurrGainLoss to applications to correctly balance.
+
+--11/15/2011 DSH Removed reversed tranactions from unapplied cash as of report.
+
+--11/01/2012 DSH Corrected handling of UAC UNDOs with as of reporting
+
+--02/07/2014 DSH Correction on as of report for double-undos
+
+SET NOCOUNT ON	
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+--cw_GetUACashLedger '09/17/2018', '09/17/2018', '', '', '', '', 0, 0, ''
+
+
+
+CREATE Table #wrkUnappliedCash(
+
+		CompanyNm char(65), 
+
+        OriginalAmount Money,             
+
+        Balance Money, 
+
+        EntryDt Datetime, 
+
+        CheckNo varchar(15), 
+
+        Reference varchar(12),  
+
+		CurrencyCd CHAR(3), 
+
+        FxAmount Money,            
+
+        FxBalance Money, 
+
+        CompanyDesc char(50), 
+
+        Reversed bit
+
+    )
+
+            
+
+
+
+	-- UNAPPLIED CASH AS OF REPORT.	
+
+	---------------------------------------
+
+	IF rtrim(@ReportType) = 'BYASOFDATE' BEGIN
+
+		
+
+		--A.) GET UAC APPLICATIONS.
+
+		CREATE TABLE #AppliedUAC(LedgerID int, Balance money, FxBalance money)
+
+		INSERT INTO #AppliedUAC
+
+		SELECT LedgerID, sum(Amount+ISNULL(CurrGainLoss,0)) as Balance, sum(FxAmount) as FxBalance
+
+		FROM Receipt WITH(NOLOCK)
+
+		WHERE PostingType = 'UAC' AND PaymentDt <= @FromDt	--1.)
+
+		GROUP BY LedgerID
+
+
+
+
+
+		--B.) GET UAC UNDOS
+
+		CREATE TABLE #UndoUAC(LedgerID INT,Balance MONEY,FxBalance MONEY)
+
+		INSERT #UndoUAC
+
+		SELECT 
+
+			Reversed_LedgerID,
+
+			sum(OriginalAmount),
+
+			sum(FXAmount)
+
+		FROM UACashLedger 
+
+        WHERE (@CustID = '' OR @CustID = CustID)
+
+		AND (@CurrencyCd = '' OR @CurrencyCd = UACashLedger.CurrencyCd)
+
+		AND (@GLAcct = '' OR @GLAcct = UACashLedger.GLAcct)
+
+		AND (@COID = '' OR @COID = UACashLedger.COID)		
+
+		AND Reversed= 1 AND OriginalAmount < 0 
+
+		AND EntryDt <= @FromDt	
+
+		GROUP BY Reversed_LedgerID
+
+		
+
+
+
+
+
+		INSERT #wrkUnappliedCash
+
+		SELECT 
+
+			Counterparty.CompanyNm, 
+
+            OriginalAmount,             
+
+            (OriginalAmount - isnull(#AppliedUAC.Balance,0)) + isnull(#UndoUAC.Balance,0)  AS Balance, 
+
+            EntryDt, 
+
+            CheckNo, 
+
+            Reference, 
+
+		    CurrencyCd, 
+
+            FxAmount,            
+
+            (FxAmount - isnull(#AppliedUAC.FxBalance,0)) + isnull(#UndoUAC.FxBalance,0)   AS FxBalance, 
+
+            CompanyInfo.CompanyDesc, 
+
+            Reversed 
+
+            
+
+		FROM UACashLedger WITH(NOLOCK)
+
+		INNER JOIN Counterparty WITH(NOLOCK) ON UACashLedger.CustID = Counterparty.CpID
+
+		INNER JOIN CompanyInfo WITH(NOLOCK) ON UACashLedger.COID = CompanyInfo .COID
+
+		LEFT JOIN #AppliedUAC WITH(NOLOCK) ON UACashLedger.LedgerID = #AppliedUAC.LedgerID
+
+		LEFT JOIN #UndoUAC WITH(NOLOCK) ON UACashLedger.LedgerID = #UndoUAC.LedgerID
+
+		WHERE EntryDt <= @FromDt	
+
+        AND (@CustID = '' OR @CustID = Counterparty.CpID)
+
+		AND (@CurrencyCd = '' OR @CurrencyCd = UACashLedger.CurrencyCd)
+
+		AND (@GLAcct = '' OR @GLAcct = UACashLedger.GLAcct)
+
+		AND (@COID = '' OR @COID = UACashLedger.COID)				
+
+        AND ((( round((FxAmount - isnull(#AppliedUAC.FxBalance,0) + isnull(#UndoUAC.FxBalance,0)),2)     > 0 OR round( (FxAmount - isnull(#AppliedUAC.FxBalance,0) + isnull(#UndoUAC.FxBalance,0)  ),2) <-.5)))
+
+		AND (UACashLedger.Reversed = 0 OR (UACashLedger.Reversed = 1 AND SUBSTRING(Reference,1,4) <> 'UNDO')) 
+
+
+
+
+
+
+
+		--DELETE FROM #wrkUnappliedCash WHERE FxBalance = 0 OR Reversed = 1
+
+
+
+		SELECT 	
+
+            CompanyNm AS [Customer], 
+
+            OriginalAmount AS [{HC} Deposit Amount], 
+
+            Balance AS [{HC} Current Balance], 
+
+            EntryDt AS [Date Received], 
+
+            CheckNo AS [Payment No], 
+
+			Reference,  
+
+			CurrencyCd, 
+
+			FxAmount,            
+
+			FxBalance, 
+
+			CompanyDesc, 
+
+			Reversed 
+
+		FROM #wrkUnappliedCash ORDER BY EntryDt
+
+
+
+
+
+    END
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	-- CURRENT UNAPPLIED CASH TRANSACTIONS REPORT.		
+
+	----------------------------------------------
+
+	ELSE
+
+		SELECT 
+
+            Counterparty.CompanyNm AS [Customer], 
+
+            OriginalAmount AS [{HC} Deposit Amount], 
+
+            Balance AS [{HC} Current Balance], 
+
+            EntryDt AS [Date Received], 
+
+            CheckNo AS [Payment No], 
+
+            Reference, 
+
+		    CurrencyCd, 
+
+            FxAmount,             
+
+            FxBalance, 
+
+            CompanyInfo.CompanyDesc AS [Dept], 
+
+            Reversed 
+
+		FROM UACashLedger WITH(NOLOCK)
+
+		INNER JOIN Counterparty WITH(NOLOCK) ON UACashLedger.CustID = Counterparty.CpID
+
+		INNER JOIN CompanyInfo WITH(NOLOCK) ON UACashLedger.COID = CompanyInfo .COID
+
+		WHERE (@CustID = '' OR @CustID = Counterparty.CpID)
+
+		AND(@FromDt = '' OR EntryDt >= @FromDt)
+
+		AND(@ToDt = '' OR EntryDt <= @ToDt)
+
+		AND (@CurrencyCd = '' OR @CurrencyCd = UACashLedger.CurrencyCd)
+
+		AND (@GLAcct = '' OR @GLAcct = UACashLedger.GLAcct)
+
+		AND (@COID = '' OR @COID = UACashLedger.COID)
+
+		AND (@OmitZero = 0 OR (@OmitZero = 1 AND (round(UACashLedger.Balance,2) > 0 OR round(UACashLedger.Balance,2) <-.5))) 
+
+		AND (@InclReversal = 1 OR (@InclReversal = 0 AND (UACashLedger.Reversed <> 1 OR UACashLedger.Reversed IS NULL)))
+
+		ORDER BY EntryDt
+
+
+
+
+

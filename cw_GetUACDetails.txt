@@ -1,0 +1,14 @@
+CREATE proc [dbo].[cw_GetUACDetails] @LedgerID int as
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+
+
+select entrydt, fxamount, OriginalAmount, CurrencyCd, CheckNo, GLAcct, Arbatchno, CustID, BankFees, FxBankfees, Balance, FxRate
+
+from UACashLedger
+
+where ledgerid = @LedgerID
+

@@ -1,0 +1,18 @@
+CREATE   PROCEDURE [dbo].[cw_GetSetting] 
+
+	@UserID char(10),
+
+	@SettingName varchar(100)
+
+AS
+
+--02/09/2016 MCM: Created
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT SettingValue FROM cwSettings WHERE UserID = @UserID And SettingName = @SettingName
+

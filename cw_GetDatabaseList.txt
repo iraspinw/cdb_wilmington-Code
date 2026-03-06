@@ -1,0 +1,13 @@
+CREATE proc [dbo].[cw_GetDatabaseList] as
+
+set nocount on
+
+
+
+--select name dbnm from master.dbo.sysdatabases
+
+--WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb', 'aspnetdb', 'ReportServer','ReportServerTempDB', 'xdocback')
+
+
+
+select 'cieTradeNET' as dbnm

@@ -1,0 +1,11 @@
+CREATE proc cw_GetActiveDocuments as
+
+select DocFormID, xdocform.[description], xdocform.formid, inactive from xDocForm 
+
+inner join xdocmaster on xdocform.formid = xdocmaster.formid
+
+where isnull(inactive,0) <> 1
+
+and (FormSource = 'W' or formsource ='L')
+
+order by [description]

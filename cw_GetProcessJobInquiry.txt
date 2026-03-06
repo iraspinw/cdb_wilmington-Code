@@ -1,0 +1,154 @@
+CREATE PROC [dbo].[cw_GetProcessJobInquiry] 
+
+	@BuySellNo char(12), 
+
+	@FromDt datetime, 
+
+	@ToDt Datetime,
+
+	@WhseStatus varchar(300) = '', 
+
+	@WarehouseID CHAR(45) = '',
+
+	@Machine varchar(64) = '',
+
+	@EngOrSp char(5) = 'en-US'
+
+AS
+
+
+
+--03/31/2017 MEC: Created
+
+-- cw_GetProcessJobInquiry '', '', '', ''
+
+
+
+/*
+
+Statuses:
+
+	SCHEDULED
+
+	OPEN
+
+	CLOSED
+
+*/
+
+
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	CREATE TABLE #ProcessJobs(
+
+		ProcessJobNo CHAR(12),
+
+		ShippingDt DATE,
+
+		Customer VARCHAR(100),
+
+		DeliveryTo CHAR(200),
+
+		OrderNo CHAR(15),
+
+		FreightCarrier VARCHAR(100),
+
+		EquipmentNo VARCHAR(25),
+
+		ShipFromWarehouse VARCHAR(100),
+
+		SalesRep VARCHAR(50),
+
+		WarehouseStatus VARCHAR(10),
+
+		Machine varchar(45)
+
+	)
+
+
+
+
+
+	INSERT #ProcessJobs	
+
+	SELECT		
+
+		CJ.JobNo, 
+
+		CJ.JobDate,
+
+		UPPER(C.CompanyNm),
+
+		DeliveryAddress,
+
+		BuySell.RefSONo,
+
+		ISNULL((SELECT CompanyNm FROM Counterparty WHERE CPID = CJ.RefCarrierCpID),''),
+
+		Equipment As [Equipment Number],
+
+		WarehouseNm,
+
+		UserDef.UserNm,
+
+		CJ.WarehouseStatus,
+
+		CJ.Equipment
+
+	FROM ConvertingJob CJ
+
+		LEFT JOIN Counterparty C ON CJ.RefConvertingCpID = C.CpID
+
+		LEFT JOIN UserDef ON UserDef.UserID = OperatorNm
+
+		LEFT JOIN BuySell ON CJ.BuySellNo = BuySell.BuySellNo
+
+	WHERE 
+
+		CJ.[Status] <> 'I' --And ((SELECT IsNull(SUM(IsNull([Weight],0)),0) FROM ConvertingJob_Source CS WHERE CS.JobNo = CJ.JobNo) = 0)
+
+		AND ((@WhseStatus = '' AND CJ.WarehouseStatus IN ('SCHEDULED','IN PROCESS','COMPLETED')) OR (@WhseStatus = CJ.WarehouseStatus))
+
+		AND ((@FromDt = '' OR CJ.JobDate >= @FromDt) AND (@ToDt = '' OR CJ.JobDate <= @ToDt)) AND IsNull(CJ.WarehouseStatus, '') <> ''
+
+		AND (@Machine = '' OR @Machine = CJ.Equipment)
+
+		AND (@WarehouseID ='' OR @WarehouseID = CJ.WarehouseNm)
+
+
+
+	
+
+		SELECT DISTINCT
+
+			ProcessJobNo As [Process-Job#],
+
+			ShippingDt As [Shipping-Date],
+
+			Customer,
+
+			DeliveryTo As [Delivery-To],
+
+			FreightCarrier As Carrier,
+
+			EquipmentNo As [Equipment No],
+
+			ShipFromWarehouse As [Ship From Whse],
+
+			SalesRep As [Sales Rep],
+
+			WarehouseStatus As [Warehouse-Status],
+
+			[Machine]
+
+		FROM #ProcessJobs Order By ShippingDt
+

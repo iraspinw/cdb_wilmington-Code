@@ -1,0 +1,70 @@
+CREATE   PROCEDURE [dbo].[cw_GetWksProductQty] 
+
+	@WhseID varchar(45),
+
+	@CpID varchar(12),
+
+	@WhseStatus varchar(15) = '',
+
+	@IsRcv bit = 0
+
+
+
+-- 03/28/2017 MEC - Created to use for Packing Slip Sales Wks Lookup
+
+-- 06/06/2017 MEC - Added @IsRcv filter for Receiving Wks Lookup
+
+
+
+-- cw_GetWksProductQty '', '', '', 1
+
+
+
+  AS
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+
+
+	SELECT
+
+		BuySell.BuySellNo,
+
+		BuySell.ShippingDt ,
+
+		Cust.CompanyNm Customer,
+
+		Vend.CompanyNm Supplier,
+
+		IsNull((Select Top 1 Grade.[Description] From Grade WITH(NOLOCK) INNER JOIN WksDetail WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID Where WksDetail.BuySellNo = BuySell.BuySellNo), '') As [Description],
+
+		ShipToID ShipTo,
+
+		BuySell.ShipFromID [Warehouse]
+
+	FROM
+
+	Buysell WITH(NOLOCK) 
+
+	INNER JOIN Counterparty Cust WITH(NOLOCK) ON Cust.CpID = BuySell.CustID
+
+	INNER JOIN Counterparty Vend WITH(NOLOCK) ON Vend.CpID = BuySell.VendorID
+
+	WHERE
+
+	(@IsRcv=0 And Upper(BuySell.VendorID) = '(INV)' OR @IsRcv=1 And Upper(BuySell.CustID) = '(INV)') 
+
+	AND BuySell.[Status] = 'W' 
+
+	AND (@CpID = '' OR @CpID = BuySell.CustID) 
+
+	AND (@WhseID = '' OR @WhseID = BuySell.ShipFromID) 
+
+	AND (@WhseStatus = '' OR (@WhseStatus = 'SCHEDULED' And BuySell.WarehouseStatus in ('SCHEDULED', 'IN PROCESS')))
+

@@ -1,0 +1,170 @@
+CREATE PROC [dbo].[cw_GetPublicTradeInquiry]
+
+	@FromDt datetime = '',
+
+	@ToDt datetime = '', 
+
+	@Status char(9) = '',
+
+	@PTCustID int = 0, 
+
+	@WarehouseID char(45) = '',
+
+	@GradeID char(15) = '', 
+
+	@TagNo varchar(12) = '', 
+
+	@TagState varchar(35) = '', 
+
+	@VehicleMake varchar(20) = '', 
+
+	@VehicleModel varchar(20) = '', 
+
+	@PaymentStatus varchar(6) = ''
+
+AS
+
+--03/12/2011 MCM: Created for Public Trading
+
+--03/28/2011 MCM: Added ReceiveDt
+
+--05/23/2013 MCM: Added PublicTrade.Status, PublicTradeDetail.[Paid],PublicTradeDetail.[PaidDt],PublicTradeDetail.[PaidUser] and PublicTradeDetail.[BuySellNo]
+
+--					Removed PublicTrade.BuySellNo and PublicTrade.Paid
+
+--07/26/2017 MCM: ATMAdjustment
+
+--09/08/2017 DSH Renamed AND added fields for Public Trade POS
+
+--11/20/2017 DSH Added Customer Inactive Flag
+
+--01/15/2018 DSH Added Cash Paid column to help identify ATM payments in code.
+
+--07/12/2019 DSH Added Void status
+
+SET NOCOUNT ON
+
+
+
+	SELECT 
+
+		CAST([PublicTradeDetail].TradeID AS varchar(10)) AS [Ticket No]
+
+		,[PublicTradeDetail].[DetailID]
+
+		,[CompanyInfo].[CompanyDesc] AS [Dept]
+
+		,[PublicTrade].TradeType AS [Trade Type]
+
+		,[PublicTrade].WarehouseID AS [Warehouse]
+
+		,[PublicTrade].[ReceiveDt] AS [Purchase Date]
+
+		,[PublicTradeCustomer].[LastName] As [Last Name]
+
+		,[PublicTradeCustomer].[FirstName] As [First Name]
+
+		,[PublicTradeCustomer].[Company] As [Company]
+
+		,[Grade].[Description] As [Product]
+
+		,dbo.GetPublicTradePOSStatus([PublicTrade].[Status]) AS [Status]
+
+		,[NetWt] AS [Net Weight]
+
+		,[PublicTradeDetail].[WtUOM]
+
+		,[SalesAmount] AS [Price Extension]
+
+		,[UserDef].[UserNm] AS [Operator]
+
+
+
+		,[PublicTrade].[TagNo] AS [Tag No]
+
+		,[PublicTrade].[TagState] AS [Tag State]
+
+		,[PublicTrade].[VehicleMake] As [Make]
+
+		,[PublicTrade].[VehicleModel] AS [Model]
+
+		,(CASE WHEN COALESCE([PublicTradeDetail].[Paid],0)=1 THEN 'PAID' ELSE 'OPEN' END) AS [Paid-Status] 
+
+		,(SELECT Count(CD.CDBatchNo) AS [Batch Count] FROM  CashDisbursements CD inner join CashDisbursementDetails CDD on CDD.CDID  = CD.CDID inner join Payables P on P.PayableID = CDD.PayableID OR P.Reversed_PayableID = CDD.PayableID inner join BuySell B on P
+.BuySellNo = B.BuySellNo left join PublicTrade PT on B.PublicTradeID = PT.TradeID where PT.TradeID = PublicTrade.TradeID)  AS [BatchCount]
+
+	FROM [PublicTradeDetail] WITH(NOLOCK)
+
+		INNER JOIN [Grade] WITH(NOLOCK) ON [Grade].[GradeID] = [PublicTradeDetail].[GradeID]
+
+		INNER JOIN [PublicTrade] WITH(NOLOCK) ON [PublicTrade].[TradeID] = [PublicTradeDetail].[TradeID]
+
+		INNER JOIN PublicTradeCustomer ON PublicTrade.PTCustID =  PublicTradeCustomer.PTCustID
+
+		INNER JOIN publicpricelist ON PublicTradeCustomer.PLID = publicpricelist.PLID 
+
+		INNER JOIN CompanyInfo ON CompanyInfo.COID = PublicTrade.COID
+
+		LEFT JOIN UserDef ON UserDef.UserID = PublicTrade.UserID
+
+	WHERE (@Status = '' OR [Status] = @Status)
+
+		AND (@FromDt = '' OR [PublicTrade].[ReceiveDt] >= @FromDt)
+
+		AND (@ToDt = '' OR [PublicTrade].[ReceiveDt] <= @ToDt)
+
+		AND (@PTCustID = '' OR @PTCustID = [PublicTrade].[PTCustID])
+
+		AND (@WarehouseID = '' OR @WarehouseID = [PublicTrade].[WarehouseID])
+
+		AND (@GradeID = '' OR @GradeID = [PublicTradeDetail].[GradeID])
+
+
+
+		AND (@TagNo = '' OR [PublicTrade].[TagNo] LIKE '%' + @TagNo + '%')
+
+		AND (@TagState = '' OR [PublicTrade].[TagState] LIKE '%' + @TagState + '%')
+
+		AND (@VehicleMake = '' OR [PublicTrade].[VehicleMake] LIKE '%' + @VehicleMake + '%')
+
+		AND (@VehicleModel = '' OR [PublicTrade].[VehicleModel] LIKE '%' + @VehicleModel + '%' )
+
+		AND (@PaymentStatus = '' OR ((@PaymentStatus = 'Paid' AND (SELECT Count(CD.CDBatchNo) AS [Batch Count] FROM  CashDisbursements CD inner join CashDisbursementDetails CDD on CDD.CDID  = CD.CDID inner join Payables P on P.PayableID = CDD.PayableID OR P.Rev
+ersed_PayableID = CDD.PayableID inner join BuySell B on P.BuySellNo = B.BuySellNo left join PublicTrade PT on B.PublicTradeID = PT.TradeID where PT.TradeID = PublicTrade.TradeID) > 0) OR ((@PaymentStatus = 'Open' OR @PaymentStatus = 'Unpaid') AND  (SELECT
+ Count(CD.CDBatchNo) AS [Batch Count] FROM  CashDisbursements CD inner join CashDisbursementDetails CDD on CDD.CDID  = CD.CDID inner join Payables P on P.PayableID = CDD.PayableID OR P.Reversed_PayableID = CDD.PayableID inner join BuySell B on P.BuySellNo
+ = B.BuySellNo left join PublicTrade PT on B.PublicTradeID = PT.TradeID where PT.TradeID = PublicTrade.TradeID) = 0)))
+
+		 --((@PaymentStatus = 'Paid' AND COALESCE([PublicTradeDetail].[Paid],0)=1) OR ((@PaymentStatus = 'Open' OR @PaymentStatus = 'Unpaid') AND COALESCE([PublicTradeDetail].[Paid],0)=0)))
+
+		 
+
+
+
+		 
+
+
+
+	--SELECT  
+
+	--	--Count(CashDisbursements.CDBatchNo) AS [Batch Count]
+
+	--	CD.CDBatchNo
+
+	--	,CDD.CDID
+
+	--	,PT.TradeID
+
+	--FROM  CashDisbursements CD
+
+	--inner join CashDisbursementDetails CDD on CDD.CDID  = CD.CDID
+
+	--inner join Payables P on P.PayableID = CDD.PayableID OR P.Reversed_PayableID = CDD.PayableID
+
+	--inner join BuySell B on P.BuySellNo = B.BuySellNo
+
+	--left join PublicTrade PT on B.PublicTradeID = PT.TradeID
+
+	--where PT.TradeID = PublicTrade.TradeID
+
+
+

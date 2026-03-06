@@ -1,0 +1,5 @@
+create proc [dbo].[cw_GetMachines] as
+
+ set transaction isolation level read uncommitted
+
+ select equipmentnm from ConvertingEquipment

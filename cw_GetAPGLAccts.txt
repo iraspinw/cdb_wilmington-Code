@@ -1,0 +1,30 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetAPGLAccts]
+
+AS
+
+BEGIN
+
+--08/31/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	DECLARE @APAcct varchar(12), @APAccrualAcct varchar(12)
+
+
+
+	SELECT TOP 1 @APAcct = GLAcct FROM GLAccount WHERE Cat = 'A/P'
+
+    SELECT TOP 1 @APAccrualAcct = GLAcct FROM GLAccount WHERE Cat = 'A/P ACCRUAL'
+
+
+
+	SELECT @APAcct APAcct, @APAccrualAcct APAccrualAcct
+
+END
+

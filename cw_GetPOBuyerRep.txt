@@ -1,0 +1,22 @@
+CREATE PROC [dbo].[cw_GetPOBuyerRep] 
+
+	@PONumber CHAR(15) 
+
+
+
+AS
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SET NOCOUNT ON;
+
+
+
+
+
+select Top 1 ReferrerNo from POSalesReps INNER JOIN PO ON PO.POID = POSalesReps.POID where PONumber = @PONumber
+
+
+

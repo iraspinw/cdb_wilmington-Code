@@ -1,0 +1,20 @@
+
+
+Create  procedure [dbo].[cw_GetCurrCode] @CpID char(12) as 
+
+--08/31/2015 Alex: Created For Ocean Rate
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+    Select  CurrCode 
+
+
+
+    from CounterParty WITH(NOLOCK)     
+
+    where counterparty.CpID = @CpID
+

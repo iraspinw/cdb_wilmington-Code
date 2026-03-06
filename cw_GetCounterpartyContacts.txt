@@ -1,0 +1,34 @@
+CREATE   PROCEDURE [dbo].[cw_GetCounterpartyContacts] 
+
+
+
+AS
+
+
+
+-- Created 02/23/2017 MN: for Counterparty export contacts
+
+
+
+SET NOCOUNT ON 
+
+
+
+select C.CompanyNm As [Company Name], TYPE Location, Contact.ContactNm As [Contact], Contact.Email 
+
+     from address a inner join counterparty C ON a.cpid = c.cpid
+
+	 INNER JOIN Contact ON Contact.CpID = a.CpID AND Contact.Location = a.Type
+
+     where SUBSTRING(C.CompanyNm,1,1) <> '('
+
+     order by C.CompanyNm
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,30 @@
+CREATE  procedure [dbo].[cw_GetBWCpExpAC] @CpID char(12), @COID char(2) ='00' as 
+
+--08/31/2015 MCM: Added ReferenceID
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+    Select GLAcctSupplier, GLAcctExpense, GLAccount.Name, CurrCode , isnull(FxRate, 1.00), 
+
+	AccountingID AcctingIDVendor, isnull(convert(int,isFreight),0) as isFreight
+
+    from CounterParty WITH(NOLOCK)     
+
+	left JOIN AccountingVendor on AccountingVendor.cpid = counterparty.cpid and (@COID = '' or accountingvendor.coid = @coid)
+
+	LEFT JOIN GLAccount WITH(NOLOCK) ON Counterparty.GLAcctExpense = GLAccount.GLAcct
+
+	left join CurrencyRate on CurrencyRate.CurCode = (select top 1 CurCode from CurrencyRate where CounterParty.CurrCode = CurrencyRate.CurCode order by ExchDate desc)
+
+    where counterparty.CpID = @CpID
+
+	
+
+	order by ExchDate desc
+
+
+

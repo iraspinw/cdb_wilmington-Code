@@ -1,0 +1,16 @@
+create proc [dbo].[cw_GetDisctinctAcctDepts] as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+select distinct acctcompany, '00' as coid into #AcctDept from AccountingCompany
+
+update #AcctDept set #acctdept.coid = AccountingCompany.COID from AccountingCompany where #AcctDept.AcctCompany = AccountingCompany.AcctCompany
+
+select coid from #AcctDept
+
+drop table #acctdept
+

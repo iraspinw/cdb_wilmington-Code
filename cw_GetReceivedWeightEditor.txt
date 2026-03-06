@@ -1,0 +1,114 @@
+CREATE PROC [dbo].[cw_GetReceivedWeightEditor] 
+
+@FromDt datetime, 
+
+@ToDt datetime, 
+
+@CoID char(2), 
+
+@CustID varchar(15),
+
+@VendorID varchar(15)
+
+as
+
+
+
+--9/2/2021 Alex: Created
+
+
+
+-- [dbo].[cw_GetReceivedWeightEditor] 
+
+
+
+ Declare @OpenMonth as date
+
+ SELECT @OpenMonth=OpenMonth FROM SYSTEMINFO WITH (NOLOCK) WHERE ID = '00'
+
+
+
+
+
+
+
+ select 
+
+ WKSDetail.BuySellno, count(*)   as[ counter]
+
+ INTO #temporatyTable
+
+ from WKSDetail 
+
+ inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo
+
+ group by WKSDetail.BuySellno
+
+ having count(*)=1
+
+ 
+
+
+
+ select WKSDetail.BuySellNo as [wks#],
+
+ ShipToID as Warehouse, 
+
+ CounterParty.CompanyNm as [Supplier Name],
+
+ ShipFromID as Location,
+
+ dbo.FormatQty(WKSDetail.PWeight,WKSDetail.PWeightUOM) as  Weight,
+
+ dbo.CnvUOM_Names( WKSDetail.PWeightUOM) as [WT UOM],
+
+ --cast(FORMAT(WKSDetail.PPrice,'0.##') as varchar(50)) +'/'+ dbo.CnvUOM_Names(WKSDetail.SPriceUOM) as [Price],
+
+ WKSDetail.PPrice as [{C}Price],
+
+ dbo.CnvUOM_Names(WKSDetail.SPriceUOM) as [Price UOM],
+
+ PAmount as [{C}Extension],
+
+ WKSDetail.DetailID,
+
+ 'R' as type,
+
+ case when rtrim(WKSDetail.InvoiceDesc)='' then grade.Description else rtrim(WKSDetail.InvoiceDesc) end Product
+
+  from WKSDetail 
+
+ inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo
+
+ inner join CounterParty on CounterParty.CpID = BuySell.VendorID
+
+ inner join grade on grade.GradeID = WKSDetail.GradeID
+
+ inner join  #temporatyTable on WKSDetail.BuySellNo=#temporatyTable.BuySellNo
+
+ where CustID = '(INV)' 
+
+     and status in ('C','I') 
+
+	 and BuySell.ShippingDt > @OpenMonth 
+
+	 and isnull(PublicTradeID,0)=0
+
+	 and (select count(*) from inventory where [Weight] <> QtyOnHand and buysellno = WKSDetail.BuySellNo)=0
+
+	 AND (BuySell.ShippingDt >= @FromDt And BuySell.ShippingDt <= @ToDt)
+
+	 AND (BuySell.CoID = @CoID or @CoID = '')
+
+	 AND (BuySell.CustID = @CustID or @CustID = '')
+
+	 AND (BuySell.VendorID = @VendorID or @VendorID = '')
+
+	 AND InventoryType = 'SERIAL'
+
+order by BuySell.ShippingDt
+
+
+
+
+

@@ -1,0 +1,36 @@
+CREATE Procedure [dbo].[cw_GetCustomReports] 
+
+	
+
+	@ServerNm varchar(100),
+
+	@DBNm varchar(50),
+
+	@UserID varchar(50)
+
+
+
+AS
+
+
+
+--08/26/2014 MEC: Created for cieTrade.net for Custom Reports
+
+
+
+	SELECT Rpts.RptID, Rpts.RptNm, Rpts.RptURL, Svr.ServerAddr FROM 
+
+		[CIE-SQLPROD01].[cieXChange].[dbo].[Reports] Rpts 
+
+		INNER JOIN [CIE-SQLPROD01].[cieXChange].[dbo].[Server] Svr ON Rpts.ServerID = Svr.ServerID
+
+	WHERE
+
+		Svr.ServerAddr = @ServerNm
+
+		And Rpts.DatabaseName = @DBNm
+
+	Order By Rpts.RptNm
+
+
+

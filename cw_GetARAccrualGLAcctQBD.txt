@@ -1,0 +1,22 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetARAccrualGLAcctQBD]
+
+AS
+
+BEGIN
+
+--08/31/2015 BF: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT TOP 1 GLAcct, name FROM GLAccount WHERE Cat = 'A/R ACCRUAL'
+
+	SELECT TOP 1 GLAcct, name FROM GLAccount WHERE Cat = 'A/R'
+
+END
+

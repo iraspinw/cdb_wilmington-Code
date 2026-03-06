@@ -1,0 +1,22 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetUserAccountingToken] @cieTradeUID varchar(10)
+
+AS
+
+BEGIN
+
+--09/21/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT TOP 1 AcctToken, AcctSecret, AcctCompany FROM UserDef WHERE UserID = @cieTradeUID
+
+		
+
+END
+

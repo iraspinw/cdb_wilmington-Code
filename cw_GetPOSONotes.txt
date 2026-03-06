@@ -1,0 +1,46 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetPOSONotes]
+
+	@BuySellNo char(12)
+
+AS
+
+BEGIN
+
+
+
+--06/01/2020 MEC: Created
+
+
+
+--cw_GetPOSONotes '502955'
+
+
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+	SET NOCOUNT ON
+
+
+
+    SELECT 
+
+		IsNull(PO.Notes,'') As PONotes,
+
+		IsNull(SO.Notes,'') As SONotes
+
+	FROM 
+
+		BuySell
+
+		LEFT JOIN PO WITH(NOLOCK) ON RefPONo = PO.PONumber
+
+		LEFT JOIN PO SO WITH(NOLOCK) ON RefSONo = SO.PONumber
+
+	WHERE 
+
+		BuySellNo = @BuySellNo
+
+END
+

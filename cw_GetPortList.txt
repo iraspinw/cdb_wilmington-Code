@@ -1,0 +1,22 @@
+CREATE   PROCEDURE [dbo].[cw_GetPortList] AS
+
+--01/14/2013 MCM: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT PortNm,P.CountryID,PortID,InttraCityCode,PortNote,C.Name As [CountryName]
+
+	FROM [Ports] P WITH(NOLOCK)
+
+	LEFT JOIN Country C WITH(NOLOCK) ON P.CountryID = C.CountryID
+
+		ORDER BY PortNm
+
+
+

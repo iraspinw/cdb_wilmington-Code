@@ -1,0 +1,28 @@
+CREATE PROC [dbo].[cw_GetOrderManagementAccounts] AS
+
+SET NOCOUNT ON
+
+
+
+	SELECT 
+
+		Distinct Counterparty.CpID, CompanyNm As AccountName
+
+	FROM 
+
+		Counterparty WITH (NOLOCK) 
+
+		INNER JOIN PO  WITH (NOLOCK) ON Counterparty.CPID = PO.CPID  
+
+	WHERE 
+
+		Counterparty.CPID <> '(INV)' AND 
+
+		Counterparty.CPID <> '(PLANT)' AND 
+
+		Counterparty.CPID <> '{C}' 
+
+	ORDER BY CompanyNm
+
+	
+

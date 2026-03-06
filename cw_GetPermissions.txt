@@ -1,0 +1,30 @@
+create PROC [dbo].[cw_GetPermissions] @ID varchar(10), @ProfileType char(1) = 'U'
+
+AS
+
+SET NOCOUNT ON
+
+--6/1/2007 BM: Created
+
+
+
+	IF @ProfileType = 'G'
+
+		SELECT Permission, Value
+
+		FROM GroupPermissions
+
+		WHERE GroupID = @ID
+
+		ORDER BY Permission
+
+	ELSE
+
+		SELECT Permission, Value 
+
+		FROM UserPermissions
+
+		WHERE UserID = @ID
+
+		ORDER BY Permission
+

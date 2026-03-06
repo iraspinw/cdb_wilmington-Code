@@ -1,0 +1,20 @@
+--6/19/2020 BF: added transaction isolation level and nocount
+
+--6/19/2020 BF: added specs to end of select
+
+CREATE proc [dbo].[cw_GetOrderDetail] @PO_ID int as 
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+
+
+select unittype, GradeID, WeightUOM wtuom, Price, PriceUOM, CurrencyCd, 1 as fxrate, PO_ID, shipto, Terms, specifications
+
+from podetail 
+
+inner join po on po.PONumber = PODetail.PONumber
+
+where PO_ID = @PO_ID
+

@@ -1,0 +1,18 @@
+CREATE PROC [dbo].[cw_GetEUStatus] @CountryID char(3) as
+
+
+
+--2/4/2020 Alex: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT Country.IsEU from
+
+	Country where Country.CountryID = @CountryID
+
+
+

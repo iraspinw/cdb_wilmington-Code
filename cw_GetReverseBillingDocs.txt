@@ -1,0 +1,16 @@
+create PROC [dbo].[cw_GetReverseBillingDocs] 
+
+AS
+
+--02/13/2023 DN:Created
+
+
+
+select DocFormID,Description from xDocForm where FormID = 'RVBILLSTMT'
+
+
+
+
+
+
+

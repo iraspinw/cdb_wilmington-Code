@@ -1,0 +1,56 @@
+CREATE proc [dbo].[cw_GetBulkGradeInfo] @GradeID varchar(15), @Warehouse varchar(65), @InvClass varchar(40), @Location varchar(65), @SupplierID varchar(12), @AsOfDate datetime ='' as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+--select convert(float,quantity) Quantity, Unitcost, Value, BalanceID
+
+--from InventoryBalance 
+
+--where 
+
+--	warehousenm = @Warehouse and 
+
+--	isnull(InvClass, '') = @InvClass and 
+
+--	isnull(location, '') = @Location and
+
+--	isnull(supplier, '') = @SupplierID and
+
+--	gradeid= @gradeid
+
+
+
+
+
+declare @BalQuantity decimal(22,5) = 0
+
+declare @BalValue money = 0
+
+declare @BalUnitCost decimal(22,5) = 0
+
+
+
+	exec cw_GetBulkQuantityValue @Warehouse, @GradeID, @InvClass, @Location, @SupplierID, @BalQuantity output, @BalValue output, @AsOfDate
+
+	if @BalValue > 0 begin
+
+		set @BalUnitCost =@BalValue / @BalQuantity 
+
+	end
+
+	else begin
+
+		set @BalUnitCost = 0
+
+	end
+
+
+
+	
+
+	select @BalQuantity, @balunitcost, @BalValue, 0 balanceid
+

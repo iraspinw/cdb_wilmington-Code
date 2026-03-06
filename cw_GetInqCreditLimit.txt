@@ -1,0 +1,782 @@
+CREATE   PROCEDURE [dbo].[cw_GetInqCreditLimit] 
+
+@COID varchar(25),
+
+@SalesRep varchar(25), 
+
+@OverCreditPercentUsed decimal(22,12),		
+
+@Account CHAR(12) = '',
+
+@AROnly bit = 0
+
+AS 
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+--11/02/2017 DSH Rewritten for cieTrade.net
+
+--04/17/2018 DSH Exclude ARBooked Transactions.
+
+--09/18/2020 BF: added Open AR Only mode
+
+
+
+
+
+
+
+--DECLARE @CutOffDate DATETIME
+
+--SET @CutOffDate = DATEADD(d,-366, GETDATE() ) 
+
+
+
+
+
+CREATE TABLE #tmp001 (
+
+	CPID CHAR(12), 
+
+	IsInvoiced CHAR(1),
+
+	ARBalanceAmt MONEY
+
+)
+
+	CREATE INDEX #IE_tmp001 ON #tmp001(CPID)
+
+
+
+CREATE TABLE #tmp002 (
+
+	PONumber CHAR(15), 		
+
+	ShippedValue MONEY
+
+)
+
+	CREATE INDEX #IE_tmp002 ON #tmp002(PONumber)
+
+
+
+CREATE TABLE #tmp003 (
+
+	CPID CHAR(12), 
+
+	IsOpen CHAR(1),
+
+	OpenAmt MONEY
+
+	)
+
+	CREATE INDEX #IE_tmp003 ON #tmp003(CPID)
+
+
+
+CREATE TABLE #RepList (
+
+	POID INT
+
+	)
+
+	CREATE INDEX #IE_RepList ON #RepList(POID)
+
+
+
+
+
+CREATE TABLE #wrkSHIPMENTS (
+
+    CPID CHAR(12),
+
+    PONumber CHAR(15),
+
+    IsInvoiced CHAR(1),
+
+    ARBalanceAmt MONEY,
+
+    ShippedAmt MONEY
+
+)
+
+	CREATE INDEX #IE_wrkSHIPMENTS ON #wrkSHIPMENTS(CPID)
+
+
+
+CREATE TABLE #wrkORDERS (
+
+    CPID CHAR(12),
+
+    PONumber CHAR(15),
+
+    POID INT,
+
+    IsOpen CHAR(1),
+
+    OrderAmt MONEY DEFAULT 0,
+
+    ShippedAmt MONEY DEFAULT 0,
+
+    OpenAmt Money DEFAULT 0
+
+	)
+
+	CREATE INDEX #IE1_wrkORDERS ON #wrkORDERS(CPID)
+
+	CREATE INDEX #IE2_wrkORDERS ON #wrkORDERS(CPID,PONumber)
+
+
+
+CREATE TABLE #wrkLIST (
+
+    CPID CHAR(12),
+
+    CompanyNm CHAR(65),
+
+	DefaultTerms VARCHAR(30), 		 
+
+	CreditLimit Money DEFAULT 0,	
+
+    OpenInvoiceAmt MONEY DEFAULT 0,
+
+    PendingInvoiceAmt MONEY DEFAULT 0,
+
+    OpenOrderAmt MONEY DEFAULT 0,
+
+    PendOrderAmt MONEY DEFAULT 0,
+
+    CreditTotal MONEY DEFAULT 0,    
+
+    CreditPrctUsed decimal(12,1),
+
+    CreditAvailable MONEY,
+
+    Country varchar(30),
+
+    SalesRepName varchar(30)
+
+	
+
+
+
+)
+
+CREATE INDEX #IE_wrkLIST ON #wrkLIST(CPID)
+
+  -- BUILD MASTER LIST OF ACCOUNTS TO REPORT ON.
+
+	INSERT #wrkLIST(CPID,CompanyNm,DefaultTerms,CreditLimit,Country,SalesRepName,OpenInvoiceAmt,PendingInvoiceAmt,OpenOrderAmt,PendOrderAmt,CreditTotal,CreditPrctUsed,CreditAvailable) 
+
+	SELECT 
+
+		C.CPID,
+
+		C.CompanyNm, 
+
+		C.Terms,		
+
+		COALESCE(C.CreditLimit,0),	--0=No Credit Limit.
+
+		Country.[Name],
+
+		COALESCE(Referrer.Name,''),
+
+		0,0,0,0,0,0,0
+
+        FROM Counterparty C WITH(NOLOCK) 
+
+			INNER JOIN [Address] WITH (NOLOCK) ON [Address].CpID = C.CpID AND InvoiceAddr = 'Y'
+
+			LEFT JOIN Counterparty_Referrer ON C.CpID = Counterparty_Referrer.CpID AND Counterparty_Referrer.isDefault = 1 
+
+			LEFT JOIN Referrer ON Counterparty_Referrer.ReferrerNo = Referrer.ReferrerNo
+
+			LEFT JOIN Country WITH(NOLOCK) ON Country.CountryID = [Address].Country        
+
+        WHERE 
+
+			(Role = 'A' OR Role = 'C' OR Role = 'P' OR Role = 'X') 
+
+            AND (C.CPID <> '(INV)' AND C.CPID <> '{C}' AND C.CPID <> '(PLANT)' AND C.CPID <> '(OTHER)') 
+
+            AND ActiveStatus='A'
+
+            AND (@Account = '' OR C.CPID = @Account)
+
+			--AND CreditLimit > 0
+
+if @AROnly = 0 begin
+
+---------------------------------------------------------------------------------------------
+
+/*
+
+	Credit for accounts on order only.
+
+	Filtering Orders by Rep.
+
+*/
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+	-- OPEN INVOICE BALANCE (BY INVOICE AND ORDER).
+
+    INSERT #wrkSHIPMENTS(CPID,PoNumber,IsInvoiced,ARBalanceAmt,ShippedAmt)
+
+    SELECT CustID, RefSONo, 'Y', SUM(SBalanceDue-ISNULL(ARTrkPaymentAmt,0)), SUM(SalesAmt) 
+
+		FROM BUYSELL WITH (NOLOCK) 	
+
+			INNER JOIN #wrkLIST ON BUYSELL.CustID = #wrkLIST.CPID
+
+			LEFT JOIN Billingterm WITH(NOLOCK) on billingterm.term = buysell.terms 
+
+        WHERE 
+
+			[Status] = 'I' 
+
+			AND COALESCE(IsAgency,0) <> 1 
+
+			AND ISNULL(IsInvoiceBooked,0) <> 1
+
+            AND (@COID = '' OR Buysell.COID =  @COID)
+
+            AND (@SalesRep = '' OR Buysell.ReferrerNo1 = @SalesRep )
+
+        GROUP BY CustID, RefSONo
+
+    
+
+    
+
+	---- PENDING SHIPMENTS AMOUNT (BY INVOICE AND ORDER)
+
+    INSERT #wrkSHIPMENTS(CPID,PoNumber,IsInvoiced,ARBalanceAmt,ShippedAmt)
+
+    SELECT CustID, RefSONo, 'N', SUM(SBalanceDue-ISNULL(ARTrkPaymentAmt,0)), SUM(SalesAmt)  
+
+		FROM BUYSELL WITH (NOLOCK) 				
+
+			INNER JOIN #wrkLIST ON BUYSELL.CustID = #wrkLIST.CPID
+
+			LEFT JOIN Billingterm WITH(NOLOCK) on billingterm.term = buysell.terms 
+
+        WHERE 
+
+			([Status] = 'W' OR [Status] = 'C' OR [Status] = 'A')
+
+			AND COALESCE(IsAgency,0) <> 1 			
+
+            AND (@COID = '' OR Buysell.COID =  @COID)
+
+            AND (@SalesRep = '' OR Buysell.ReferrerNo1 = @SalesRep )
+
+        GROUP BY CustID, RefSONo    
+
+        
+
+
+
+
+
+	--. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .         
+
+	
+
+	
+
+	-- GET OPEN & PENDING SHIPMENTS FOR EACH ACCOUNT.
+
+	INSERT #tmp001
+
+	SELECT CPID, IsInvoiced, SUM(ARBalanceAmt) FROM #wrkSHIPMENTS
+
+		GROUP BY CPID, IsInvoiced
+
+
+
+	-- UPDATE OPEN SHIPMENTS.	
+
+	UPDATE #wrkLIST 
+
+		SET OpenInvoiceAmt=ISNULL(ARBalanceAmt,0)
+
+		FROM #wrkLIST INNER JOIN #tmp001 ON #wrkLIST.CPID = #tmp001.CPID		
+
+		WHERE IsInvoiced = 'Y'
+
+	
+
+	-- UPDATE PENDING SHIPMENTS.
+
+	UPDATE #wrkLIST 
+
+		SET PendingInvoiceAmt=ISNULL(ARBalanceAmt,0)
+
+		FROM #wrkLIST INNER JOIN #tmp001 ON #wrkLIST.CPID = #tmp001.CPID		
+
+		WHERE IsInvoiced = 'N'
+
+
+
+
+
+
+
+
+
+---------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+	-- GET OPEN ORDERS.
+
+    INSERT #wrkORDERS(CPID,PoNumber,POID,IsOpen,OrderAmt)
+
+    SELECT PO.CPID, PO.PONumber,PO.POID,'Y', SUM(PODetail.Amount) 
+
+			FROM PODetail WITH (NOLOCK) INNER JOIN PO ON PODetail.PONumber = PO.PONumber 
+
+				INNER JOIN #wrkLIST ON PO.CPID = #wrkLIST.CPID				
+
+        WHERE	PO.Source = 'SO'
+
+			AND PO.Status = 'OPEN'
+
+			AND COALESCE(PO.IsAgency,0) <> 1 			
+
+            AND (@COID = '' OR PO.COID =  @COID)
+
+        GROUP BY PO.CPID, PO.PONumber,PO.POID 
+
+
+
+	-- GET PENDING ORDERS.
+
+    INSERT #wrkORDERS(CPID,PoNumber,POID,IsOpen,OrderAmt)
+
+    SELECT PO.CPID, PO.PONumber, PO.POID, 'N', SUM(PODetail.Amount) 
+
+			FROM PODetail WITH (NOLOCK) INNER JOIN PO ON PODetail.PONumber = PO.PONumber 
+
+				INNER JOIN #wrkLIST ON PO.CPID = #wrkLIST.CPID				
+
+        WHERE	PO.Source = 'SO'
+
+			AND PO.Status = 'REVIEW'
+
+			AND COALESCE(PO.IsAgency,0) <> 1 
+
+            AND (@COID = ''  OR PO.COID =  @COID)			
+
+        GROUP BY PO.CPID, PO.PONumber, PO.POID 
+
+
+
+
+
+	-- FILTER ORDERS BY SALES REP.
+
+	IF @SalesRep <> '' BEGIN	
+
+		INSERT #RepList 
+
+		SELECT POSalesReps.POID FROM POSalesReps INNER JOIN #wrkORDERS ON POSalesReps.POID = #wrkORDERS.POID
+
+			WHERE  POSalesReps.ReferrerNo = @SalesRep 	
+
+		DELETE #wrkORDERS FROM #wrkORDERS LEFT JOIN #replist ON #wrkORDERS.POID = #replist.POID 
+
+			WHERE #replist.POID IS NULL  		
+
+	END
+
+
+
+
+
+	
+
+
+
+
+
+	--. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .         
+
+	
+
+	
+
+	
+
+	-- GET SHIPMENT VALUE PER ORDER.
+
+	INSERT #tmp002 
+
+	SELECT PONumber, SUM(ShippedAmt) ShippedValue FROM #wrkSHIPMENTS
+
+		WHERE (PONumber IS NOT NULL OR ltrim(rtrim(PONumber)) <> '')
+
+		GROUP BY PONumber HAVING SUM(ShippedAmt) <> 0 
+
+			ORDER BY PONumber 
+
+			
+
+
+
+	-- CALCULATE OPEN (UNSHIPPED) ORDER VALUE.	
+
+	UPDATE #wrkORDERS 
+
+		SET ShippedAmt=ShippedValue, 
+
+			OpenAmt=OrderAmt-ShippedValue 
+
+		FROM #wrkORDERS INNER JOIN #tmp002 ON #wrkORDERS.PONumber = #tmp002.PONumber
+
+	UPDATE #wrkORDERS 
+
+		SET OpenAmt=OrderAmt WHERE ShippedAmt=0
+
+		
+
+	UPDATE #wrkORDERS SET OpenAmt=0 WHERE OpenAmt< 0
+
+
+
+	-- GET OPEN & PENDING ORDER VALUE FOR EACH ACCOUNT.	
+
+	INSERT #tmp003
+
+		SELECT CPID, IsOpen, SUM(OpenAmt) OpenAmt FROM #wrkORDERS
+
+			GROUP BY CPID, IsOpen
+
+	UPDATE #tmp003 SEt OpenAmt = 0 WHERE OpenAmt < 0		--Over shipment.
+
+	
+
+	-- UPDATE OPEN ORDER VALUE.	
+
+	UPDATE #wrkLIST 
+
+		SET OpenOrderAmt=OpenAmt 
+
+		FROM #wrkLIST INNER JOIN #tmp003 ON #wrkLIST.CPID = #tmp003.CPID		
+
+		WHERE IsOpen = 'Y'
+
+	
+
+	-- UPDATE PENDING ORDER VALUE.		
+
+	UPDATE #wrkLIST 
+
+		SET PendOrderAmt=OpenAmt 
+
+		FROM #wrkLIST INNER JOIN #tmp003 ON #wrkLIST.CPID = #tmp003.CPID		
+
+		WHERE IsOpen = 'N'
+
+
+
+
+
+
+
+
+
+
+
+	----GET UA CASH (TO BE SUPPORTED IN FUTURE RELEASE)
+
+	--Select UACashAmt = sum(isnull(balance, 0)), CUSTID
+
+	--INTO #UAC
+
+	--FROM uacashledger with (NOLOCK) 
+
+	--where ISNULL(Reversed,0) <> 1 --AND balance>0
+
+	--GROUP BY CUSTID
+
+	--Having sum(isnull(balance, 0))>0
+
+	
+
+	--UPDATE #WRKLIST SET #WRKLIST.UACashAmt = #UAC.UACashAmt	
+
+	--FROM #wrkLIST
+
+	--INNER JOIN #UAC ON #wrkLIST.CPID  = #UAC.CUSTID 
+
+
+
+		
+
+---------------------------------------------------------------------------------------------
+
+
+
+	
+
+
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+
+
+	
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-- CALCULATE AVAILABLE CREDIT AND PERCENT USED.
+
+	UPDATE #wrkLIST SET
+
+		--CreditAvailable = CreditLimit + LCSecured + UACashAmt - (OpenInvoiceAmt+PendingInvoiceAmt+OpenOrderAmt+PendOrderAmt),
+
+		CreditAvailable = CreditLimit - (OpenInvoiceAmt+PendingInvoiceAmt+OpenOrderAmt+PendOrderAmt),
+
+		CreditTotal = (OpenInvoiceAmt+PendingInvoiceAmt+OpenOrderAmt+PendOrderAmt)
+
+		WHERE CreditLimit <> 0
+
+	
+
+	
+
+	UPDATE #wrkLIST SET
+
+		CreditPrctUsed = round((CreditTotal  / CreditLimit) * 100,2)  WHERE CreditLimit <> 0
+
+
+
+
+
+
+
+	-- ONLY SHOW ACCOUNTS OVER x% OF THIER AVAILBLE CREDIT.
+
+	IF @OverCreditPercentUsed > 0 BEGIN
+
+		DELETE FROM #wrkLIST WHERE CreditPrctUsed < @OverCreditPercentUsed AND CreditPrctUsed IS NOT NULL
+
+	END
+
+	
+
+end
+
+else begin
+
+    -- BUILD MASTER LIST OF ACCOUNTS TO REPORT ON.
+
+
+
+
+
+
+
+
+
+
+
+	-- OPEN INVOICE BALANCE (BY INVOICE AND ORDER).
+
+    INSERT #wrkSHIPMENTS(CPID,PoNumber,IsInvoiced,ARBalanceAmt,ShippedAmt)
+
+    SELECT CustID, RefSONo, 'Y', SUM(SBalanceDue-ISNULL(ARTrkPaymentAmt,0)-isnull(salestaxamt,0)), SUM(SalesAmt) 
+
+		FROM BUYSELL WITH (NOLOCK) 	
+
+			INNER JOIN #wrkLIST ON BUYSELL.CustID = #wrkLIST.CPID
+
+			LEFT JOIN Billingterm WITH(NOLOCK) on billingterm.term = buysell.terms 
+
+        WHERE 
+
+			[Status] = 'I' 
+
+			AND COALESCE(IsAgency,0) <> 1 
+
+			AND ISNULL(IsInvoiceBooked,0) <> 1
+
+            AND (@COID = '' OR Buysell.COID =  @COID)
+
+            AND (@SalesRep = '' OR Buysell.ReferrerNo1 = @SalesRep )
+
+			and sbalancedue > 0
+
+        GROUP BY CustID, RefSONo
+
+    
+
+    	INSERT #tmp001
+
+	SELECT CPID, IsInvoiced, SUM(ARBalanceAmt) FROM #wrkSHIPMENTS
+
+		GROUP BY CPID, IsInvoiced
+
+
+
+        	-- UPDATE OPEN SHIPMENTS.	
+
+	UPDATE #wrkLIST 
+
+		SET OpenInvoiceAmt=ISNULL(ARBalanceAmt,0)
+
+		FROM #wrkLIST INNER JOIN #tmp001 ON #wrkLIST.CPID = #tmp001.CPID		
+
+		WHERE IsInvoiced = 'Y'
+
+
+
+
+
+	--. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .         
+
+	
+
+	
+
+
+
+
+
+	-- CALCULATE AVAILABLE CREDIT AND PERCENT USED.
+
+	UPDATE #wrkLIST SET
+
+		--CreditAvailable = CreditLimit + LCSecured + UACashAmt - (OpenInvoiceAmt+PendingInvoiceAmt+OpenOrderAmt+PendOrderAmt),
+
+		CreditAvailable = CreditLimit - (OpenInvoiceAmt+PendingInvoiceAmt+OpenOrderAmt+PendOrderAmt),
+
+		CreditTotal = (OpenInvoiceAmt+PendingInvoiceAmt+OpenOrderAmt+PendOrderAmt)
+
+		WHERE CreditLimit <> 0
+
+	
+
+	
+
+	UPDATE #wrkLIST SET
+
+		CreditPrctUsed = round((CreditTotal  / CreditLimit) * 100,2)  WHERE CreditLimit <> 0
+
+
+
+
+
+
+
+	-- ONLY SHOW ACCOUNTS OVER x% OF THIER AVAILBLE CREDIT.
+
+	IF @OverCreditPercentUsed > 0 BEGIN
+
+		DELETE FROM #wrkLIST WHERE CreditPrctUsed < @OverCreditPercentUsed AND CreditPrctUsed IS NOT NULL
+
+	END
+
+end
+
+	-- FINAL REPORT --
+
+	SELECT 
+
+		CompanyNm As [Account],
+
+		DefaultTerms As [Default Terms],		
+
+		CreditLimit As [Credit Limit],
+
+		OpenInvoiceAmt As [Open Invoices],
+
+		PendingInvoiceAmt As [Pending Invoices],
+
+		OpenOrderAmt As [Open Orders],
+
+		PendOrderAmt [Pending Orders],
+
+		CreditTotal [Credit Total],
+
+		CreditAvailable [Credit Available],
+
+		CreditPrctUsed [Percent],
+
+		CpID,
+
+		Country As [Country],
+
+		SalesRepName As [Sales Rep]		
+
+		FROM #wrkLIST 
+
+		ORDER BY CompanyNm
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,40 @@
+CREATE proc [dbo].[cw_GetPurchOrderTransactionTotals] @PONumber varchar(12), @WTUOM varchar(6) = 'L' as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+declare @ItemCnt int
+
+select @Itemcnt = count(*) from wksdetail inner join buysell on buysell.BuySellNo = wksdetail.BuySellNo where buysell.RefPONo=@PONumber
+
+
+
+declare @OrderWt decimal(18,5)
+
+select @OrderWt = sum(dbo.[CONVERT_TO_UOM]([weight], WeightUOM, @WtUOM)) from podetail where ponumber = @PONumber
+
+
+
+declare @AvgWt decimal(18,5)
+
+select @AvgWt = (sum( dbo.CONVERT_TO_UOM_XP(SWeight, SWeightUOM, @WtUOM)) / @ItemCnt) from WksDetail  where  wksDetail.PPO = @PONumber 
+
+
+
+declare @ShippedWt decimal(18,5)
+
+declare @ShippedAmt money
+
+select @ShippedWt = sum(dbo.[CONVERT_TO_UOM](sweight, sweightUOM, @WtUOM)), @ShippedAmt = sum(samount) from wksdetail 
+
+inner join buysell on buysell.BuySellNo = wksdetail.BuySellNo
+
+where buysell.RefPONo = @PONumber 
+
+	
+
+select @ItemCnt,isnull(@AvgWt,0) AS [AvgWt],@OrderWt OrderWt, isnull(@ShippedWt, 0) ShippedWt, isnull(@ShippedAmt, 0) ShippedAmt, isnull(@WTUOM,'') WTUOM
+
+
+

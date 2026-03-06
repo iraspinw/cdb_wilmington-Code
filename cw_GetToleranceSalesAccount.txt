@@ -1,0 +1,16 @@
+CREATE   PROCEDURE [dbo].[cw_GetToleranceSalesAccount] AS
+
+--07/07/2008 DSH Created for PstCashReceipts
+
+--08/26/2020 BF: Copied for .net
+
+
+
+SET NOCOUNT ON
+
+    Select TOP 1  GLAcct from glaccount with (NOLOCK) where cat = 'sales' and [name]='Tolerance' order by salesglacct desc
+
+
+
+	
+

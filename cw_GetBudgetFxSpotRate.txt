@@ -1,0 +1,26 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetBudgetFxSpotRate] @CurrCode char(3), @TradeDate datetime
+
+AS
+
+SET NOCOUNT ON
+
+
+
+--2/27/2017 MEC: Copied for Budget Fx Spot Rate
+
+
+
+    
+
+    select top 1 FxRate, ExchDate
+
+        FROM CurrencyRate WITH(NOLOCK)
+
+        Where CurCode = @CurrCode AND ExchDate <= @TradeDate
+
+        order by ExchDate DESC
+
+
+

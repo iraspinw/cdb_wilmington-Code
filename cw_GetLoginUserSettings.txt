@@ -1,0 +1,47 @@
+CREATE proc [dbo].[cw_GetLoginUserSettings] @UserNm varchar(100) as
+
+declare @AcctSys bit
+
+declare @AcctountingSystem varchar(50)
+
+
+
+if exists(select top 1 accttoken from AccountingCompany where isnull(accttoken,'') <> '') begin
+
+	select @AcctSys= 1
+
+	
+
+end
+
+else begin
+
+	select @acctsys = 0
+
+	
+
+end
+
+
+
+select top 1 @AcctountingSystem = accountingsystem from AccountingCompany 
+
+
+
+SELECT UserDef.[UserID], UserNm as UserNm, '', '', UserDef.*, CompanyInfo.CompanyNm, s.ScaleWtUOM ScaleWeightUOM, DefaultUOM, s.SlackWebHook,(SELECT TOP 1 EnableCieTradeAR FROM SystemInfo) EnableCieTradeAR, @AcctSys AcctSys, s.AutoActivateUsers, isnull(s.
+
+
+MultiDeptAccounting,0) MultiDeptAccounting, @AcctountingSystem AccountingSystem,isnull(UserDef.Theme,'Light') as Theme,
+
+(SELECT COUNT(*) FROM Grade WHERE InventoryType = 'BULK_wt') As NoBulkGrades, RequiresAccounting
+
+FROM UserDef 
+
+LEFT JOIN CompanyInfo ON CompanyInfo.COID = 00 
+
+inner join systeminfo s on 1=1
+
+WHERE UserDef.UserID = @usernm
+
+
+

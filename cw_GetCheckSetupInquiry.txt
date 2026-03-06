@@ -1,0 +1,30 @@
+CREATE proc [dbo].[cw_GetCheckSetupInquiry] as
+
+	
+
+	SELECT 
+
+		[ID] AS [-Hidden-ID],
+
+		CompanyInfo.CompanyDesc aS [Department],
+
+		GLAccount.Name AS [Account],
+
+		IIF(NextCheckNo <= 0, '', CONVERT(varchar(15),NextCheckNo)) AS [Check No]
+
+		--RTRIM(BankAcctNo) AS [Bank Acct No],
+
+		--RTRIM(BankRoutingNo) AS [Bank Routing No]
+
+		FROM CheckSetup 
+
+		LEFT JOIN CompanyInfo ON CompanyInfo.COID = CheckSetup.COID
+
+		LEFT JOIN GLAccount ON CheckSetup.GLAcct = GLAccount.GLAcct
+
+		ORDER BY [ID]
+
+
+
+
+

@@ -1,0 +1,10 @@
+CREATE PROC [dbo].[cw_GetPODocList]
+
+ AS
+
+--09/23/2014 MEC: Created
+
+	SELECT * FROM PODocumentList
+
+
+

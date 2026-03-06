@@ -1,0 +1,14 @@
+CREATE PROC [dbo].[cw_getSessions] @JobID INT AS 
+
+SET NOCOUNT ON 
+
+--10/29/2018 DSH Created.
+
+
+
+	select DISTINCT SessionID from Inventory_PhysicalJobCount WHERE JobID = @JobID AND SessionID <> ''  
+
+
+
+
+

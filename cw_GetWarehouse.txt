@@ -1,0 +1,42 @@
+CREATE   PROCEDURE [dbo].[cw_GetWarehouse] @Name varchar(45)
+
+AS
+
+BEGIN
+
+--01/28/2016 MCM: Created
+
+--01/29/2016 MCM: Added email
+
+--04/02/2018 MEC: Added support for Contacts
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+    SELECT 
+
+		[Type],ISNULL(Addr1,'') Addr1,ISNULL(Addr2,'') Addr2, ISNULL(Addr3,'') Addr3,
+
+		ISNULL(City,'') City,ISNULL(Region,'') Region,ISNULL(PostalCd,'') PostalCd,ISNULL(Country,'') Country,
+
+		Contact.PhoneBusiness Telephone,
+
+		Contact.ContactNm Contact,
+
+		Inactive, 
+
+		ISNULL(Contact.Email,'') Email, 
+
+		ISNULL(Instructions,'') Instructions, WarehouseCOID
+
+		FROM [Address] WITH (NOLOCK)
+
+		LEFT JOIN Contact WITH (NOLOCK) ON Contact.CpID = [Address].CpID AND Contact.Location = [Address].[Type]
+
+		WHERE [Address].CpID = '(INV)' AND [TYPE] = @Name
+
+END
+

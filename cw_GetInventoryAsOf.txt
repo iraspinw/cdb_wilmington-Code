@@ -1,0 +1,1120 @@
+CREATE PROCEDURE [dbo].[cw_GetInventoryAsOf] 
+
+	@AsOFDate datetime, 
+
+	@COID char(2), 
+
+	@InvType int, 
+
+	@GroupBy varchar(10), 
+
+	@WarehouseFilter varchar(65), 
+
+	@DoMultiCurrency bit = 0, 
+
+	@ExcludeCommitted bit = 0, 
+
+	@CurrencyCd char(3) = '', 
+
+	@RptUOM char(1)='', 
+
+	@WarehouseGroupFilter char(25) = '', 
+
+	@RevalueCurrency CHAR(3) = '', 
+
+	@SupplierID CHAR(12) = '', 	
+
+	@TotalValue MONEY = 0 OUTPUT,
+
+	@InvModel CHAR(10) = ''
+
+	
+
+	AS
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--4/12/2016 DSH: Created/Adapted for .Net 
+
+--4/15/2016 DSH Added Supplier FIlter
+
+--07/12/2016 MCM: Section B, join to ADDRESS using CpID = '(INV)'
+
+--05/22/2017 DSH Completed Changes to support valuation with bulk inventory and support for departments.
+
+--07/14/2017 DSH Fixed problem with bulk inventory
+
+--01/08/2018 DSH Fixed join error with Bulk Inventory section
+
+--04/11/2022 DSH Corrected as of reporting for BULK Inv.
+
+--05/18/2022 ZT: Removed primary key from #wrkTranTable
+
+--05/25/2022 ZT: readded CURRENCY REVALUATION.
+
+--07/29/2022 DSH: Adsded Inventory Adjustments (WRITE-OFFS)
+
+--08/11/2022 DSH Added Location to BULK inventory reporting
+
+--08/31/2022 DSH Added Inventory Model (MDT Project)
+
+--01/23/2023 Nick: Added Conditional Ordering using the @GroupBy variable
+
+--cw_GetInventoryAsOf '6/30/2022', '', 2, 'WEST YARD', '', 0, 0, '', 'M', '', '', ''
+
+
+
+-- cw_GetInventoryAsOf '10/31/2024', '', 2, 'Warehouse', '', 0, 0, '', 'M', '', '', ''
+
+
+
+DECLARE @ITYPE varchar(12)
+
+IF @InvType = 1 SELECT @ITYPE = '(AVG COST)'
+
+IF @InvType = 2 SELECT @ITYPE = '(INV)'
+
+IF @InvType = 0 SELECT @ITYPE = ''
+
+
+
+
+
+
+
+    -- GET SYSTEM SCALE UOM.
+
+    --Declare @SysUOM char(3)
+
+    --select @SysUOM=dbo.CnvUOM_ID(optionValue) from options Where OptionName='ScaleWtUOM'
+
+    --IF @SysUOM is null SET @SysUOM='L'
+
+
+
+	-- GET HOME CURRENCY.
+
+    DECLARE @DomCur char(3)
+
+    select @DomCur = CurrCode from systeminfo
+
+
+
+	-- GET CURRENT PERIOD.
+
+	DECLARE @LastValueDate DATETIME
+
+	SELECT @LastValueDate = OpenMonth-1 FROM SystemInfo
+
+
+
+
+
+
+
+
+
+
+
+
+
+	Declare @PriorPeriodEnd datetime, @PeriodBeg datetime, @PeriodEnd datetime
+
+    Select @PeriodBeg = convert(char(2),datepart(Month,@AsOfDate)) + '/1/' + convert(char(4),datepart(year,@AsOfDate))
+
+
+
+    Select @PriorPeriodEnd = dateadd(Day,-1,@PeriodBeg)
+
+	
+
+    Select @PeriodEnd = dateadd(Day,-1,@PeriodBeg)
+
+	
+
+    If @AsOfDate = @PeriodEnd 
+
+        SELECT @PriorPeriodEnd = @PeriodEnd 
+
+
+
+
+
+
+
+	-- CREATE INVENTORY TRANACTION TABLE.
+
+	CREATE TABLE #wrkInvTrades(		
+
+		LotNo Char(25),
+
+		TxDate Datetime,
+
+		Wt Decimal(18,5),
+
+		Units Int,
+
+		NoSheets int,
+
+		UnitType char(1),		
+
+		InvValue Money
+
+	)
+
+		
+
+	-- CREATE INVENTORY POSITION TABLE.		
+
+    CREATE TABLE #AsOfInventory  (	
+
+			WarehouseNm Varchar(45),			
+
+			LotNo Char(25),
+
+			UnitType char(1), 
+
+			[Weight] Decimal(18,5), 
+
+			Units int, 
+
+			NoSheets int,  
+
+			InvValue Money
+
+		)
+
+	Create Index #IEAsOfInventory ON #AsOfInventory(LotNo)
+
+
+
+
+
+
+
+	CREATE TABLE #REPORT(
+
+		ItemNo CHAR(15),		
+
+		ReceivedDate DATE, 
+
+		Product VARCHAR(100), 		 
+
+		SerialNo VARCHAR(100), 		  
+
+		WarehouseNm VARCHAR(100),
+
+		Supplier  VARCHAR(100), 		
+
+		QuantityInRptUOM DECIMAL(22,3), 
+
+		UnitCostInRptUOM FLOAT, 						
+
+		PONumber CHAR(15),	
+
+		Units INT, 		
+
+		RcvWks CHAR(12),
+
+		UnitType CHAR(1), 		
+
+		InventoryValue MONEY,
+
+		InventoryCurrencyCd CHAR(3),
+
+		ExchangeRate DECIMAL(22,8),
+
+		FXInventoryValue MONEY,
+
+		Specification VARCHAR(1000)
+
+	)
+
+
+
+
+
+
+
+    -- SERIALIZED INVENTORY 
+
+	-- ========================================================================================================
+
+	IF @InvModel = '' OR @InvModel = 'SERIAL' BEGIN
+
+
+
+
+
+    --CURRENT INVENTORY ON HAND, RCVD AS OF DATE. 
+
+    INSERT #wrkInvTrades
+
+		SELECT	Inventory.Lotno, 
+
+				getdate() as TxDate, 
+
+				qtyonhand, 
+
+				units, 
+
+				nosheets, 
+
+				[UnitType], 
+
+				InvValue		  --0 as XKEY,
+
+			FROM Inventory WITH(NOLOCK) where Inventory.RcvDt <= @AsOfDate 
+
+			AND (@COID = '' OR @COID = Inventory.COID) 
+
+
+
+
+
+    --ADD BACK INVENTORY SOLD SINCE AS OF DATE (INVOICED).
+
+    INSERT #wrkInvTrades
+
+		SELECT	WksInventory.Lotno, 
+
+				TxDate, 
+
+				WksInventory.weight as WT, 
+
+				WksInventory.units, 
+
+				WksInventory.Nosheets, 
+
+				Inventory.UnitType as UnitType, 
+
+				wksInvValue AS InvValue  --WksInvID as XKEY,
+
+			FROM WksInventory WITH(NOLOCK)  inner JOIN BuySell WITH(NOLOCK)  ON WKsInventory.BuySellNo = BuySell.BuySellNo
+
+			inner JOIN Inventory WITH(NOLOCK)  ON WksInventory.Lotno = Inventory.LotNo
+
+			WHERE Inventory.RcvDt <= @AsOfDate 
+
+			AND InvoiceDt > @AsOFDate AND BuySell.Status = 'I'
+
+			AND (@COID = '' OR @COID = Inventory.COID)
+
+
+
+
+
+
+
+    
+
+    --ADD BACK INVENTORY COMMITTED SINCE AS OF DATE (NOT-INVOICED).
+
+	INSERT #wrkInvTrades
+
+		SELECT	WksInventory.Lotno, 
+
+				TxDate, 
+
+				WksInventory.weight as WT, 
+
+				WksInventory.units, 
+
+				WksInventory.Nosheets, 
+
+				Inventory.UnitType, 
+
+				wksInvValue AS InvValue				--WksInvID as XKEY
+
+			FROM WksInventory WITH(NOLOCK)  inner JOIN BuySell WITH(NOLOCK)  ON WKsInventory.BuySellNo = BuySell.BuySellNo
+
+			inner JOIN Inventory WITH(NOLOCK)  ON WksInventory.Lotno = Inventory.LotNo
+
+			where Inventory.RcvDt <= @AsOFDate AND BuySell.Status <> 'I' 
+
+			AND (@COID = '' OR @COID = Inventory.COID)
+
+			AND @ExcludeCommitted <> 1
+
+ 
+
+
+
+
+
+ 	--ADD IN WRITEOFFS
+
+	INSERT #wrkInvTrades
+
+		Select	GPLEDGER.Lotno, 
+
+				TradeDt, 
+
+				AdjWeight*-1, 
+
+				0 As Units, 
+
+				0 As NoSheets,  
+
+				Inventory.UnitType, 
+
+				Cost  AS InvValue			
+
+			FROM GPLEDGER WITH(NOLOCK)  INNER JOIN INVENTORY WITH(NOLOCK)  ON GPLedger.Lotno = Inventory.Lotno
+
+			WHERE TradeDt > @AsOfDate
+
+			AND Inventory.RcvDt <= @AsOfDate 
+
+			AND (@COID = '' OR @COID = Inventory.COID)
+
+
+
+
+
+
+
+ 	-- ADD BACK/REVERSE EXPENSE ALLOCATION
+
+	INSERT #wrkInvTrades
+
+		SELECT	ExpenseAlloc_Source.LotNo, 
+
+				TransDate, 
+
+				0 as WT, 
+
+				0 As Units, 
+
+				0 As NoSheets, 
+
+				Inventory.UnitType, 
+
+				ExpenseAlloc_Source.UnitAmountChange * -1 AS InvValue  -- ExpenseAlloc_Source.TransNo AS XKEY
+
+			FROM ExpenseAllocation INNER JOIN ExpenseAlloc_Source ON (ExpenseAllocation.TransNo = ExpenseAlloc_Source.TransNo  )
+
+			INNER JOIN Inventory WITH(NOLOCK)  ON ExpenseAlloc_Source.LotNo = Inventory.Lotno
+
+			WHERE 
+
+				IsPosted = 1 
+
+				AND UnitAmountChange<> 0 
+
+				AND ExpenseAllocation.PostingDt > @AsOfDate
+
+				AND Inventory.RcvDt <= @AsOfDate 
+
+				AND (@COID = '' OR @COID = Inventory.COID)
+
+
+
+
+
+    --ADD BACK CONVERTING SOURCE STOCK RESERVED AS OF DATE
+
+    INSERT #wrkInvTrades
+
+	    SELECT	ConvertingJob_Source.Lotno, 
+
+				PostDt, 
+
+				ConvertingJob_Source.Weight, 
+
+				ConvertingJob_Source.units, 
+
+				ConvertingJob_Source.Nosheets, 
+
+				Inventory.UnitType, 
+
+				ConvertingJob_Source.UnitAmountChange		--ConvertingJob_Source.JobNo AS XKEY
+
+			from ConvertingJob_Source inner join convertingjob ON ConvertingJob_Source.jobno = ConvertingJob.JobNo
+
+			inner JOIN Inventory WITH(NOLOCK)  ON ConvertingJob_Source.Lotno = Inventory.LotNo
+
+			WHERE 
+
+				Inventory.RcvDt <= @AsOfDate 
+
+			AND (convertingjob.[Status] <> 'I' OR (convertingjob.[Status] = 'I' and convertingjob.PostDt > @AsOFDate))
+
+			AND (@COID = '' OR @COID = Inventory.COID)
+
+
+
+
+
+	--B. (CONSOLIDATE INVENTORY POSITION.)
+
+	INSERT #AsOfInventory 
+
+		SELECT	
+
+			[ADDRESS].[Type] WarehouseName, 
+
+			#wrkInvTrades.LotNo, 
+
+			#wrkInvTrades.UnitType, 
+
+			sum(isnull(#wrkInvTrades.Wt,0)) As Weight, 
+
+			sum(isnull(#wrkInvTrades.units,0)) As Units, 
+
+			sum(isnull(#wrkInvTrades.nosheets,0)) AS NoSheets, 
+
+			sum(isnull(#wrkInvTrades.InvValue, 0)) AS InvValue 		
+
+		FROM #wrkInvTrades INNER JOIN Inventory ON #wrkInvTrades.Lotno = Inventory.LotNo
+
+			LEFT JOIN [ADDRESS] ON Inventory.WarehouseNm = [ADDRESS].[Type]	AND [ADDRESS].CpID = '(INV)'
+
+		WHERE (@WarehouseFilter = '' OR @WarehouseFilter = ADDRESS.[Type])		
+
+			AND (@WarehouseGroupFilter = '' OR @WarehouseGroupFilter = ADDRESS.WarehouseGroup)		
+
+		GROUP BY [ADDRESS].[Type], [ADDRESS].WarehouseID, #wrkInvTrades.LotNo, #wrkInvTrades.UnitType 
+
+
+
+    
+
+	INSERT #REPORT
+
+	SELECT 
+
+		Inventory.Lotno ItemNo,		
+
+		RcvDt ReceivedDate, 
+
+		Grade.Description Product, 		 
+
+		SerialNo, 
+
+		#AsOfInventory.WarehouseNm,		
+
+		IsNull(c.CompanyNm,'') As Supplier, 		
+
+		dbo.CnvFromBaseQtyUom(dbo.CnvToBaseQtyUOM(#AsOfInventory.Weight, WeightUOM), @RptUOM) AS QuantityInRptUOM, 
+
+		CAST(0.000 AS float) AS UnitCostInRptUOM, 						
+
+		BuySell.RefPONo AS PONumber,	
+
+		#AsOfInventory.Units, 		
+
+		Inventory.BuySellNo RcvWks,		
+
+		#AsOfInventory.UnitType, 		
+
+		#AsOfInventory.InvValue AS InventoryValue,
+
+		Inventory.CurrencyCd as InventoryCurrencyCd,
+
+		Inventory.FXRate as ExchangeRate,
+
+		convert(money,0) As FXInventoryValue,
+
+		dbo.WriteSpecification(#AsOfInventory.UnitType,Inventory.BasisWt,Inventory.BasisWtUOM,Inventory.Diameter,Inventory.DiameterUOM,Inventory.RollWd,
+
+			Inventory.RollWdUOM,Inventory.CoreSize,Inventory.CoreSizeUOM,Inventory.Caliper,Inventory.SheetSize,Inventory.SheetSizeUOM,
+
+			Inventory.MWeight,Inventory.NoSheets,Inventory.SheetGrain,Inventory.SpeciesID,Inventory.Condition,Inventory.WoodThickness,
+
+			Inventory.WoodWidth,Inventory.WoodSzUOM,Inventory.WoodLength,Inventory.WoodLengthUOM,Inventory.WoodGrain) as Specification
+
+	FROM #AsOfInventory INNER JOIN Inventory WITH(NOLOCK)  ON #AsOfInventory.LotNo = Inventory.LotNo	
+
+		INNER JOIN Grade ON Grade.GradeID = Inventory.GradeID 
+
+		INNER JOIN Counterparty c ON Inventory.VendorID = c.CpID	
+
+		LEFT JOIN BUYSELL WITH(NOLOCK)  ON BUYSELL.BuySellNo = Inventory.BuysellNo    
+
+	WHERE #AsOfInventory.Weight <> 0 
+
+		AND (BUYSELL.CUSTID = @ITYPE OR @ITYPE = '(INV)' OR @ITYPE = '' )
+
+		AND (@SupplierID = '' OR Inventory.VendorID = @SupplierID)
+
+
+
+
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+    -- AVERAGE COST INVENTORY  BULK (Prp) & PLANT (NonP)
+
+	-- ========================================================================================================
+
+	IF @InvModel = '' OR @InvModel = 'BULK' BEGIN
+
+	
+
+	CREATE TABLE #BulkInvBalance(
+
+		WarehouseNm CHAR(45),
+
+		GradeID CHAR(15),
+
+		InvClass CHAR(10),
+
+		Location CHAR(25),
+
+		Supplier CHAR(12),
+
+		Quantity DECIMAL(22,5),
+
+		Value MONEY		
+
+		CONSTRAINT pk_BulkInvBalance PRIMARY KEY (WarehouseNm,GradeID,InvClass,Location,Supplier)
+
+		)
+
+
+
+	CREATE TABLE #wrkTranTable(
+
+		WarehouseNm CHAR(45),
+
+		GradeID CHAR(15),
+
+		InvClass CHAR(10),
+
+		Location CHAR(25),
+
+		Supplier CHAR(12),
+
+		Quantity DECIMAL(22,5),
+
+		Value MONEY--,
+
+		--CONSTRAINT pk_wrkTranTable PRIMARY KEY (WarehouseNm,GradeID,InvClass,Location,Supplier)
+
+		)
+
+
+
+
+
+
+
+	--SET ASOF FROM DATE
+
+	DECLARE @DoRollForward BIT
+
+	DECLARE @RollForwardFromDate DATETIME
+
+	IF @AsOfDate = @PriorPeriodEnd SET @DoRollForward = 0 ELSE SET @DoRollForward = 1  
+
+
+
+	IF @DoRollForward = 1
+
+		SET @RollForwardFromDate  = DATEADD(d,1,@PriorPeriodEnd)
+
+
+
+
+
+
+
+	-- PERIOD BEGINING POSITIONS.
+
+	INSERT #BulkInvBalance
+
+
+
+		--BULK (Prp)
+
+		SELECT WarehouseNm, inventoryvalue.GradeID, InvClass, Location, ISNULL(Supplier,''), Quantity,ValueAmt 
+
+			FROM InventoryValue 
+
+				INNER JOIN Address ON InventoryValue.WarehouseNm = [Address].[Type] AND CPID = '(INV)'
+
+			WHERE ValueDt = @PriorPeriodEnd 
+
+				AND (@WarehouseFilter = '' OR @WarehouseFilter = WarehouseNm)	
+
+				AND (@SupplierID = '' OR @SupplierID = Supplier) 
+
+				AND (@COID = '' OR Address.WarehouseCOID = @COID )
+
+
+
+		--PLANT (NonP)
+
+		UNION ALL
+
+		SELECT 
+
+			WhseCPID, GradeID, '', '', '',weightlbs, valuation 
+
+			from inventoryac 
+
+			where valuedt = @AsOfDate			
+
+			AND (@WarehouseFilter = '' OR @WarehouseFilter = WhseCPID)				
+
+			ORDER BY WarehouseNm, GradeID
+
+
+
+	DELETE FROM #BulkInvBalance WHERE Quantity = 0 AND Value = 0 
+
+
+
+	 
+
+	 declare @ScaleWeightUOM char(1)
+
+	 select @ScaleWeightUOM = scalewtuom from systeminfo
+
+
+
+
+
+
+
+		
+
+	-- **NET TRANSACTIONS**
+
+	IF @DoRollForward =1 BEGIN
+
+		INSERT #wrkTranTable
+
+		SELECT WarehouseNm, inventoryledger.GradeID, IsNull(InvClass,''), IsNull(Location,''), IsNull(Supplier,''), SUM(Quantity), SUM(Amount)
+
+			FROM InventoryLedger 
+
+			inner join grade on grade.gradeid = InventoryLedger.gradeid
+
+			WHERE (TranType = 'BUY' OR TranType = 'SELL' OR TranType = 'JOBIN' or TranType = 'JOBOUT')
+
+				AND Lotno IS NULL 
+
+				AND IsUndo = 0 
+
+				AND (PostDate >= @RollForwardFromDate AND PostDate <= @AsOFDate)
+
+				AND (@WarehouseFilter = '' OR @WarehouseFilter = WarehouseNm)	
+
+				AND (@SupplierID = '' OR @SupplierID = Supplier)	
+
+				and grade.InventoryType = 'BULK_WTVAL'
+
+				GROUP BY WarehouseNm, inventoryledger.GradeID, isnull(InvClass,''), isnull(Location,''), IsNull(Supplier,'')
+
+	END
+
+
+
+
+
+
+
+	-- 1. UPDATE EXISTING POSITIONS.
+
+	UPDATE #BulkInvBalance SET 
+
+		Quantity = B.Quantity + W.Quantity ,
+
+		Value = B.Value + W.Value
+
+	FROM #BulkInvBalance B INNER JOIN #wrkTranTable W ON W.WarehouseNm =B.WarehouseNm AND W.GradeID = B.GradeID AND W.InvClass = B.InvClass AND W.Location = B.Location AND W.Supplier = B.Supplier
+
+
+
+	-- 2. ADD-IN NEW POSITIONS.
+
+	INSERT #BulkInvBalance(WarehouseNm,GradeID,InvClass,Location,Supplier,Quantity,Value)
+
+	SELECT WarehouseNm, GradeID, InvClass, Location, Supplier, Quantity, Value 
+
+	FROM #wrkTranTable W 
+
+	WHERE NOT EXISTS
+
+	(
+
+		SELECT * FROM #BulkInvBalance B 
+
+		WHERE W.WarehouseNm =B.WarehouseNm AND W.GradeID = B.GradeID AND W.InvClass = B.InvClass AND W.Location = B.Location AND W.Supplier = B.Supplier
+
+	)
+
+
+
+
+
+
+
+	-- APPLY TO REPORT TABLE.
+
+	INSERT #REPORT(ItemNo,ReceivedDate,Product,Specification,WarehouseNm,Supplier,QuantityInRptUOM,InventoryValue,UnitCostInRptUOM,InventoryCurrencyCd,ExchangeRate,FXInventoryValue) 
+
+		SELECT '(Bulk)',@AsOFDate,Description,LTRIm(InvClass+' '+Location),WarehouseNm,Supplier,dbo.CnvFromBaseQtyUom(dbo.CnvToBaseQtyUOM(Quantity, @ScaleWeightUOM), @RptUOM),Value,0,@DomCur,1,Value 
+
+		FROM #BulkInvBalance INNER JOIN Grade ON #BulkInvBalance.gradeid = grade.gradeid
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	---- CURRENCY REVALUATION.
+
+	IF @RevalueCurrency <> '' BEGIN
+
+
+
+		CREATE TABLE #InvRevalue(
+
+			Lotno CHAR(15),
+
+			ReceivedDate DATETIME,
+
+			HCInventoryValue MONEY,
+
+			CurrencyCd CHAR(3),
+
+			ExchangeRate DECIMAL(22,12),
+
+			NewExchangeRate DECIMAL(22,12),
+
+			NewInventoryValue MONEY
+
+		)
+
+		DELETE #REPORT WHERE InventoryCurrencyCd <> @RevalueCurrency
+
+		--Get Exchange Rate at time of Inv-Receipt.
+
+		INSERT #InvRevalue
+
+			select ItemNo, ReceivedDate, InventoryValue, InventoryCurrencyCd, ExchangeRate,
+
+			(SELECT TOP 1 FxRate FROM CurrencyRate WHERE CurrencyRate.CurCode=@RevalueCurrency  AND ExchDate >=ReceivedDate ORDER BY ReceivedDate DESC),
+
+			0 from #REPORT 
+
+
+
+		UPDATE #InvRevalue SET
+
+			NewInventoryValue = HCInventoryValue / NewExchangeRate WHERE CurrencyCd <> @RevalueCurrency
+
+		UPDATE #InvRevalue SET
+
+			NewInventoryValue = HCInventoryValue / ExchangeRate WHERE CurrencyCd = @RevalueCurrency
+
+		
+
+		update #report 
+
+			SET InventoryValue =  #InvRevalue.NewInventoryValue,
+
+				InventoryCurrencyCd = @RevalueCurrency,
+
+				UnitCostInRptUOM = #InvRevalue.NewInventoryValue/ QuantityInRptUOM 
+
+			FROM #report INNER JOIN  #InvRevalue ON #report.ItemNo = #InvRevalue.lotno
+
+			
+
+
+
+	END
+
+
+
+
+
+	
+
+
+
+	-- TOTAL VALUE ONLY
+
+	-- ================
+
+	IF @GroupBy = 'TOTALVALUE' BEGIN
+
+		Select @TotalValue = Sum(InventoryValue) FROM #Report		
+
+		RETURN
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- ================================================================================================================================================================
+
+-- FINAL REPORT
+
+	
+
+	UPDATE #REPORT SET UnitCostInRptUOM = ROUND(InventoryValue / QuantityInRptUOM,5) WHERE QuantityInRptUOM <> 0  	-- Assign Unit Cost.	
+
+	SELECT 
+
+		ItemNo as [Item #],
+
+		RcvWks as [Rcv-Wks#],
+
+		SerialNo As [Serial No],
+
+		ReceivedDate As [Post-Date],
+
+		UPPER(WarehouseNm) As [Warehouse],
+
+		UPPER(Product) Product,
+
+		Specification,
+
+		Supplier,
+
+		PONumber As [PO],
+
+		UnitCostInRptUOM As [Unit Cost],
+
+		case when ISNUMERIC(dbo.FormatQty(QuantityInRptUOM, @RptUOM)) = 1 then cast(dbo.FormatQty(QuantityInRptUOM, @RptUOM) as float) else 0 end As [Quantity],
+
+		dbo.CnvUOM_Names(@RptUOM) As UOM,
+
+		InventoryValue As [Value]
+
+	FROM #REPORT ORDER BY CASE WHEN @GroupBy = 'Warehouse' THEN WarehouseNm ELSE NULL END, Product
+
+
+
+
+
+
+
+   -- -- CURRENCY VALUE CONVERSION.
+
+   -- IF @CurrencyCd <> '' BEGIN
+
+
+
+   --     Delete FROM #REPORT WHERE InventoryCurrencyCd <> @CurrencyCd
+
+   --     UPDATE #REPORT SET 
+
+   --         ExchangeRate=1,
+
+   --         InventoryCurrencyCd = @DomCur
+
+   --     WHERE InventoryCurrencyCd IS NULL OR ExchangeRate IS NULL
+
+
+
+   --     UPDATE #REPORT SET 
+
+   --         InventoryValue  = InventoryValue / ExchangeRate,              
+
+			--UnitCostInRptUOM = UnitCostInRptUOM / ExchangeRate
+
+   --         WHERE ExchangeRate <> 0
+
+
+
+   -- END
+
+
+
+
+
+	------ CURRENCY REVALUATION.
+
+	--IF @RevalueCurrency <> '' BEGIN
+
+
+
+	--	CREATE TABLE #InvRevalue(
+
+	--		Lotno CHAR(15),
+
+	--		ReceivedDate DATETIME,
+
+	--		HCInventoryValue MONEY,
+
+	--		CurrencyCd CHAR(3),
+
+	--		ExchangeRate DECIMAL(22,12),
+
+	--		NewExchangeRate DECIMAL(22,12),
+
+	--		NewInventoryValue MONEY
+
+	--	)
+
+		
+
+	--	--Get Exchange Rate at time of Inv-Receipt.
+
+	--	INSERT #InvRevalue
+
+	--		select lotno, ReceivedDate, InventoryValue, InventoryCurrencyCd, ExchangeRate,
+
+	--		(SELECT TOP 1 FxRate FROM CurrencyRate WHERE CurrencyRate.CurCode=@RevalueCurrency  AND ExchDate >=ReceivedDate ORDER BY ReceivedDate DESC),
+
+	--		0 from #REPORT 
+
+
+
+	--	UPDATE #InvRevalue SET
+
+	--		NewInventoryValue = HCInventoryValue / NewExchangeRate WHERE CurrencyCd <> @RevalueCurrency
+
+	--	UPDATE #InvRevalue SET
+
+	--		NewInventoryValue = HCInventoryValue / ExchangeRate WHERE CurrencyCd = @RevalueCurrency
+
+		
+
+	--	update #report 
+
+	--		SET InventoryValue =  #InvRevalue.NewInventoryValue,
+
+	--			InventoryCurrencyCd = @RevalueCurrency,
+
+	--			UnitCostInRptUOM = #InvRevalue.NewInventoryValue/ QtyInRptUom 
+
+	--		FROM #report INNER JOIN  #InvRevalue ON #report.lotno = #InvRevalue.lotno
+
+			
+
+
+
+	--END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

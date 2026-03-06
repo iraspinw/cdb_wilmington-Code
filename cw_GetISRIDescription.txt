@@ -1,0 +1,8 @@
+CREATE proc [dbo].[cw_GetISRIDescription] @GradeID varchar(12) as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+select isnull(CommodityDesc,'') from Grade where gradeid = @GradeID
+

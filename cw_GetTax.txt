@@ -1,0 +1,662 @@
+CREATE   PROCEDURE [dbo].[cw_GetTax] 
+
+	@ReportBy int, 
+
+	@FromDt datetime, 
+
+	@ToDt datetime, 
+
+	@coid char(2),
+
+	@SalesTaxID int = 0,
+
+	@ReportOnPaymentDate BIT = 0
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--1/7/2005: BM: Added Department Filter
+
+--2/4/2005: DH: Added filter for received/posting date.
+
+--05/11/07: DH Changed " TaxAmount <> 0" to include reversals.
+
+--4/21/2008 MCM: Corrected query
+
+--5/2/2008:  JW  modified FXTaxAmt result column to read from new FXPmtAmount and PmtCurCode column
+
+--5/6/2008:  JW  added sales discount adjustment section 
+
+--5/8/2008:  JW  added prepayledger section
+
+--5/9/2008:  JW  fixed prepayledger section join
+
+--03/05/2009 DSH Corrected filtering of taxes paid by intercompany department
+
+--04/07/2009 DSH Corrected intercompany filtering of taxes by supplier vs expense vendor
+
+--08/19/2009 DSH Added tax journal entry for reversing prepay tax on debit memo.
+
+--12/14/2009 DSH (SALES-TAX-PRJ) Added support for Sales Adjustment Sales Tax.  
+
+--03/25/2011 DSH Revised to include auto-adjustments with each posting batch.
+
+--07/15/2011 BF: added where #taxjournal.apbatchno <> '' to payables join at bottom
+
+--11/10/2011 RS: TaxDescription added to #ApBatch table and both indexes
+
+--11/15/2011 RS: Fixed previous Tax Description addition
+
+--01/10/2013 RS: @SalesTaxID added per IFP
+
+--03/09/2016 MEC Changed final select to dynamic sql to show home currency
+
+--10/19/2020 BF: corrected adjustment tax amount 
+
+--09/12/2022 DSH: Added support to run report based on customer payment (PennOhio)
+
+--11/09/2022 DSH: When run by Payment Received only show taxabel sales amounts (PennOhio)
+
+--03/09/2023 DSH Added zero balance tolerance.
+
+
+
+
+
+CREATE TABLE #ApBatch(
+
+	APBatchNo CHAR(15),
+
+	HCInvoiceAmt Money,
+
+	FXInvoiceAmt Money,
+
+	TaxDescription VARCHAR(100)
+
+)
+
+CREATE UNIQUE INDEX #IE_ApBatch ON #APBATCH(APBatchNo,TaxDescription)
+
+
+
+
+
+CREATE TABLE #TaxJournal (
+
+	ID INT IDENTITY(1,1),
+
+	TaxID CHAR(10),
+
+	TaxDescription VARCHAR(100),
+
+	CompanyName  VARCHAR(100),
+
+	InvoiceDt Datetime,
+
+	RcvDt Datetime,
+
+	CurrID CHAR(3),
+
+	InvoiceNo varchar(20),
+
+	HCInvoiceAmt Money,
+
+	FXInvoiceAmt Money,
+
+	HCTaxAmt Money,
+
+	FXTaxAmt Money,
+
+	PmtCurCode CHAR(3),
+
+	Source CHAR(12),
+
+	APBatchNo CHAR(15),
+
+	ReceiptID INT,
+
+	LastPaymentDt DATE,
+
+	HCTaxableAmt Money
+
+)    
+
+CREATE INDEX #IE_TaxJournal ON #TaxJournal(APBatchNo,TaxDescription)    
+
+
+
+DECLARE  @SYSCURRENCY varchar(5)
+
+SELECT @SYSCURRENCY = CurrCode from SystemInfo
+
+    
+
+DECLARE @DBNAME VARCHAR(100)    
+
+SET @DBNAME  = LOWER(DB_NAME()) --= 'cdb_priceandpierce'
+
+
+
+
+
+
+
+	-- GET SALES TAXES CHARGED ON SALES INVOICE
+
+	INSERT #TaxJournal
+
+	SELECT 
+
+    '_RCV' As TaxID,
+
+    TaxDescription, 
+
+    Customer.CompanyNm CompanyName, 
+
+    InvoiceDt,
+
+    InvoicePrintDt, 
+
+    CurrencyCd CurrID, 
+
+    BuySell.BuySellNo InvoiceNo,
+
+    (SalesAmt + SFreightChg) HCInvoiceAmt,
+
+    (FxInvoiceAmt) FXInvoiceAmt,
+
+    (wksSalesTax.TaxAmount) HCTaxAmt,
+
+    (wksSalesTax.FXPmtAmount) FXTaxAmt, 
+
+	wksSalesTax.PmtCurCode, 
+
+	'Invoice' Source,'',0,NULL,(SalesAmt + SFreightChg)
+
+    FROM BuySell WITH(NOLOCK) 
+
+	INNER JOIN Counterparty Customer WITH(NOLOCK) ON Customer.CpID = BuySell.CustID
+
+	INNER JOIN wksSalesTax WITH(NOLOCK) ON BuySell.BuySellNo = wksSalesTax.BuySellNo
+
+	INNER JOIN SalesTax WITH(NOLOCK) ON wksSalesTax.SalesTaxID = SalesTax.SalesTaxID
+
+	WHERE 
+
+		wksSalesTax.Source = 'B' 
+
+		AND 
+
+		(
+
+			(@ReportOnPaymentDate = 0 AND (InvoiceDt >= @FromDt AND InvoiceDt <= @ToDt))
+
+			OR
+
+			(@ReportOnPaymentDate = 1 AND (SbalanceDue <= 10))
+
+		)
+
+		AND (@DBNAME = 'cdb_priceandpierce' OR TaxAmount <> 0)
+
+		AND BuySell.[status] = 'I'
+
+		AND (@COID = '' OR BuySell.COID = @COID)
+
+		AND (IsNull(BuySell.IsAgency,0) <> 1)
+
+		AND (@SalesTaxID = 0 OR SalesTax.SalesTaxID = @SalesTaxID)
+
+	
+
+	-- GET SALES TAXES CHARGED ON SALES ADJUSTMENTS
+
+	UNION ALL	
+
+	SELECT 
+
+    '_RCV' As TaxID,
+
+    TaxDescription, 
+
+    Customer.CompanyNm CompanyName, 
+
+    TradeDt InvoiceDt,
+
+    TradeDt InvoicePrintDt, 
+
+    CurrencyCd CurrID, 
+
+    BuySell.BuySellNo InvoiceNo,
+
+    (GrossProfit) HCInvoiceAmt,
+
+    (AdjFxAmount) FXInvoiceAmt,
+
+    (wksSalesTax.TaxAmount) HCTaxAmt,
+
+    (wksSalesTax.FXTaxAmount) FXTaxAmt, 
+
+	wksSalesTax.PmtCurCode, 
+
+	'Adj' Source,'' ,0,NULL,(GrossProfit) 
+
+    FROM BuySell WITH(NOLOCK) 
+
+	INNER JOIN Counterparty Customer WITH(NOLOCK) ON Customer.CpID = BuySell.CustID
+
+	INNER JOIN wksSalesTax WITH(NOLOCK) ON BuySell.BuySellNo = wksSalesTax.BuySellNo
+
+	INNER JOIN SalesTax WITH(NOLOCK) ON wksSalesTax.SalesTaxID = SalesTax.SalesTaxID
+
+	INNER JOIN GPLedger WITH(NOLOCK) ON wksSalesTax.LedgerID = GPLedger.LedgerID
+
+	WHERE wksSalesTax.Source = 'A'	
+
+		AND 
+
+		(
+
+			(@ReportOnPaymentDate = 0 AND (GPLedger.AdjPostDt >= @FromDt AND GPLedger.AdjPostDt <= @ToDt 	))
+
+			OR
+
+			(@ReportOnPaymentDate = 1 AND (SbalanceDue = 0))
+
+		)		
+
+		AND AdjPosted = 'Y' AND (@DBNAME = 'cdb_priceandpierce' OR AdjSalesTaxAmt <> 0)
+
+		AND (@COID = '' OR BuySell.COID = @COID)
+
+		AND (IsNull(BuySell.IsAgency,0) <> 1)
+
+		AND (@SalesTaxID = 0 OR SalesTax.SalesTaxID = @SalesTaxID)
+
+
+
+
+
+
+
+
+
+    
+
+	-- GET PREPAY TAXES PAID.
+
+    UNION ALL
+
+	SELECT 
+
+	'PAID' As TaxID,
+
+    TaxDescription, 
+
+    Vendor.CompanyNm CompanyName, 
+
+	PostDt,
+
+	PostDt,
+
+	PrepayLedger.CurrencyCd,
+
+	InvoiceNo,
+
+	Amount,
+
+	FxAmount,
+
+	SalesTaxAmt,
+
+	SalesTaxAmtFx,
+
+	PrepayLedger.CurrencyCd, 
+
+	'Prepay' as Source,'',0,NULL,Amount
+
+	FROM PrepayLedger WITH(NOLOCK)
+
+	INNER JOIN Counterparty Vendor WITH(NOLOCK) ON Vendor.CpID = PrepayLedger.VendorID
+
+	INNER JOIN SalesTaxCode WITH(NOLOCK) ON PrepayLedger.SalesTaxCodeID = SalesTaxCode.SalesTaxCodeID
+
+	INNER JOIN SalesTax WITH(NOLOCK) ON SalesTaxCode.SalesTax01 = SalesTax.SalesTaxID
+
+	WHERE (PostDt >= @FromDt AND PostDt <= @ToDt )         
+
+		AND (@DBNAME = 'cdb_priceandpierce' OR SalesTaxAmt <> 0)
+
+		AND (@COID = '' OR PrepayLedger.COID = @COID)
+
+		AND (@SalesTaxID = 0 OR SalesTax.SalesTaxID = @SalesTaxID)
+
+
+
+	-- GET PREPAY TAXES REVERSED FROM DEBIT MEMO.
+
+    UNION ALL
+
+	SELECT 
+
+	'PAID' As TaxID,
+
+    TaxDescription, 
+
+    Vendor.CompanyNm CompanyName, 
+
+	PostDt,
+
+	PostDt,
+
+	PrepayLedger.CurrencyCd,
+
+	InvoiceNo,
+
+	Amount*-1,
+
+	FxAmount*-1,
+
+	SalesTaxAmt*-1,
+
+	SalesTaxAmtFx*-1,
+
+	PrepayLedger.CurrencyCd, 
+
+	'Prepay' as Source,'',0,NULL,Amount*-1
+
+	FROM PrepayLedger WITH(NOLOCK)
+
+	INNER JOIN Counterparty Vendor WITH(NOLOCK) ON Vendor.CpID = PrepayLedger.VendorID
+
+	INNER JOIN SalesTaxCode WITH(NOLOCK) ON PrepayLedger.SalesTaxCodeID = SalesTaxCode.SalesTaxCodeID
+
+	INNER JOIN SalesTax WITH(NOLOCK) ON SalesTaxCode.SalesTax01 = SalesTax.SalesTaxID
+
+	WHERE (PostDt >= @FromDt AND PostDt <= @ToDt )         
+
+		AND (@DBNAME = 'cdb_priceandpierce' OR SalesTaxAmt <> 0)
+
+		AND (@COID = '' OR PrepayLedger.COID = @COID)
+
+		AND (@SalesTaxID = 0 OR SalesTax.SalesTaxID = @SalesTaxID)
+
+
+
+
+
+
+
+     -- RECOGNIZE TAXES BASED ON PAYMENT DATE.
+
+     -----------------------------------------------
+
+        IF @ReportOnPaymentDate = 1 BEGIN
+
+
+
+			-------------------------------
+
+			--Only Report on Taxable Amount			
+
+			IF @DBNAME = 'cdb_pennohio'	BEGIN				
+
+				select InvoiceNo into #a from #TaxJournal WHERE [Source] = 'Invoice'
+
+				select  billsheetid, SUM(Amount) Amount INTO #B from billsheetdetail inner join #a ON billsheetdetail.billsheetid = #a.InvoiceNo  WHERE ISTaxable = 1 GROUP BY billsheetid ORDER BY BillSheetID   
+
+				UPDATE #TaxJournal SET HcInvoiceAmt = Amount, FxInvoiceAmt = Amount
+
+					FROM #TaxJournal INNER JOIN #B ON #TaxJournal.InvoiceNo = #B.billsheetid WHERE #TaxJournal.[Source] = 'Invoice'
+
+			END
+
+			-------------------------------
+
+
+
+
+
+			-- Get First Receipt ID
+
+            UPDATE #TaxJournal SET 
+
+				#TaxJournal.ReceiptID = 
+
+					(select TOP 1 ReceiptID from Receipt WITH (NOLOCK) where Receipt.BuySellNo = #TaxJournal.InvoiceNo AND Receipt.Amount <> 0 And COALESCE(Reversed,0) = 0 ORDER BY PaymentDt ASC) 
+
+				FROM #TaxJournal 
+
+       
+
+			---- Set First Payment date and amount.			        
+
+			UPDATE #TaxJournal SET 
+
+				#TaxJournal.LastPaymentDt = Receipt.PaymentDt 
+
+				FROM #TaxJournal INNER JOIN Receipt WITH (NOLOCK)  ON #TaxJournal.ReceiptID = Receipt.ReceiptID
+
+		
+
+			---- REMOVE EVERYTHING WITHOUT A PAYMENT DATE
+
+			DELETE #TaxJournal WHERE LastPaymentDt IS NULL			
+
+			
+
+            -- **EXCLUDE INVOICES OUTSIDE REPORTING PERIOD.** 
+
+            DELETE #TaxJournal WHERE (LastPaymentDt < @FromDt OR LastPaymentDt > @ToDt)            
+
+                
+
+	END
+
+
+
+
+
+
+
+
+
+    --REPORT ONLY ON PURCHASE TAXES PAID.  
+
+	--==============================================================================================================================
+
+	IF @ReportOnPaymentDate = 0 BEGIN
+
+		INSERT #TaxJournal
+
+		SELECT 
+
+		'PAID' As TaxID,
+
+		TaxDescription, 
+
+		Vendor.CompanyNm CompanyName, 
+
+		payables.InvoiceDt,
+
+		RcvDt,
+
+		Payables.CurrencyCd CurrID, 
+
+		Payables.InvoiceNo InvoiceNo,     
+
+		sum(Payables.Amount) HCInvoiceAmt, 
+
+		sum(Payables.FXAmount) FXInvoiceAmt, 
+
+		PayablesSalesTax.TaxAmount HCTaxAmt, 
+
+		PayablesSalesTax.FXTaxAmount FXTaxAmt, 
+
+		Payables.CurrencyCd PmtCurCode, 
+
+		'Invoice' as Source, 
+
+		Payables.APBatchNo,0,NULL,0
+
+		FROM PayablesSalesTax 
+
+		INNER JOIN PAYABLES WITH(NOLOCK) ON PayablesSalesTax.APBatchNo = Payables.APBatchNo
+
+		INNER JOIN Counterparty Vendor WITH(NOLOCK) ON Payables.CpID = Vendor.CpID
+
+		INNER JOIN SalesTax WITH(NOLOCK) ON PayablesSalesTax.SalesTaxID = SalesTax.SalesTaxID
+
+		INNER JOIN BuySell WITH(NOLOCK)  ON Payables.BuySellNo = BuySell.BuySellNo		
+
+		AND ((Payables.InvoiceDt >= @FromDt AND Payables.InvoiceDt <= @ToDt and @ReportBy = 1) 
+
+			OR (Payables.RcvDt >= @FromDt AND Payables.RcvDt <= @ToDt and @ReportBy = 2))
+
+		AND    
+
+	   (        
+
+			( Payables.ItemIDSource = 'S' AND  
+
+				(@COID  = '' 
+
+				OR 
+
+				(BuySell.COID = @COID AND (BuySell.COID_DueTo = '' OR BuySell.COID_DueTo IS NULL)) OR (BuySell.COID_DueTo = @COID)
+
+				)    
+
+			)
+
+			OR 
+
+			(Payables.ItemIDSource <> 'S' AND (@COID  = '' OR (BuySell.COID = @COID)) 
+
+			)
+
+		)
+
+		AND (@SalesTaxID = 0 OR SalesTax.SalesTaxID = @SalesTaxID)
+
+		AND (IsNull(BuySell.IsAgency,0) <> 1)
+
+		AND (@DBNAME = 'cdb_priceandpierce' OR isNull(PayablesSalesTax.TaxAmount,0) <> 0)
+
+		GROUP BY TaxDescription, Vendor.CompanyNm, payables.InvoiceDt, RcvDt, Payables.CurrencyCd, InvoiceNo,Payables.APBatchNo, PayablesSalesTax.TaxAmount, PayablesSalesTax.FXTaxAmount, PayablesSalesTax.SalesTaxID
+
+	END
+
+
+
+
+
+
+
+INSERT #ApBatch
+
+	SELECT  Payables.APBatchNo,
+
+		SUM(Payables.Amount), 
+
+		SUM(Payables.FXAmount),
+
+		SalesTax.TaxDescription
+
+	FROM Payables  WITH(NOLOCK) 
+
+	INNER JOIN PayablesSalesTax WITH(NOLOCK)  ON PayablesSalesTax.APBatchNo = Payables.APBatchNo
+
+	INNER JOIN SalesTax WITH(NOLOCK) ON PayablesSalesTax.SalesTaxID = SalesTax.SalesTaxID
+
+	INNER JOIN #TaxJournal WITH(NOLOCK) ON Payables.APBatchno = #TaxJournal.APBatchNo AND SalesTax.TaxDescription = #TaxJournal.TaxDescription
+
+	where #taxjournal.apbatchno <> ''
+
+	GROUP BY Payables.APBatchNo,SalesTax.TaxDescription
+
+
+
+UPDATE #TaxJournal SET 
+
+	#TaxJournal.HCInvoiceAmt = #ApBatch.HCInvoiceAmt, 
+
+    #TaxJournal.FXInvoiceAmt = #ApBatch.FXInvoiceAmt
+
+    FROM #TaxJournal 
+
+    INNER JOIN #ApBatch ON #TaxJournal.APBatchno = #ApBatch.APBatchNo AND #ApBatch.TaxDescription = #TaxJournal.TaxDescription
+
+	
+
+--delete from #TaxJournal where invoiceno <> '12670'
+
+
+
+
+
+
+
+
+
+-- PRINT FINAL REPORT.	
+
+declare @SQLTXT nvarchar(1000)
+
+set @SQLTXT = 
+
+    'SELECT
+
+		TaxID,
+
+		TaxDescription,
+
+		CompanyName [Customer],
+
+		InvoiceDt [Tran-Date],
+
+		RcvDt,
+
+		CurrID,
+
+		InvoiceNo [Tran-No],
+
+		CONVERT(decimal(20,2), HCInvoiceAmt) [Sales ' + @SYSCURRENCY + '],
+
+		CONVERT(decimal(20,2), HCTaxAmt) [Tax ' + @SYSCURRENCY + '],
+
+		CONVERT(decimal(20,2), FXInvoiceAmt) [Sales],
+
+		CONVERT(decimal(20,2), FXTaxAmt) [Tax],
+
+		PmtCurCode [Currency],
+
+		[Source] [Tran-Type],
+
+		APBatchNo,
+
+		LastPaymentDt as [Last Payment],
+
+		HCInvoiceAmt as[-hidden- HCInvoiceAmt],
+
+		HCTaxAmt as[-hidden- HCTaxAmt]
+
+	FROM #TaxJournal
+
+	ORDER BY TaxID, TaxDescription, InvoiceDt, InvoiceNo, Source desc'
+
+
+
+	exec(@SQLTXT)
+
+
+
+
+
+
+
+
+

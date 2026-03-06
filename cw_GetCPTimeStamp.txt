@@ -1,0 +1,7 @@
+Create  PROCEDURE [dbo].[cw_GetCPTimeStamp] @CpID char(12), @EditStamp int OUTPUT AS
+
+--4/3/2006 JW: Created for Counterparty Concurrency check
+
+
+
+	SELECT @EditStamp = convert( int,CpLastEdit) FROM Counterparty WITH (NOLOCK) WHERE CpID = @CpID

@@ -1,0 +1,48 @@
+CREATE proc [dbo].[cw_GetInputBulkGrades] @WarehouseNm varchar(65) = '', @jobNo int = 0, @UOMType varchar(6) = 'WEIGHT' as
+
+set nocount on
+
+select inventoryledger.gradeid, grade.[description]
+
+from InventoryLedger
+
+inner join grade on grade.GradeID = InventoryLedger.GradeID
+
+where 
+
+(@WarehouseNm='' or WarehouseNm = @WarehouseNm)
+
+--and uomtype = @UOMType
+
+and quantity > 0
+
+and (grade.inventorytype='BULK_WTVAL')
+
+union
+
+select bulk_gradeid, [description]
+
+from ConvertingJob_Source 
+
+inner join grade on ConvertingJob_Source.Bulk_GradeID = grade.GradeID
+
+where @jobno <> 0 and jobno=@jobno
+
+order by [description]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,14 @@
+CREATE   PROCEDURE [dbo].[cw_GetJobTypes] AS
+
+--05/08/2019 MN: Created
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT JobID, RTRIM(JobTypeNm) AS JobTypeNm, RTRIM(EqActionType) AS [EqActionType], IsBillable FROM JobType ORDER BY JobTypeNm
+
+
+

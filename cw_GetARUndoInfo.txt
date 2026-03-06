@@ -1,0 +1,38 @@
+CREATE proc [dbo].[cw_GetARUndoInfo] @ARBatchNo int as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+declare @PostType char(3)
+
+select @PostType = postingtype from Receipt where ARBatchNo = @ARBatchNo
+
+
+
+if @PostType = 'CRE' begin
+
+	select sum(amount) amount, sum(fxamount) fxamount, currencycd, glacct, postingtype
+
+	from receipt
+
+	where ARBatchNo = @ARBatchNo
+
+	group by currencycd, glacct, PostingType
+
+end
+
+if @PostType='UAC' begin
+
+	select sum(amount) amount, sum(receipt.fxamount) fxamount, receipt.currencycd, uacashledger.glacct, PostingType
+
+	from receipt
+
+	inner join UACashLedger on UACashLedger.LedgerID = receipt.LedgerID
+
+	where receipt.ARBatchNo = @ARBatchNo
+
+	group by receipt.currencycd, uacashledger.glacct, PostingType
+
+end
+

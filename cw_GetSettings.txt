@@ -1,0 +1,16 @@
+CREATE proc [dbo].[cw_GetSettings]
+
+
+
+	@UserID varchar(10)
+
+
+
+as
+
+
+
+select * from EScaleSettings where UserID = @UserID
+
+
+

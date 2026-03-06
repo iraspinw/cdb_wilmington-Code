@@ -1,0 +1,16 @@
+CREATE  procedure [dbo].[cw_GetCpCurr] @CpID char(12) as 
+
+--08/31/2015 MCM: Added ReferenceID
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+  SELECT CommCurrency, GLAcctExpense FROM Counterparty WHERE CommCurrency <> '' And CPID = @CpID ORDER BY CompanyNm
+
+
+
+
+

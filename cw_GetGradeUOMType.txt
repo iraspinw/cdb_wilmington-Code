@@ -1,0 +1,14 @@
+create proc [dbo].[cw_GetGradeUOMType] @GradeID varchar(15) as
+
+set nocount on 
+
+set transaction isolation level read uncommitted
+
+
+
+--12/3/2020 BF Created
+
+
+
+select isnull(UOMType, 'WEIGHT') from Grade where gradeid=@GradeID
+

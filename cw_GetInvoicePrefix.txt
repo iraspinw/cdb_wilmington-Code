@@ -1,0 +1,57 @@
+CREATE proc [dbo].[cw_GetInvoicePrefix]
+
+	@WksNo varchar(30),
+
+	@FormID char(10)
+
+as
+
+
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+
+
+declare @InvoicePrefix varchar(10) = ''
+
+
+
+If @FormID = 'INVOICE' Begin
+
+	select @InvoicePrefix = CompanyInfo.InvoicePrefix from buysell
+
+	inner join CompanyInfo on CompanyInfo.COID = buysell.COID
+
+	where buysell.buysellno = @WksNo
+
+END
+
+
+
+If @FormID = 'BILLINVC' Begin
+
+	select @InvoicePrefix = CompanyInfo.InvoicePrefix from BillSheet
+
+	inner join CompanyInfo on CompanyInfo.COID = BillSheet.COID
+
+	where BillSheet.BillSheetID = @WksNo
+
+END
+
+
+
+If @FormID = 'GROUPINV' or @FormID = 'GROUPINVBL' Begin
+
+	select @InvoicePrefix = CompanyInfo.InvoicePrefix from GroupInvoice
+
+	inner join CompanyInfo on CompanyInfo.COID = GroupInvoice.COID
+
+	where GroupInvoice.StatementNo = @WksNo
+
+END
+
+
+
+select rtrim(@InvoicePrefix) as InvPrefix

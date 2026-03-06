@@ -1,0 +1,14 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetShippingTerms] AS
+
+--08/05/2015 MCM: Modified for settings
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT RTRIM(ShipTerm) AS ShipTerm, RTRIM([Type]) AS [Type] FROM ShippingTerm ORDER BY ShipTerm
+

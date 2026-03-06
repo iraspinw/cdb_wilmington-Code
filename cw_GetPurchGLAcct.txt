@@ -1,0 +1,6 @@
+CREATE proc [dbo].[cw_GetPurchGLAcct] @PayableID int  as
+
+select top 1 GLAccount.GLAcct from GLAccount where cat = 'PURCHASES'
+
+order by glacct asc
+

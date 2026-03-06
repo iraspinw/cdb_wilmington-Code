@@ -1,0 +1,14 @@
+Create proc [dbo].[cw_GetUACGainLossAccount] 
+
+
+
+as
+
+
+
+-- MEC: Created for Unapplied Cash Rate Gains/Loss
+
+
+
+select * from GLAccount where Cat = 'CURRENCY G/L'
+

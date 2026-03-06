@@ -1,0 +1,4 @@
+create proc [dbo].[cw_GetContactEmail] @CT_ID int as
+
+select email from contact where ct_id = @CT_ID
+

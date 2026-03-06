@@ -1,0 +1,762 @@
+--cw_getgrossprofit_ledger '2/1/2022', '2/10/2022', '','','','','','',''
+
+CREATE PROC [dbo].[cw_GetGrossProfit_Ledger]
+
+	@pFromDt datetime, @pToDate datetime, 
+
+	@CpFilter char(12), 
+
+	@CoID as Char(2), 
+
+	@TradeType varchar(25), 
+
+	@RefID varchar(10), 
+
+	@UOM char(2) = 'S',
+
+	@IncludeInv BIT = 1, 
+
+	@BuyRep varchar(10)
+
+AS
+
+--10/28/2015 DSH: Gross Profir Ledger Rewritten for cieTrade.net
+
+--11/07/2016 DSH: Added Include Inventory Option.
+
+--11/08/2016 DSH: Added Support for Expense Allocation  with Inv+ Option.
+
+--11/28/2016 DSH: Added Support for Converting Expenses.
+
+--08/29/2019 DSH: Added Support for Sales Adjustments: Bank Fees
+
+--08/30/2019 DSH: Fixed account filtering on purchase adjustments
+
+--09/30/2020 DSH: Corrections for unapplied cash bank fees.
+
+--03/16/2022 DSH: Exclude Agency when GP = 0 
+
+--07/29/2022 DSH: Adsded Inventory Adjustments (WRITE-OFFS)
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED	
+
+BEGIN
+
+
+
+	CREATE TABLE #GPReport(
+
+		LedgerID INT,
+
+		COID CHAR(2),
+
+		TradeType Varchar(45),
+
+		PostingDate DATETIME,
+
+		BuySellNo CHAR(12),
+
+		TransNo CHAR(20),
+
+		TranType CHAR(20),
+
+		ReceiverNm VARCHAR(100),
+
+		Supplier VARCHAR(100),
+
+		Quantity DECIMAL(22,8),
+
+		Sale MONEY,
+
+		Cost MONEY,
+
+		Expenses MONEY,
+
+		GrossProfit MONEY,
+
+		GrossProfitPerUOM MONEY,
+
+		Margin DECIMAL(12,5),
+
+		SalesRepNm CHAR(30),	
+
+		BuyRepNm CHAR(30),		
+
+		SO CHAR(15),
+
+		PO CHAR(15),
+
+		WksType char(1),
+
+		ShipToCtry VARCHAR(35),
+
+		ShipFromCtry VARCHAR(35),
+
+		InvType varchar(10),
+
+		LotNo char(25)
+
+	)
+
+		
+
+		
+
+	-- GET SALES REP NAME
+
+	DECLARE @SalesRepNm CHAR(30)
+
+	IF @RefID <> '' BEGIN
+
+		SELECT @SalesRepNm = [Name] FROM Referrer WHERE ReferrerNo = @RefID		
+
+	END
+
+	-- GET BUY REP NAME
+
+	DECLARE @BuyRepNm CHAR(30)
+
+	IF @BuyRep <> '' BEGIN
+
+		SELECT @BuyRepNm = [Name] FROM Referrer WHERE ReferrerNo = @BuyRep		
+
+	END
+
+
+
+
+
+
+
+
+
+	--GROSS PROFIT FROM WORKSHEETS
+
+	------------------------------
+
+    INSERT #GPReport
+
+    SELECT 
+
+		GPLedger.LedgerID,
+
+		BuySell.COID,
+
+		BuySell.TradeType,
+
+		GPLedger.TradeDt,
+
+		BuySell.BuySellNo,
+
+		BuySell.BuySellNo TransNo,
+
+		'Wks',
+
+		Customer.CompanyNm, 
+
+		Vendor.CompanyNm, 
+
+		DBO.CONVERT_TO_UOM(BuySell.TotalWeightLbs,'L',@UOM), 
+
+        Sale,Cost-BuySell.PFreightchg,
+
+		BuySell.PFreightchg,
+
+		GrossProfit,0,0,
+
+		SalesRep.[Name] SalesRepNm,
+
+		BuyRep.[Name] BuyRepNm,
+
+		--CASE WHEN COALESCE(BuySell.Referrerno1,'') = '' THEN SalesRep.Name ELSE BuyRep.Name END,
+
+		BuySell.RefSONo,
+
+		BuySell.RefPONo,
+
+		CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END,
+
+		Address.Country,
+
+		ShipFromAddr.Country ShipFromCtry,
+
+		buysell.IsBulk,
+
+		LotNo
+
+    FROM GPLedger WITH(NOLOCK) 
+
+        INNER JOIN BuySell WITH(NOLOCK)  ON GPLedger.BuySellNo = BuySell.BuySellNo
+
+		INNER JOIN CounterParty Customer  WITH(NOLOCK) ON BuySell.CustID = Customer.CpID
+
+        INNER JOIN CounterParty Vendor  WITH(NOLOCK) ON BuySell.VendorID = Vendor.CpID         
+
+        LEFT  JOIN CounterParty ACP  WITH(NOLOCK) ON GPLedger.AdjCpID = ACP.CpID		
+
+		LEFT  JOIN Referrer SalesRep on Buysell.ReferrerNo1 = SalesRep.ReferrerNo  
+
+		LEFT  JOIN Referrer BuyRep on Buysell.ReferrerNo2 = BuyRep.ReferrerNo 
+
+		LEFT JOIN [Address] WITH(NOLOCK) ON BuySell.CustID = Address.CpID AND BuySell.ShipToID = Address.[Type]
+
+		LEFT JOIN [Address] ShipFromAddr WITH(NOLOCK) ON BuySell.VendorID = ShipFromAddr.CpID AND BuySell.ShipFromID = ShipFromAddr.[Type]
+
+    WHERE 
+
+		GPLedger.Source='B' AND BuySell.Status = 'I'
+
+		AND	(TradeDt >= @pFromDt AND TradeDT <= @pTodate)
+
+        AND (BuySell.CustID = @CpFilter or @CpFilter = '')
+
+        AND (BuySell.CoID = @CoID or @CoID = '')
+
+		AND (@TradeType = '' OR @TradeType = '(ALL)' OR BuySell.TradeType = @TradeType)
+
+        AND (@RefID = '' OR @RefID = BuySell.ReferrerNo1)
+
+        AND (@BuyRep = '' OR @BuyRep = BuySell.ReferrerNo2)
+
+		AND ((BuySell.CustID <> '(INV)') OR @IncludeInv = 1)
+
+		AND (IsNull(IsAgency,0) = 0 OR (IsNull(IsAgency,0) = 1 AND GrossProfit <> 0))
+
+
+
+
+
+	--GROSS PROFIT FROM SALES ADJUSTMENTS
+
+	-------------------------------------
+
+    INSERT #GPReport
+
+    SELECT 
+
+		GPLedger.LedgerID,
+
+		BuySell.COID,
+
+		BuySell.TradeType,
+
+		GPLedger.TradeDt,
+
+		BuySell.BuySellNo,
+
+		GPLedger.AdjMemoNo TransNo,
+
+		CASE WHEN GPLEdger.Source = 'A' THEN 'Adj-Sales' ELSE 'Adj-BankFee' END,
+
+		Customer.CompanyNm, 
+
+		'', 
+
+		dbo.Convert_To_UOM(GPLedger.AdjWeight,GPLedger.AdjWeightUOM,@UOM),
+
+        Sale,Cost,0,GrossProfit,NULL,NULL,
+
+		SalesRep.[Name] SalesRepNm,
+
+		BuyRep.[Name] BuyRepNm,
+
+		BuySell.RefSONo,
+
+		BuySell.RefPONo,
+
+		'W', --CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END,
+
+		Address.Country,
+
+		ShipFromAddr.Country ShipFromCtry,
+
+		buysell.isbulk
+
+		,LotNo
+
+    FROM GPLedger WITH(NOLOCK) 
+
+        INNER JOIN CounterParty Customer  WITH(NOLOCK) ON GPLedger.ADJCPID= Customer.CpID        
+
+		LEFT JOIN BuySell WITH(NOLOCK)  ON GPLedger.BuySellNo = BuySell.BuySellNo		
+
+        LEFT JOIN CounterParty ACP  WITH(NOLOCK) ON GPLedger.AdjCpID = ACP.CpID		
+
+		LEFT JOIN Referrer SalesRep on Buysell.ReferrerNo1 = SalesRep.ReferrerNo  
+
+		LEFT JOIN Referrer BuyRep on Buysell.ReferrerNo2 = BuyRep.ReferrerNo  
+
+		LEFT JOIN [Address] WITH(NOLOCK) ON BuySell.CustID = Address.CpID AND BuySell.ShipToID = Address.[Type]
+
+		LEFT JOIN [Address] ShipFromAddr WITH(NOLOCK) ON BuySell.VendorID = ShipFromAddr.CpID AND BuySell.ShipFromID = ShipFromAddr.[Type]
+
+    WHERE 
+
+		GPLedger.[Source] <> 'B' AND GPLedger.[Source] <> 'C' AND GPLedger.[Source] <> 'J'		
+
+		AND GPLedger.AdjPosted = 'Y' 
+
+		AND (GPLedger.AdjType = 'S' OR GPLedger.AdjType = 'B')
+
+		AND	(TradeDt >= @pFromDt AND TradeDT <= @pTodate)
+
+        AND (BuySell.CustID = @CpFilter or @CpFilter = '')
+
+        AND (BuySell.CoID = @CoID or @CoID = '')
+
+		AND (@TradeType = '' OR @TradeType = '(ALL)' OR BuySell.TradeType = @TradeType)
+
+        AND (@RefID = '' OR @RefID = BuySell.ReferrerNo1)
+
+        AND (@BuyRep = '' OR @BuyRep = BuySell.ReferrerNo2)
+
+
+
+
+
+
+
+
+
+	--GROSS PROFIT FROM PURCHASE ADJUSTMENTS
+
+	----------------------------------------
+
+    INSERT #GPReport
+
+    SELECT 
+
+		GPLedger.LedgerID,
+
+		BuySell.COID,
+
+		BuySell.TradeType,
+
+		GPLedger.TradeDt,
+
+		BuySell.BuySellNo,
+
+		BuySell.BuySellNo TransNo,
+
+		'Adj-Purch',
+
+		'', --Customer.CompanyNm, 
+
+		Vendor.CompanyNm, 
+
+		dbo.Convert_To_UOM(GPLedger.AdjWeight,GPLedger.AdjWeightUOM,@UOM),
+
+        Sale,Cost,0,GrossProfit,NULL,NULL,
+
+		SalesRep.[Name] SalesRepNm,
+
+		BuyRep.[Name] BuyRepNm,
+
+		--CASE WHEN COALESCE(BuySell.Referrerno1,'') = '' THEN SalesRep.Name ELSE BuyRep.Name END,
+
+		BuySell.RefSONo,
+
+		BuySell.RefPONo,
+
+		'W', --CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+		Address.Country,
+
+		ShipFromAddr.Country ShipFromCtry,
+
+		buysell.isbulk
+
+		,LotNo
+
+    FROM GPLedger WITH(NOLOCK) 
+
+        left JOIN BuySell WITH(NOLOCK)  ON GPLedger.BuySellNo = BuySell.BuySellNo
+
+		INNER JOIN CounterParty Vendor  WITH(NOLOCK) ON GPLedger.AdjCPID = Vendor.CpID        
+
+        LEFT  JOIN CounterParty ACP  WITH(NOLOCK) ON GPLedger.AdjCpID = ACP.CpID		
+
+		LEFT  JOIN Referrer SalesRep on Buysell.ReferrerNo1 = SalesRep.ReferrerNo  
+
+		LEFT  JOIN Referrer BuyRep on Buysell.ReferrerNo2 = BuyRep.ReferrerNo  
+
+		LEFT JOIN [Address] WITH(NOLOCK) ON BuySell.CustID = Address.CpID AND BuySell.ShipToID = Address.[Type]
+
+		LEFT JOIN [Address] ShipFromAddr WITH(NOLOCK) ON BuySell.VendorID = ShipFromAddr.CpID AND BuySell.ShipFromID = ShipFromAddr.[Type]
+
+    WHERE 
+
+		GPLedger.[Source] <> 'B' AND GPLedger.[Source] <> 'C' AND GPLedger.[Source] <> 'J'		
+
+		AND GPLedger.AdjPosted = 'Y' 
+
+		AND GPLedger.AdjType = 'P'
+
+		AND	(TradeDt >= @pFromDt AND TradeDT <= @pTodate)
+
+        AND (BuySell.CustID = @CpFilter or @CpFilter = '')
+
+        AND (BuySell.CoID = @CoID or @CoID = '')
+
+		AND (@TradeType = '' OR @TradeType = '(ALL)' OR BuySell.TradeType = @TradeType)
+
+        AND (@RefID = '' OR @RefID = BuySell.ReferrerNo1)
+
+        AND (@BuyRep = '' OR @BuyRep = BuySell.ReferrerNo2)	
+
+
+
+	-- GROSS PROFIT FROM WRITE-OFFS (INVENTORY ADJUSTMENTS)
+
+	INSERT #GPReport
+
+	SELECT 
+
+		GPLedger.LedgerID,
+
+		GPLedger.AdjCOID,
+
+		'',
+
+		GPLedger.TradeDt,
+
+		--'['+CONVERT(VARCHAr(15),GPLedger.LedgerID) +']',
+
+		GPLedger.LotNo,
+
+		CONVERT(VARCHAR(25),GPLedger.LedgerID) TransNo,
+
+		'Inv-Adj',
+
+		'(Inventory)',
+
+		Vendor.CompanyNm,
+
+		dbo.Convert_To_UOM(GPLedger.AdjWeight,GPLedger.AdjWeightUOM,@UOM),
+
+        Sale,Cost,0,GrossProfit,
+
+		NULL,
+
+		NULL,
+
+		'' SalesRepNm,  --SalesRep.[Name] 
+
+		'' BuyRepNm,  --BuyRep.[Name] 		
+
+		'' SONo,
+
+		'' PONo,
+
+		'I', --CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END
+
+		'' Country,
+
+		'' ShipFromCtry,
+
+		0 -- buysell.isbulk
+
+		,GPLedger.LotNo
+
+	FROM GPLedger WITH(NOLOCK) 
+
+		INNER JOIN INVENTORY WITH(NOLOCK) ON GPLedger.Lotno = INVENTORY.Lotno
+
+		LEFT JOIN CounterParty Vendor WITH(NOLOCK) ON Inventory.VendorID = Vendor.CpID        
+
+	WHERE 
+
+	(TradeDt >= @pFromDt AND TradeDT <= @pTodate)  
+
+	AND Source = 'I'
+
+	AND (Inventory.CoID = @CoID OR @CoID = '')
+
+	AND @CpFilter = ''
+
+
+
+
+
+
+
+
+
+
+
+	--+INVENTORY ONLY
+
+	-------------------------------------
+
+	IF @IncludeInv = 1 BEGIN
+
+
+
+
+
+		--1. EXPENSE ALLOCATION COSTS
+
+		INSERT #GPReport
+
+		SELECT 
+
+		ExpAHdr.TransNo,
+
+		ExpAHdr.COID,
+
+		ExpAHdr.TradeType,
+
+		ExpAHdr.PostingDt,
+
+		ExpAHdr.TransNo,
+
+		ExpAHdr.TransNo TransNo,
+
+		'InvAlloc',
+
+		'(INVENTORY)', 
+
+		'(Exp-Alloc)', --Vendor.CompanyNm, 
+
+		0,
+
+        0,
+
+		0,
+
+		SUM(Amount),
+
+		SUM(Amount)*-1 GP,
+
+		NULL,NULL,
+
+		'' RepNm,
+
+		'' BuyRepNm,
+
+		'' SO,
+
+		'' PO,
+
+		'' WksType,
+
+		'' ShipToCtry,
+
+		'' ShipFromCtry,
+
+		1 as isbulk
+
+		,''
+
+		from expenseallocation ExpAHdr 
+
+		INNER JOIN expensealloc_detail ExpADtl ON ExpAHdr.TransNo = ExpADtl.TransNo
+
+		WHERE 
+
+			(ExpAHdr.PostingDt >= @pFromDt AND ExpAHdr.PostingDt <= @pTodate)
+
+        AND (ExpAHdr.COID = @CoID or @CoID = '')
+
+		AND (@TradeType = '' OR @TradeType = '(ALL)' OR ExpAHdr.TradeType = @TradeType)
+
+		GROUP BY ExpAHdr.TransNo,ExpAHdr.COID, ExpAHdr.TradeType, ExpAHdr.PostingDt
+
+	
+
+	
+
+		--2. CONVERTING JOB COSTS
+
+		INSERT #GPReport
+
+		SELECT 
+
+		CnvHdr.JobNo,
+
+		CnvHdr.COID,
+
+		CnvHdr.TradeType,
+
+		CnvHdr.PostDt,
+
+		CnvHdr.JobNo,
+
+		CnvHdr.JobNo TransNo,
+
+		'Converting',
+
+		'(INVENTORY)', 
+
+		'(Converting)', --Vendor.CompanyNm, 
+
+		0,
+
+        0,
+
+		0,
+
+		SUM(Amount),
+
+		SUM(Amount)*-1 GP,
+
+		NULL,NULL,
+
+		'' RepNm,
+
+		'' BuyRepNm,
+
+		'' SO,
+
+		'' PO,
+
+		'C' WksType,
+
+		'' ShipToCtry,
+
+		'' ShipFromCtry,
+
+		'' isbulk
+
+		,''
+
+		from ConvertingJob CnvHdr 
+
+		INNER JOIN convertingjob_expenses CnvDtl ON CnvHdr.JobNo = CnvDtl.JobNo
+
+		WHERE 
+
+			(CnvHdr.PostDt >= @pFromDt AND CnvHdr.PostDt <= @pTodate)
+
+		AND (CnvHdr.COID = @CoID or @CoID = '')
+
+		AND (@TradeType = '' OR @TradeType = '(ALL)' OR CnvHdr.TradeType = @TradeType)
+
+		GROUP BY CnvHdr.JobNo, CnvHdr.COID, CnvHdr.TradeType, CnvHdr.PostDt
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	
+
+	END
+
+
+
+	
+
+	
+
+	--APPLY MARGIN
+
+	UPDATE #GPReport SET GrossProfitPerUOM = GrossProfit/ Quantity WHERE Quantity <> 0  AND TranType = 'Wks' 
+
+	UPDATE #GPReport SET Margin = GrossProfit/ Sale WHERE Sale <> 0 AND TranType = 'Wks'
+
+	UPDATE #GPReport SET TranType = 'Inv-Rcv' WHERE WksType = 'R' 
+
+	--update #GPReport set InvType = 'SERIAL' where isnull(InvType,0) = 0
+
+	update #GPReport set InvType = 'BULK' where isnull(invtype,0) = 1 and wkstype <> 'W'
+
+	update #GPReport set invtype = 'SERIAL' where isnull(invtype,'') <> 'BULK' and wkstype <> 'W'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	IF @RefID <> '' UPDATE #GPReport SET SalesRepNm = @SalesRepNm
+
+	IF @BuyRep <> '' UPDATE #GPReport SET BuyRepNm = @BuyRepNm
+
+	UPDATE #GPReport SET Margin = round(Margin * 100,3)
+
+		
+
+
+
+	SELECT	
+
+			PostingDate as 'Posting Date', 			
+
+			BuySellNo as 'Wks No', 
+
+			InvType as 'Inv-Type',
+
+			TransNo as 'Trans-No', 
+
+			TranType as 'Trans-Type', 
+
+			ReceiverNm as 'Receiver', 
+
+			Supplier as 'Supplier',
+
+			TradeType as 'Trade Type',
+
+			isnull(Quantity,0) As 'Quantity', 
+
+			isnull(Sale,0) as '{C}Sales', 
+
+			isnull(Cost,0) as '{C}Purchases', 
+
+			isnull(Expenses,0) as '{C}Expenses', 
+
+			isnull(GrossProfit,0) as '{C}Gross Profit', 
+
+			isnull(GrossProfitPerUOM,0) as '{C}Gross Profit per UOM', 
+
+			isnull(Margin,0) '{C}Margin%', 
+
+			SalesRepNm as 'Sales Rep', 
+
+			BuyRepNm as 'Buy Rep', 
+
+			SO 'Sales Order',
+
+			PO 'Purchase Order',
+
+			LedgerID as '-hidden-LedgerID' ,
+
+			WksType as '-Hidden-WksType',
+
+			ShipToCtry AS [Ship To Country],
+
+			ShipFromCtry AS [Ship From Country]
+
+			,LotNo
+
+		FROM #GPReport 	
+
+		--where buysellno = '10124'
+
+		ORDER BY PostingDate, BuySellNo, TranType DESC 
+
+
+
+
+
+END
+
+
+

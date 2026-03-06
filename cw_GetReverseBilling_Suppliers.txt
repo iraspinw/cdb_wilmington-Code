@@ -1,0 +1,46 @@
+
+
+
+
+CREATE PROC [dbo].[cw_GetReverseBilling_Suppliers] 
+
+
+
+	@ReverseBatchNo int 
+
+
+
+AS
+
+
+
+	--08/27/2019 MEC: Copied from q_GetReverseBilling_Suppliers and modified for cieTrade.net for Reverse Billing Posting
+
+
+
+	SET ANSI_NULLS ON 
+
+	SET NOCOUNT ON
+
+
+
+	SELECT DISTINCT
+
+		RBS.CpID, 
+
+		CompanyNm, 
+
+		CurrCode, 
+
+		AccountingID 
+
+	FROM 
+
+		ReverseBillingStatement RBS WITH (NOLOCK) 
+
+		INNER JOIN Counterparty CP WITH (NOLOCK) ON CP.CpID = RBS.CpID
+
+		INNER JOIN AccountingVendor AV WITH (NOLOCK) ON AV.CPID = RBS.CpID AND AV.COID = RBS.COID
+
+	WHERE ReverseBatchNo = @ReverseBatchNo
+

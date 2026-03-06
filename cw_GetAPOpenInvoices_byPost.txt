@@ -1,0 +1,334 @@
+CREATE   PROCEDURE [dbo].[cw_GetAPOpenInvoices_byPost] 
+
+    @SupplierID varchar(12), 
+
+    @ReportType varchar(12), 
+
+    @ReportingByAPDate varchar(12), 
+
+    @Include varchar(12), 
+
+    @FromDt datetime, 
+
+    @ToDt datetime,
+
+    @COID varchar(2), 
+
+    @TradeType varchar(25), 
+
+    @SortBy char(12) ='', 
+
+    @CurrencyCd char(3) ='',
+
+    @InclUnpostedAdj bit = 0
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET ANSI_WARNINGS OFF
+
+-- 11/7/2016 DSH: Rewritten for .Net 
+
+-- 04/13/2022 DSH Add multicurrency columns
+
+-- 09/13/2022 DSH Added Multicurrencyu filters
+
+-- 11/21/2022 DN: created for running report by Post Date
+
+
+
+
+
+
+
+	CREATE TABLE #OPENAPREPORT(
+
+		OpenDt DATE,
+
+		PostDt DATE,
+
+		Src CHAR(3),
+
+		TransNo CHAR(12),
+
+		TranType CHAR(3),
+
+		VendorNm VARCHAR(65),
+
+		AccountDesc VARCHAR(100),
+
+		HCAmount MONEY,
+
+		PickupNo varchar(25),
+
+		RelNo varchar(20),
+
+		FxAmount MONEY,
+
+		CurrencyCd CHAR(3),
+
+		FxRate DECIMAL(22,8)
+
+	)
+
+
+
+
+
+	-- OPEN WORKSHEET EXPENSES
+
+	INSERT #OPENAPREPORT(OpenDt,PostDt,Src,TransNo,TranType,VendorNm,AccountDesc,HCAmount,PickupNo, RelNo,FxAmount,CurrencyCd,FxRate)
+
+    SELECT  
+
+		BuySell.InvoiceDt, 			
+
+		Payables.RcvDt, 			
+
+		case when custid='(INV)' then 'Rec' when vendorid='(INV)' then 'Shp' else 'Wks' end,
+
+		Payables.BuySellNo, 
+
+		CASE WHEN Payables.ItemIDSource ='S' THEN 'Pur' ELSE 'Exp' END, 
+
+		CounterParty.CompanyNm, 
+
+		Payables.glacct + ' ' + GLAccount.Name, 	
+
+		Payables.Amount,
+
+		BuySell.PickupNo,
+
+		BuySell.RelNo,
+
+		Payables.FxAmount,
+
+		BuySell.PCurrencyCd,		
+
+		BuySell.PFxRate
+
+	FROM 
+
+	    Payables INNER JOIN CounterParty WITH(NOLOCK) ON CounterParty.CpID = Payables.CpID
+
+		INNER JOIN BuySell WITH(NOLOCK) ON Payables.BuySellNo = BuySell.BuySellNo 
+
+        LEFT JOIN GLAccount WITH(NOLOCK) ON Payables.GLAcct = GLAccount.GLAcct 
+
+	WHERE 
+
+        BuySell.Status = 'I'  
+
+		AND Payables.ItemIDSource <> 'A'   --Exclude Adjustments  
+
+		AND Amount <> 0        
+
+        AND (@COID = '' OR  BuySell.COID = @COID) 
+
+        AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+        AND (@SupplierID = '' OR Payables.CpID = @SupplierID)  
+
+		AND (@CurrencyCd= '' OR Payables.CurrencyCd = @CurrencyCd)		
+
+		AND (Payables.Posted=0  OR (Payables.Posted=1 AND Payables.RcvDt > @ToDt ))		
+
+		AND(
+
+			(@ReportType = 'BYASOFDATE' 	AND BuySell.InvoiceDt <= @TODT  ) 
+
+			OR
+
+			(@ReportType = 'BYPERIOD' AND (BuySell.InvoiceDt >= @FROMDT AND BuySell.InvoiceDt <= @TODT))
+
+		)
+
+
+
+
+
+
+
+	-- OPEN EXPENSE ALLOCATIONS COSTS
+
+	INSERT #OPENAPREPORT(OpenDt,PostDt,Src,TransNo,TranType,VendorNm,AccountDesc,HCAmount,PickupNo, RelNo,FxAmount,CurrencyCd,FxRate)
+
+    SELECT  
+
+		EAC.PostingDt OpenDt, 			
+
+		Payables.RcvDt, 			
+
+		'Alc',
+
+		Payables.BuySellNo, 
+
+		'Exp', 
+
+		CounterParty.CompanyNm, 
+
+		Payables.glacct + ' ' + GLAccount.Name, 	
+
+		Payables.Amount,
+
+		'' PickupNo,
+
+		'' RelNo,
+
+		Payables.FxAmount,
+
+		Payables.CurrencyCd,
+
+		CASE WHEN Payables.FxAmount <> 0 THEN Payables.Amount/ Payables.FxAmount ELSE 1 END
+
+	FROM Payables 
+
+		INNER JOIN ExpenseAllocation EAC ON EAC.BuySellNo = Payables.BuySellNo  AND ItemIDSource = 'E' 
+
+		INNER JOIN Counterparty ON Payables.cpid = Counterparty.cpid		
+
+		LEFT JOIN GLAccount ON Payables.GLacct = GLaccount.glacct  	
+
+	WHERE 
+
+        EAC.ISPosted = 1 AND Amount <> 0		
+
+        AND (@COID = '' OR  EAC.COID = @COID) 
+
+        AND (@TradeType = '' OR @TradeType = EAC.TradeType)
+
+        AND (@SupplierID = '' OR Payables.CpID = @SupplierID)  
+
+		AND (@CurrencyCd= '' OR Payables.CurrencyCd = @CurrencyCd)
+
+		AND (Payables.Posted=0  OR (Payables.Posted=1 AND Payables.RcvDt > @ToDt ))
+
+		AND(
+
+			(@ReportType = 'BYASOFDATE' AND EAC.PostingDt <= @TODT  ) 
+
+			OR
+
+			(@ReportType = 'BYPERIOD' AND (EAC.PostingDt >= @FROMDT AND EAC.PostingDt <= @TODT))
+
+		)
+
+
+
+
+
+	-- OPEN CONVERTING JOB COSTS
+
+	INSERT #OPENAPREPORT(OpenDt,PostDt,Src,TransNo,TranType,VendorNm,AccountDesc,HCAmount,PickupNo,RelNo,FxAmount,CurrencyCd,FxRate)
+
+	SELECT 
+
+		CNV.PostDt OpenDt, 			
+
+		Payables.RcvDt, 			
+
+		'Cnv',
+
+		Payables.BuySellNo, 
+
+		'Exp', 
+
+		CounterParty.CompanyNm, 
+
+		Payables.glacct + ' ' + GLAccount.Name, 	
+
+		Payables.Amount,
+
+		BuySell.PickupNo,
+
+		BuySell.RelNo,
+
+		Payables.FxAmount,
+
+		Payables.CurrencyCd,
+
+		CASE WHEN Payables.FxAmount <> 0 THEN Payables.Amount/ Payables.FxAmount ELSE 1 END
+
+
+
+	FROM Payables 
+
+		INNER JOIN ConvertingJob CNV ON CNV.BuySellNo = Payables.BuySellNo AND ItemIDSource = 'C' 
+
+		INNER JOIN Counterparty ON Payables.cpid = Counterparty.cpid
+
+		LEFT JOIN BuySell WITH(NOLOCK) ON Payables.BuySellNo = BuySell.BuySellNo 
+
+		LEFT JOIN GLAccount ON Payables.GLacct = GLaccount.glacct  	
+
+	WHERE 
+
+		CNV.[Status] = 'I' AND Amount <> 0 				
+
+		AND (CNV.COID = @CoID OR @CoID = '') 
+
+		AND (CNV.TradeType = @TradeType OR @TradeType = '')
+
+		AND (@CurrencyCd= '' OR Payables.CurrencyCd = @CurrencyCd)
+
+		AND (@SupplierID = '' OR Payables.CpID = @SupplierID)
+
+		AND (Payables.Posted=0  OR (Payables.Posted=1 AND Payables.RcvDt > @ToDt ))
+
+		AND(
+
+			(@ReportType = 'BYASOFDATE' AND CNV.PostDt <= @TODT  ) 
+
+			OR
+
+			(@ReportType = 'BYPERIOD' AND (CNV.PostDt >= @FROMDT AND CNV.PostDt <= @TODT))
+
+		)
+
+
+
+
+
+	SELECT 
+
+		OpenDt As [Open Date],
+
+		PostDt As [Post Date],
+
+		Src,
+
+		TransNo As [Trans No],
+
+		TranType As [Tran Type],
+
+		VendorNm As [Vendor Name],
+
+		AccountDesc As [Account Desc],
+
+		HCAmount As [{HC} Amount],
+
+		PickupNo As [Pickup No],
+
+		RelNo As [Release No],
+
+		FxAmount,
+
+		CurrencyCd,
+
+		FxRate
+
+	from #OPENAPREPORT ORDER BY OpenDt, TransNo
+
+
+
+
+
+
+
+
+
+
+

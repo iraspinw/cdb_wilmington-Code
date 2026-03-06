@@ -1,0 +1,32 @@
+CREATE proc [dbo].[cw_GetMapAccounts] as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+
+
+	SELECT CompanyNm, CpID 
+
+	FROM CounterParty 
+
+	WHERE Role in ('C', 'P', 'A', 'X', 'S') 
+
+	AND CpID IN (SELECT CpID FROM Address WHERE Geocode <> ':' 
+
+	AND Geocode IS NOT NULL 
+
+	AND isnull(City,'') <> '') ORDER BY CompanyNm
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,575 @@
+CREATE PROC [dbo].[cw_GetOverDueInvoice_test3]
+
+	@CpID CHAR(12) = '',
+
+	@IsDetailOnly bit = 0,
+
+	@IsHtml bit = 0,
+
+	@PastDueLessThan char(5) = '',
+
+	@PastDueMoreThan char(5) = ''
+
+AS 
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--03/12/2018 DSH Created for Statement of Account Display & Print 
+
+--05/30/2018 DSH Added Logic to show Release Number if Order Number is blank
+
+--11/26/2018 MEC Added logic for consolidated invoices 
+
+--03/04/2021 DSH Added Unapplied cash to AR account balance.
+
+--cw_StatementOfAccountAR '84698', 0, 0
+
+
+
+	CREATE TABLE #ARSTMT(
+
+		InvoiceDt DateTime,
+
+		ShippingDt DateTime,
+
+		InvoiceNo varchar(100),
+
+		OrderNo CHAR(50),
+
+		OrderNoOrRelNo CHAR(50),
+
+		DaysOut INT,
+
+		InvoiceAmt MONEY,
+
+		Adjustments MONEY,
+
+		UnappliedCash MONEY,
+
+		Payments MONEY,
+
+		Balance MONEY,
+
+		DaysToPay INT,
+
+		DueDt DateTime,
+
+		PaymentTerms VARCHAR(100),
+
+		VendorID char(12),
+
+		buysellno char(12),
+
+		RelNo varchar(50),
+
+		Location varchar(50),
+
+		Cpid char(10),
+
+		CustName char(100),
+
+		ContactEmail char(100),
+
+		ContactName char(100),
+
+		pastDueDays int
+
+	)
+
+
+
+
+
+	-- DETERMINE WHETHER A/R MODULE IS USED.
+
+	DECLARE @IsARModule BIT
+
+	SELECT @IsARModule  = ISNULL(EnablecieTradeAR,0) FROM systeminfo WHERE ID = '00'
+
+	
+
+	IF @IsARModule = 0 BEGIN
+
+		(select 'yesy')
+
+		INSERT #ARSTMT
+
+		SELECT 
+
+			BuySell.InvoiceDt, 
+
+			BuySell.ShippingDt,
+
+			Case When IsNull(StatementNo,'') <> '' Then  RTRIM(StatementNo) Else RTRIM(BuySell.BuySellNo) End InvoiceNo,
+
+			CASE WHEN RTRIm(Buysell.RefSONo) = '' THEN Buysell.RelNo ELSE Buysell.RefSONo END OrderNo, 			
+
+			CASE WHEN RTRIm(Buysell.RefSONo) = '' THEN Buysell.RelNo ELSE Buysell.RefSONo END OrderNoOrRelNo,			
+
+			0 As DaysOut,			
+
+			FxInvoiceAmt+isnull(FxSalesTaxAmt,0) InvoiceAmt,  	        
+
+			FxSAdjustment,
+
+			0,
+
+			ISNULL(ARTrkPaymentAmt,0) FxPayments,		
+
+			(FXInvoiceAmt+FxSAdjustment+ISNULL(FxSalesTaxAmt,0))-ISNULL(ARTrkFxPaymentAmt,0) As FxBalanceDue,
+
+			ISNULL(DaysToPay,0),
+
+			ISNULL(DueDt,GETDATE()),
+
+			BuySell.Terms,
+
+			BuySell.VendorID,
+
+			RTRIM(BuySell.BuySellNo),
+
+			BuySell.RelNo,
+
+			BuySell.ShipToID,
+
+			buysell.CustID,
+
+			CounterParty.CompanyNm,
+
+			'','',
+
+			DateDiff(day,BuySell.DueDt,getdate())	
+
+		FROM BuySell 
+
+			LEFT JOIN BIllingTerm WITH(NOLOCK) ON BuySell.Terms = BillingTerm.Term
+
+			left join CounterParty on buysell.CustID = CounterParty.CpID
+
+		WHERE 
+
+			(@CpID = '') or (@CPID = BuySell.CustID)
+
+			AND (FXInvoiceAmt+FxSAdjustment+ISNULL(FxSalesTaxAmt,0))-ISNULL(ARTrkFxPaymentAmt,0) <> 0
+
+			AND BuySell.[Status] = 'I'        	    
+
+			AND ISNULL(BuySell.IsAgency,0) <> 1
+
+			and isnull(isinvoicebooked,0)=0 
+
+	END
+
+
+
+
+
+
+
+	ELSE BEGIN
+
+	
+
+		INSERT #ARSTMT
+
+		SELECT 
+
+			BuySell.InvoiceDt, 
+
+			BuySell.ShippingDt,
+
+			Case When IsNull(StatementNo,'') <> '' Then RTRIM(StatementNo) Else RTRIM(BuySell.BuySellNo) End InvoiceNo,
+
+			CASE WHEN RTRIm(Buysell.RefSONo) = '' THEN Buysell.RelNo ELSE Buysell.RefSONo END OrderNo,
+
+			CASE WHEN RTRIm(Buysell.RefSONo) = '' THEN Buysell.RelNo ELSE Buysell.RefSONo END OrderNoOrRelNo,
+
+			0 As DaysOut,			
+
+			FxInvoiceAmt+isnull(FxSalesTaxAmt,0) InvoiceAmt,  	        
+
+			FxSAdjustment,0,
+
+			FxPayments,
+
+			(FXInvoiceAmt+FxSAdjustment+ISNULL(FxSalesTaxAmt,0))-ISNULL(ARTrkFxPaymentAmt,0) As FxBalanceDue,
+
+			--FxBalanceDue,
+
+			ISNULL(DaysToPay,0),
+
+			ISNULL(DueDt,GETDATE()),
+
+			BuySell.Terms,
+
+			BuySell.VendorID,
+
+			RTRIM(BuySell.BuySellNo),
+
+			BuySell.RelNo,
+
+			BuySell.ShipToID,
+
+			buysell.CustID,
+
+			CounterParty.CompanyNm,
+
+			'','',
+
+			DateDiff(day,BuySell.DueDt,getdate())	
+
+		FROM BuySell 
+
+			LEFT JOIN BIllingTerm WITH(NOLOCK) ON BuySell.Terms = BillingTerm.Term
+
+			left join CounterParty on buysell.CustID = CounterParty.CpID
+
+		WHERE 
+
+			(@CpID = '') or (@CPID = BuySell.CustID)
+
+			AND FxBalanceDue <> 0
+
+			AND BuySell.[Status] = 'I'        	    
+
+			AND ISNULL(BuySell.IsAgency,0) <> 1
+
+			and isnull(isinvoicebooked,0)=0 
+
+
+
+
+
+		---- ADD-IN UNAPPLIED CASH.  
+
+		--INSERT #ARSTMT
+
+  --      SELECT 
+
+		--	EntryDt as InvoiceDt,
+
+		--	null ShippingDt,
+
+		--	'(Unapplied)' InvoiceNo,
+
+		--	' ' OrderNo,
+
+		--	' ' OrderNoOrRelNo,
+
+		--	0 As DaysOut,			
+
+		--	0,  	        
+
+		--	0 FxSAdjustment,
+
+		--	FxBalance * -1,
+
+		--	0 FxPayments,		
+
+		--	(FxBalance * -1) FxBalanceDue,
+
+		--	0,
+
+		--	NULL,
+
+		--	NULL,
+
+		--	UACashLedger.CustID,
+
+		--	NULL,
+
+		--	null,
+
+		--	''
+
+		--FROM UACashLedger WITH(NOLOCK) 
+
+  --      INNER JOIN Counterparty WITH(NOLOCK) ON UACashLedger.CustID = Counterparty.CpID 
+
+  --      WHERE round(Balance,2) > 0 
+
+  --      AND (@CpID = '' OR @CpID <> '' AND @CpID = UACashLedger.CustID)  
+
+  --      AND UACashLedger.Reversed = 0	
+
+  	END
+
+
+
+	
+
+	UPDATE #ARSTMT SET DueDt = InvoiceDt, DaystoPay = 0 WHERE COALESCE(PaymentTerms,'') = '' and DueDt IS NULL AND InvoiceNo <> '(Unapplied)'
+
+	UPDATE #ARSTMT SET DueDt = DATEADD(d,DaystoPay,InvoiceDt) WHERE DueDt is NULL AND DaystoPay <> 0 AND InvoiceNo <> '(Unapplied)'
+
+	UPDATE #ARSTMT SET DaysOut = DATEDIFF(d,DueDt, getdate()) WHERE InvoiceNo <> '(Unapplied)'
+
+
+
+
+
+	select
+
+		'' as Chk,
+
+		Cpid,
+
+		CustName,
+
+		sum(balance),
+
+		ContactName,
+
+		ContactEmail
+
+		 from #ARSTMT
+
+		 WHERE (PastDueDays >= @PastDueMoreThan and PastDueDays <= @PastDueLessThan) and PastDueDays <> '0'
+
+		 group by CustName,ContactName,ContactEmail,Cpid
+
+		 
+
+
+
+	---------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+	--If @IsDetailOnly = 0 Begin
+
+	--	-- Header Detail
+
+	--	SELECT
+
+	--		CompanyNm As Company, 
+
+	--		RTRIM(LTRIM(dbo.cw_GetCompanyAddress(COID, 0))) As CompanyAddr, 
+
+	--		LogoImage,
+
+	--		(SELECT CompanyNm FROM Counterparty WHERE CpID = @CpID) As Customer, 
+
+	--		RTRIM(LTRIM(dbo.xDoc_GetLocationAddress(@CpID, ''))) As CustomerAddr, 
+
+	--		CAST(GETDATE() As DATE) AsOfDate,
+
+	--		(SELECT SUM(InvoiceAmt) FROM #ARSTMT where (@PastDueMoreThan = '' and @PastDueLessThan = '') or (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan) and DaysOut <> '') As InvoiceAmtTotal, 
+
+	--		(SELECT SUM(Adjustments) FROM #ARSTMT where (@PastDueMoreThan = '' and @PastDueLessThan = '') or (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan) and DaysOut <> '') As AdjustmentTotal, 
+
+	--		--(SELECT SUM(UnappliedCash) FROM #ARSTMT where (@PastDueMoreThan = '' and @PastDueLessThan = '') or (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan)) As UnappliedCash, 
+
+	--		(SELECT SUM(Payments) FROM #ARSTMT where (@PastDueMoreThan = '' and @PastDueLessThan = '') or (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan) and DaysOut <> '') As PaymentTotal, 
+
+	--		(SELECT SUM(Balance) FROM #ARSTMT where (@PastDueMoreThan = '' and @PastDueLessThan = '') or (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan) and DaysOut <> '') As BalanceTotal,
+
+	--		@CpID CpID
+
+	--	From CompanyInfo Where COID = '00'
+
+	--End
+
+
+
+	--Declare @GroupCounterpartyByLocation bit
+
+ --  select @GroupCounterpartyByLocation =isnull(optionValue,0) from Options where optionName = 'HideGroupCounterpartyByLocation'
+
+	
+
+ --   if @GroupCounterpartyByLocation=1 begin 	
+
+	--	IF @IsHtml = 1 Begin
+
+	--		SELECT 
+
+	--		   case when CONVERT(VARCHAR(10), InvoiceDt, 103) = '01/01/1900' then null   else  InvoiceDt end  [Invoice Date], 
+
+	--			case when CONVERT(VARCHAR(10), ShippingDt, 103) = '01/01/1900' then null else  ShippingDt end [Ship Date], 
+
+	--			--InvoiceDt [Invoice Date],
+
+	--			--CASE WHEN ShippingDt IS NULL THEN ' ' ELSE ShippingDt END [Ship Date],
+
+	--			InvoiceNo [Invoice-No],
+
+	--			OrderNo [Order-No],
+
+	--			CASE WHEN DaysOut = 0 THEN ' ' ELSE CONVERT(VARCHAR(10),DaysOut) END [Days-Out],
+
+	--			case when CONVERT(VARCHAR(10), DueDt, 103) = '01/01/1900' then null   else  DueDt end  [Due-Date], 
+
+	--			--CASE WHEN DueDt IS NULL THEN ' ' ELSE DueDt END [Due-Date],
+
+	--			CASE WHEN InvoiceNo = '(Unapplied)' THEN UnappliedCash ELSE InvoiceAmt END [{C}Amount],
+
+	--			Adjustments [{C}Adjustments],
+
+	--			Payments [{C}Payments],
+	--			Balance [{C}Balance],
+
+	--			VendorID [-Hidden-VendorID],
+
+	--			buysellno [-Hidden-BuySellNo],
+
+	--			case when  isnull(rtrim(Location),'')='' then 'Unassigned' else Location end Location,
+
+	--			@GroupCounterpartyByLocation as GroupCounterpartyByLocation
+
+	--		FROM #ARSTMT ORDER BY Location 
+
+	--	End
+
+	--	Else Begin
+
+	--		SELECT 
+
+	--			case when CONVERT(VARCHAR(10), InvoiceDt, 103) = '01/01/1900' then null   else  InvoiceDt end InvoiceDt, 
+
+	--			case when CONVERT(VARCHAR(10), ShippingDt, 103) = '01/01/1900' then null else  ShippingDt  end ShippingDt, 
+
+	--			--CONVERT(VARCHAR(10), InvoiceDt, 101) InvoiceDt,
+
+	--			--(CASE WHEN ShippingDt IS NULL THEN ' ' ELSE CONVERT(VARCHAR(10), ShippingDt, 101) END) ShippingDt,
+
+	--			InvoiceNo,
+
+	--			OrderNo,
+
+	--			OrderNoOrRelNo,
+
+	--			CASE WHEN DaysOut = 0 THEN ' ' ELSE CONVERT(VARCHAR(10),DaysOut) END DaysOut,
+
+	--			case when CONVERT(VARCHAR(10), DueDt, 103) = '01/01/1900' then null   else   DueDt end DueDt, 
+
+	--			--CONVERT(VARCHAR(10), DueDt, 101) DueDt,
+
+	--			CASE WHEN InvoiceNo = '(Unapplied)' THEN UnappliedCash ELSE InvoiceAmt END InvoiceAmt,
+
+	--			Adjustments,
+
+	--			Payments,
+
+	--			Balance,
+
+	--			RelNo,
+
+	--			case when  isnull(rtrim(Location),'')='' then 'Unassigned' else Location end Location,
+
+	--			@GroupCounterpartyByLocation as GroupCounterpartyByLocation
+
+	--		FROM #ARSTMT 
+
+	--		where (@PastDueMoreThan = '' and @PastDueLessThan = '') or (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan) and DaysOut <> ''
+
+	--		--where (@PastDueLessThan = '0' and @PastDueMoreThan = '0') or (@PastDueLessThan = '0' and  DaysOut >= @PastDueMoreThan) or (@PastDueMoreThan = '0' and DaysOut <= @PastDueLessThan) or (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan)
+
+	--		ORDER BY Location 
+
+	--	End
+
+	--end 
+
+	--else begin 
+
+	--	IF @IsHtml = 1 Begin
+
+	--			SELECT 
+
+	--			   case when CONVERT(VARCHAR(10), InvoiceDt, 103) = '01/01/1900' then null   else  InvoiceDt end  [Invoice Date], 
+
+	--				case when CONVERT(VARCHAR(10), ShippingDt, 103) = '01/01/1900' then null else  ShippingDt end [Ship Date], 
+
+	--				--InvoiceDt [Invoice Date],
+
+	--				--CASE WHEN ShippingDt IS NULL THEN ' ' ELSE ShippingDt END [Ship Date],
+
+	--				InvoiceNo [Invoice-No],
+
+	--				OrderNo [Order-No],
+
+	--				CASE WHEN DaysOut = 0 THEN ' ' ELSE CONVERT(VARCHAR(10),DaysOut) END [Days-Out],
+
+	--				case when CONVERT(VARCHAR(10), DueDt, 103) = '01/01/1900' then null   else  DueDt end  [Due-Date], 
+
+	--				--CASE WHEN DueDt IS NULL THEN ' ' ELSE DueDt END [Due-Date],
+
+	--				CASE WHEN InvoiceNo = '(Unapplied)' THEN UnappliedCash ELSE InvoiceAmt END [{C}Amount],
+
+	--				Adjustments [{C}Adjustments],
+
+	--				Payments [{C}Payments],
+
+	--				Balance [{C}Balance],
+
+	--				VendorID [-Hidden-VendorID],
+
+	--				buysellno [-Hidden-BuySellNo],
+
+	--				case when  isnull(rtrim(Location),'')='' then 'Unassigned' else Location end Location,
+
+	--			    @GroupCounterpartyByLocation as GroupCounterpartyByLocation
+
+	--			FROM #ARSTMT 
+
+	--			ORDER BY ShippingDt
+
+	--		End
+
+	--		Else Begin
+
+	--			SELECT 
+
+	--				case when CONVERT(VARCHAR(10), InvoiceDt, 103) = '01/01/1900' then null   else  InvoiceDt end InvoiceDt, 
+
+	--				case when CONVERT(VARCHAR(10), ShippingDt, 103) = '01/01/1900' then null else  ShippingDt  end ShippingDt, 
+
+	--				--CONVERT(VARCHAR(10), InvoiceDt, 101) InvoiceDt,
+
+	--				--(CASE WHEN ShippingDt IS NULL THEN ' ' ELSE CONVERT(VARCHAR(10), ShippingDt, 101) END) ShippingDt,
+
+	--				InvoiceNo,
+
+	--				OrderNo,
+
+	--				OrderNoOrRelNo,
+
+	--				CASE WHEN DaysOut = 0 THEN ' ' ELSE CONVERT(VARCHAR(10),DaysOut) END DaysOut,
+
+	--				case when CONVERT(VARCHAR(10), DueDt, 103) = '01/01/1900' then null   else   DueDt end DueDt, 
+
+	--				--CONVERT(VARCHAR(10), DueDt, 101) DueDt,
+
+	--				CASE WHEN InvoiceNo = '(Unapplied)' THEN UnappliedCash ELSE InvoiceAmt END InvoiceAmt,
+
+	--				Adjustments,
+
+	--				Payments,
+
+	--				Balance,
+
+	--				RelNo,
+
+	--				case when  isnull(rtrim(Location),'')='' then 'Unassigned' else Location end Location,
+
+	--			   @GroupCounterpartyByLocation as GroupCounterpartyByLocation
+
+	--			FROM #ARSTMT
+
+	--			where (@PastDueMoreThan = '' and @PastDueLessThan = '') or (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan) and DaysOut <> ''
+
+	--			--where (@PastDueLessThan = '0' and @PastDueMoreThan = '0') or (@PastDueLessThan = '0' and  DaysOut >= @PastDueMoreThan) or (@PastDueMoreThan = '0' and DaysOut <= @PastDueLessThan) or (DaysOut >= @PastDueMoreThan and DaysOut <= @PastDueLessThan)
+
+	--			ORDER BY ShippingDt
+
+	--		End
+
+	--end 
+
+
+
+
+

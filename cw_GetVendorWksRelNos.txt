@@ -1,0 +1,58 @@
+CREATE   PROCEDURE [dbo].[cw_GetVendorWksRelNos] 
+
+	@WhseID varchar(45),
+
+	@CpID varchar(12),
+
+	@WhseStatus varchar(15) = '',
+
+	@IsRcv bit = 0
+
+
+
+-- 07/17/2023 DN: Created, grabs distinct release numbers for worksheet lookup on receiving slip
+
+
+
+-- [cw_GetVendorWksRelNos] '', '', '', 1
+
+
+
+  AS
+
+
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+
+
+	SELECT
+
+		distinct RelNo
+
+	FROM
+
+	Buysell WITH(NOLOCK) 
+
+	INNER JOIN Counterparty Cust WITH(NOLOCK) ON Cust.CpID = BuySell.CustID
+
+	INNER JOIN Counterparty Vend WITH(NOLOCK) ON Vend.CpID = BuySell.VendorID
+
+	WHERE
+
+	(@IsRcv=0 And Upper(BuySell.VendorID) = '(INV)' OR @IsRcv=1 And Upper(BuySell.CustID) = '(INV)') 
+
+	AND BuySell.[Status] = 'W' 
+
+	AND (@CpID = '' OR @CpID = BuySell.VendorID) 
+
+	AND (@WhseID = '' OR @WhseID = BuySell.ShipToID) 
+
+	AND (@WhseStatus = '' OR (@WhseStatus = 'SCHEDULED' And BuySell.WarehouseStatus in ('SCHEDULED', 'IN PROCESS')))
+
+	and isnull(RelNo,'') <> ''
+

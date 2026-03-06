@@ -1,0 +1,116 @@
+CREATE proc [dbo].[cw_GetEmailListByCashDisbursementsCpID] 
+
+
+
+	@GLAcct					 VARCHAR(12) = '', 
+
+	@PostingFromDt			 DATETIME = '', 
+
+	@IsHeaderDetailShow		 BIT=0,
+
+	@IsDocument				 BIT =0,
+
+	@LoggedInUser			 VARCHAR(75) = '',
+
+	@FinalBegApproved		 FLOAT = 0,
+
+	@Difference				 FLOAT = 0,
+
+	@ActualEndingAmount      FLOAT = 0,
+
+	@CalculatedCashOnHand    FLOAT = 0
+
+
+
+	AS
+
+
+
+--11/18/2020 Alex: Created for  Petty Cash Reconciliation Report
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	CREATE TABLE #Report(
+
+		CDID  INT
+
+	)
+
+
+
+	INSERT #Report
+
+	SELECT  
+
+		  CashDisbursements.[CDID]
+
+	  FROM  CashDisbursements
+
+	  INNER JOIN CashDisbursementDetails ON CashDisbursementDetails.CDID  = CashDisbursements.CDID
+
+	  INNER JOIN Payables                ON Payables.PayableID = CashDisbursementDetails.PayableID OR Payables.Reversed_PayableID = CashDisbursementDetails.PayableID
+
+	  INNER JOIN BuySell                 ON Payables.BuySellNo = BuySell.BuySellNo
+
+	  LEFT  JOIN PublicTrade             ON PublicTrade.TradeID = BuySell.PublicTradeID
+
+	  LEFT  JOIN GLAccount               ON GLAccount.GLAcct = CashDisbursements.GLAcct
+
+	  LEFT  JOIN CounterParty            ON CounterParty.CPID = CashDisbursements.CPID
+
+	  LEFT  JOIN PublicTradeCustomer     ON CashDisbursements.PTCustID = PublicTradeCustomer.PTCustID
+
+	  LEFT  JOIN UserDef                 ON UserDef.UserID = CashDisbursementDetails.CashClerk
+
+	  WHERE 
+
+		  -- ((@CustID = '') OR (@CustID Like 'PT-%' AND REPLACE(@CustID, 'PT-', '') = CashDisbursements.PTCustID) OR (CashDisbursements.CPID = @CustID))
+
+		    (@GLAcct=CashDisbursements.GLAcct)
+
+		AND (@PostingFromDt = '' OR (PublicTradeCustomer.FileAs IS  NULL AND  BuySell.InvoiceDt = @PostingFromDt) OR (PublicTradeCustomer.FileAs IS NOT NULL AND PublicTrade.ReceiveDt = @PostingFromDt))		
+
+		AND Cat ='PETTY CASH'
+
+
+
+
+
+
+
+		SELECT 
+
+			Contact.ContactNm as [Contact] , 
+
+			Email as Email, 
+
+			'Receiving' as [Type]
+
+		FROM #Report 
+
+	    INNER JOIN Contact ON Contact.CpID = #Report.CDID
+
+		WHERE Contact.CpID <>'(INV)'
+
+	UNION 
+
+		SELECT 
+
+		  PublicTradeCustomer.FirstName + ' ' + PublicTradeCustomer.LastName as [Contact],
+
+		  Email as Email,
+
+		  'Public Trade' AS [Type]
+
+		FROM #Report
+
+		INNER JOIN PublicTradeCustomer ON PublicTradeCustomer.PTCustID = #Report.CDID
+
+
+

@@ -1,0 +1,162 @@
+CREATE   PROCEDURE [dbo].[cw_GetBookShipStatGrade] @BookingNo char(25) 
+
+AS
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+--3/20/2020 Alex: Created
+
+--cw_GetBookShipStatGrade '014IP1057408' 																																																  where BookSheet.BookingNo=@BookingNo)
+
+DECLARE @CarrierPrimary VARCHAR(65)	
+
+(select @CarrierPrimary =  CounterParty.CompanyNm from BookSheet 
+
+                      inner join  CounterParty on CounterParty.CpID = BookSheet.Carrier  
+
+					  where BookSheet.BookingNo=@BookingNo)
+
+
+
+
+
+DECLARE @SWTUOM char(1)
+
+	SET @SWTUOM = ISNULL((SELECT TOP 1 SWeightUOM from BookSheet
+
+                         inner join BuySell on BuySell.BookingNo = BookSheet.BookingNo
+
+                         inner join WKSDetail on WKSDetail.BuySellNo=BuySell.BuySellNo
+
+						  INNER JOIN Grade WITH(NOLOCK) ON WKSDetail.GradeID = Grade.GradeID
+
+						  where BookSheet.BookingNo=@BookingNo),'L')
+
+
+
+DECLARE @TotalQty decimal(22,3)
+
+	SET @TotalQty = 0
+
+		SET @TotalQty = (SELECT SUM(dbo.CONVERT_TO_UOM(isnull(SWeight,0),SWeightUOM,@SWTUOM)) from BookSheet
+
+                         inner join BuySell on BuySell.BookingNo = BookSheet.BookingNo
+
+                         inner join WKSDetail on WKSDetail.BuySellNo=BuySell.BuySellNo
+
+						 INNER JOIN Grade WITH(NOLOCK) ON WKSDetail.GradeID = Grade.GradeID
+
+						 where BookSheet.BookingNo=@BookingNo) 
+
+
+
+						 
+
+Declare @CountUnitType as Int
+
+	 Set @CountUnitType = (select   COUNT(distinct WksDetail.UnitType) from BookSheet
+
+                         inner join BuySell on BuySell.BookingNo = BookSheet.BookingNo
+
+                         inner join WKSDetail on WKSDetail.BuySellNo=BuySell.BuySellNo
+
+						  INNER JOIN Grade WITH(NOLOCK) ON WKSDetail.GradeID = Grade.GradeID
+
+						  where BookSheet.BookingNo=@BookingNo and  WksDetail.UnitType<>'')
+
+
+
+Declare @SumUnit as int
+
+	Set @SumUnit = (select  sum(WksDetail.Units) from BookSheet
+
+                         inner join BuySell on BuySell.BookingNo = BookSheet.BookingNo
+
+                         inner join WKSDetail on WKSDetail.BuySellNo=BuySell.BuySellNo
+
+						 INNER JOIN Grade WITH(NOLOCK) ON WKSDetail.GradeID = Grade.GradeID
+
+						 where BookSheet.BookingNo=@BookingNo)
+
+
+
+Declare @SumUnitsUnitType as VARCHAR(50)
+
+	set @SumUnitsUnitType =(select top 1 Case When @SumUnit > 0 Then CONVERT(varchar, @SumUnit)  Else '' End  +' ' +Case When @CountUnitType > 1 Then 'Units'  Else IsNull(dbo.CnvUnitName(WksDetail.UnitType),'') End from BookSheet
+
+																																																					 inner join BuySell on BuySell.BookingNo = BookSheet.BookingNo
+
+																																																					 inner join WKSDetail on WKSDetail.BuySellNo=BuySell.BuySellNo
+
+																																																					  INNER JOIN Grade WITH(NOLOCK) ON WKSDetail.GradeID = Grade.GradeID
+
+																																																					  where BookSheet.BookingNo=@BookingNo)
+
+
+
+
+
+
+
+select 
+
+(case when WKSDetail.InvoiceDesc='' then Grade.[Description] else WKSDetail.InvoiceDesc end) as Grade,
+
+dbo.FormatQty(SWeight,SWeightUOM) as SWeight,
+
+dbo.CnvUOM_Names(SWeightUOM) as SWeightUOM,
+
+dbo.RemoveTrailingZeros(SPrice) as SPrice, 
+
+dbo.CnvUOM_Names(SPriceUOM) as SPriceUOM, 
+
+ISNULL(dbo.CnvUnitName(WksDetail.UnitType),'') as UnitType, 
+
+WksDetail.Units as Units, 
+
+SFxAmount,
+
+SCurrencyCd,
+
+BuySell.ShippingDt,
+
+--SWeight,SWeightUOM, 
+
+WKSDetail.BuySellNo,
+
+BuySell.RefEquipNo,
+
+BuySell.RefSealNo,
+
+--BookSheet.Carrier,
+
+@CarrierPrimary as Carrier,
+
+BuySell.EqTareWt,
+
+dbo.CnvUOM_Names(BuySell.ContainerUOM) ContainerUOM,
+
+dbo.FormatQty(@TotalQty,@SWTUOM) as TotalQty,
+
+dbo.CnvUOM_Names(@SWTUOM) as InvoiceUOM,
+
+@SumUnitsUnitType as SumUnitsUnitType
+
+from BookSheet
+
+inner join BuySell on BuySell.BookingNo = BookSheet.BookingNo
+
+inner join WKSDetail on WKSDetail.BuySellNo=BuySell.BuySellNo
+
+INNER JOIN Grade WITH(NOLOCK) ON WKSDetail.GradeID = Grade.GradeID
+
+--inner join CounterParty on CounterParty.CpID = BookSheet.Carrier
+
+where BookSheet.BookingNo=@BookingNo
+
+ 
+

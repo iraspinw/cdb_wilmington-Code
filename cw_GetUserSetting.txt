@@ -1,0 +1,36 @@
+CREATE   PROCEDURE [dbo].[cw_GetUserSetting] @UserID char(10), @Segment varchar(100), @ReturnKey varchar(300) OUTPUT
+
+--12/13/22 MN: CREATED
+
+AS
+
+
+
+--BEGIN TRANSACTION
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+	IF EXISTS(SELECT [Key] FROM cwUserSetting WHERE UserID = @UserID AND Segment = @Segment) BEGIN
+
+		SELECT @ReturnKey = [Key] FROM cwUserSetting WHERE UserID = @UserID AND Segment = @Segment
+
+	END
+
+	ELSE
+
+	BEGIN
+
+		SELECT @ReturnKey = [Key] FROM cwUserSettingMaster WHERE Segment = @Segment
+
+	END
+
+
+
+RETURN @ReturnKey
+
+
+

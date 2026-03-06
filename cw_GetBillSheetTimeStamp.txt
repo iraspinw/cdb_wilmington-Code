@@ -1,0 +1,8 @@
+
+
+CREATE  procedure [dbo].[cw_GetBillSheetTimeStamp] @BillSheetID int, @EditStamp int OUTPUT AS
+
+select @EditStamp = convert( int,lastedited) FROM BillSheet WITH (NOLOCK) Where BillSheetID = @BillSheetID
+
+
+

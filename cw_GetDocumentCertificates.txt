@@ -1,0 +1,42 @@
+CREATE PROC [dbo].[cw_GetDocumentCertificates]
+
+
+
+	--@UserName varchar(100),
+
+	--@Status char(1)
+
+
+
+AS
+
+
+
+--11/7/16 M.N: CREATED
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		Title As [Certificate Title],
+
+		Certification As [Disclaimer or Description]
+
+		
+
+	FROM LCCertificates
+
+	ORDER BY Title
+
+	--Where 
+
+	--	And (@Status = '' OR (Active = @Status))
+
+
+

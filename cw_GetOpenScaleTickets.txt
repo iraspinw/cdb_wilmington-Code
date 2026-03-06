@@ -1,0 +1,108 @@
+CREATE   PROCEDURE [dbo].[cw_GetOpenScaleTickets]  @WhseID varchar(45), @UserID char(10) AS
+
+--01/21/2020 MN: created
+
+
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		 'Receiving' AS [Type],
+
+		 B.BuySellNo AS [Ticket No],
+
+		 ShippingDt As [Date],
+
+		 V.CompanyNm As [Customer],
+
+		 B.ShipFromID As [Location],
+
+		 F.CompanyNm As [Carrier],
+
+		 RefEquipNo As [Equipment No],
+
+		 Driver As [Driver],
+
+		 B.ShipToID As [Warehouse],
+
+		 UserID As [User],
+
+		 BookingNo As [Booking No],
+
+		 RelNo As [Release No]
+
+		 FROM BuySell B
+
+		INNER JOIN Counterparty V WITH(NOLOCK) ON B.VendorID = V.CpID
+
+		INNER JOIN Counterparty C WITH(NOLOCK) ON B.CustID = C.CpID
+
+		INNER JOIN Counterparty F WITH(NOLOCK) ON B.RefFreightCarrier = F.CpID
+
+		WHERE CustID = '(INV)'
+
+		AND ISNULL(ScaleTare, 0) > 0
+
+		AND B.[Status] = 'W'
+
+		AND (@WhseID = '' OR @WhseID = B.ShipToID)
+
+		AND (@UserID = '' OR @UserID = UserID)
+
+	UNION ALL
+
+		SELECT 
+
+		 'Shipment'  AS [Type],
+
+		 B.BuySellNo AS [Ticket No],
+
+		 ShippingDt As [Date],
+
+		 C.CompanyNm As [Customer],
+
+		 B.ShipToID As [Location],
+
+		 F.CompanyNm As [Carrier],
+
+		 RefEquipNo As [Equipment No],
+
+		 Driver As [Driver],
+
+		 B.ShipFromID As [Warehouse],
+
+		 UserID As [User],
+
+		 BookingNo As [Booking No],
+
+		 RelNo As [Release No]
+
+		 FROM BuySell B
+
+		INNER JOIN Counterparty V WITH(NOLOCK) ON B.VendorID = V.CpID
+
+		INNER JOIN Counterparty C WITH(NOLOCK) ON B.CustID = C.CpID
+
+		INNER JOIN Counterparty F WITH(NOLOCK) ON B.RefFreightCarrier = F.CpID
+
+		WHERE VendorID = '(INV)' 
+
+		AND ISNULL(ScaleGross, 0) <> 0
+
+		AND B.[Status] = 'W'
+
+		AND (@WhseID = '' OR @WhseID = B.ShipFromID)
+
+		AND (@UserID = '' OR @UserID = UserID)
+
+		ORDER BY [Type] DESC, [Date] DESC
+
+
+

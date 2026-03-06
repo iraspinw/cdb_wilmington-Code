@@ -1,0 +1,68 @@
+CREATE PROC [dbo].[cw_GetCashierLedgerCustomers] 
+
+	@Status char(9) = ''
+
+AS
+
+
+
+--05/11/2020: MEC:CREATED
+
+
+
+SET NOCOUNT ON
+
+
+
+
+
+--cw_GetCashierLedgerCustomers 'PAID'
+
+
+
+SELECT 
+
+	Counterparty.CpID CustID
+
+	,CompanyNm CustName
+
+	,Count(*) PayablesCount
+
+FROM CounterParty
+
+INNER JOIN Payables ON Payables.CpID = CounterParty.CpID
+
+WHERE 
+
+	IsNull(ScaleCheck,0) = 1
+
+	AND ((@Status = '' AND ISNULL(Payables.Posted,0) = 0) OR (@Status = 'OPEN' AND ISNULL(Payables.Posted,0) = 0) OR (@Status = 'PAYABLE' AND ISNULL(Payables.Posted,0) = 0 AND Payables.InvoiceDt <= GETDATE()) OR (@Status = 'PAID' AND ISNULL(Payables.Posted,0
+) = 1))
+
+Group By Counterparty.CpID, CompanyNm
+
+UNION
+
+SELECT 
+
+	'PT-' + convert(varchar, PublicTradeCustomer.[PTCustID]) IsCustID
+
+	,FileAs CustName
+
+	,Count(*) PayablesCount
+
+FROM PublicTradeCustomer 
+
+INNER JOIN PublicTrade On PublicTrade.PTCustID = PublicTradeCustomer.PTCustID
+
+INNER JOIN BuySell ON BuySell.PublicTradeID = PublicTrade.TradeID
+
+INNER JOIN Payables ON Payables.BuySellNo = BuySell.BuySellNo
+
+WHERE ((@Status = '' AND ISNULL(Payables.Posted,0) = 0) OR (@Status = 'OPEN' AND ISNULL(Payables.Posted,0) = 0) OR (@Status = 'PAYABLE' AND ISNULL(Payables.Posted,0) = 0 AND Payables.InvoiceDt <= GETDATE()) OR (@Status = 'PAID' AND ISNULL(Payables.Posted,
+0) = 1))
+
+Group By PublicTradeCustomer.[PTCustID], FileAs
+
+ORDER BY CustName
+

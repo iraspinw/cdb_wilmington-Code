@@ -1,0 +1,90 @@
+CREATE proc [dbo].[cw_GetProductionReport_Alandro] 
+
+@FromDt datetime='',
+
+@ToDt datetime='',
+
+@Machine varchar(64) = '',
+
+@Supplier varchar(64) = '',
+
+@ProducerOperator varchar(64) = ''
+
+
+
+
+
+as
+
+
+
+--cw_GetConvertingJob '2181'
+
+
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+
+
+
+
+select    
+
+          ROW_NUMBER() OVER(ORDER BY  ConvertingJob.JobNo ASC) AS [Box #],
+
+		  Code = 
+
+			STUFF((SELECT ', ' + grade.Description
+
+				   FROM ConvertingJob_Source b 
+
+				   left join inventory on B.LotNo = inventory.LotNo
+
+				   left join grade on grade.gradeid = coalesce(inventory.gradeid, bulk_gradeid)
+
+				   WHERE b.JobNo = ConvertingJob.JobNo 
+
+				  FOR XML PATH('')), 1, 2, ''),
+
+		  Equipment as Grinder,
+
+		  UserDef.UserNm as Producer,
+
+		  Supplier = 
+
+           STUFF((SELECT case when Rtrim(CounterParty.ReferenceID)='' then '' else ', ' + CounterParty.ReferenceID end
+
+           FROM inventory 
+
+		   left join CounterParty on CounterParty.CpID = inventory.VendorID 
+
+		   left join ConvertingJob_Source CV on CV.LotNo = inventory.LotNo  
+
+           WHERE  CV.JobNo = ConvertingJob.JobNo  
+
+          FOR XML PATH('')), 1, 2, ''),
+
+		  sum(ConvertingJob_Source.Weight) as [{C}Weight]
+
+ from ConvertingJob
+
+inner join ConvertingJob_Source on ConvertingJob_Source.JobNo=ConvertingJob.JobNo
+
+left join UserDef on UserDef.UserID = ConvertingJob.OperatorNm
+
+left join inventory on inventory.LotNo =  ConvertingJob_Source.LotNo
+
+left join CounterParty on CounterParty.CpID = inventory.VendorID 
+
+where ((@ToDt= '' and @FromDt = '') OR( ConvertingJob.JobDate >= @FromDt AND ConvertingJob.JobDate <= @ToDT))
+
+      AND (@Machine = '' OR @Machine = ConvertingJob.Equipment)
+
+	  and (@Supplier = 'ALL SUPPLIERS' or @Supplier = '' or @Supplier=CounterParty.ReferenceID)
+
+	  and (@ProducerOperator ='' or @ProducerOperator = UserDef.UserID )
+
+group by ConvertingJob.JobNo,Equipment, UserDef.UserNm
+

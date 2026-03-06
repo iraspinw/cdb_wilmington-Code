@@ -1,0 +1,23 @@
+CREATE proc [dbo].[cw_GetTask] @TaskID int as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+select 
+
+	Comment, TaskDate, UserID, crmtask.CPID, counterparty.CompanyNm, 
+
+	IsNull((Select Email From Contact pContact Where pContact.CpID = counterparty.cpid and IsNull(IsPrimary,0) = 1),'') as email, 
+
+	IsNull((Select Top 1 ContactNm From Contact bContact Inner Join ContactRoleAssignment CRA On bContact.CT_ID = CRA.CT_ID Where bContact.CpID = counterparty.cpid and RoleNm in ('Billing', 'Primary') Order by RoleNm),'') APContact, 
+
+	IsNull((Select Top 1 PhoneBusiness From Contact bContact Inner Join ContactRoleAssignment CRA On bContact.CT_ID = CRA.CT_ID Where bContact.CpID = counterparty.cpid and RoleNm in ('Billing', 'Primary') Order by RoleNm),'') APVoiceNo
+
+from CRMTASK 
+
+inner join counterparty on counterparty.cpid = crmtask.cpid
+
+where taskid =@TaskID

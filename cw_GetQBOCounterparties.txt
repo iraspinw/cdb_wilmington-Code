@@ -1,0 +1,70 @@
+CREATE  PROCEDURE [dbo].[cw_GetQBOCounterparties] @isCustomer bit =1
+
+	AS
+
+	
+
+--1/17/2020 alex: Created
+
+
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	 select 
+
+	  Rtrim(Contact.FirstNm) + ' ' +   Rtrim(Contact.LastNm) as Name,
+
+	  Rtrim(CounterParty.CompanyNm) as Company,
+
+	 Rtrim(Contact.Email) as Email,
+
+	 Rtrim(Contact.PhoneBusiness) as Phone,
+
+	  Rtrim(Contact.PhoneMobile) as Mobile,
+
+	 '' as Fax,
+
+	  Rtrim(CounterParty.WebSite) as Website,
+
+	  Rtrim([dbo].[Address].Addr2) as Street,
+
+	  Rtrim([dbo].[Address].City) as City,
+
+	  Rtrim([dbo].[Address].Region) as [State] ,
+
+	  Rtrim([dbo].[Address].PostalCd) as ZIP,
+
+	  Rtrim([dbo].[Address].Country) as Country,
+
+	 0 as [Opening Balance],
+
+	 CONVERT(char(10), GetDate(),126) as [Date]
+
+	 FROM CounterParty WITH (NOLOCK) 
+
+     inner JOIN [dbo].[Address] ON [dbo].[Address].CpID = CounterParty.CpID AND [dbo].[Address].InvoiceAddr = 'Y'
+
+	 LEFT JOIN Contact on Contact.CpID=CounterParty.CpID and Contact.IsPrimary=1
+
+	 where CounterParty.ActiveStatus='A'  
+
+	 and (
+
+	        ((CounterParty.Role='C' or CounterParty.Role='A' or CounterParty.Role='P'or CounterParty.Role='X') and  @isCustomer=1 and CounterParty.CompanyNm not like '%{%' and CounterParty.CompanyNm not like '%[%')
+
+		  or 
+
+		    ((CounterParty.Role='S' or CounterParty.Role='A' or CounterParty.Role='V'or CounterParty.Role='P') and  @isCustomer=0 and CounterParty.CompanyNm not like '%{%' and CounterParty.CompanyNm not like '%[%')
+
+	      )
+
+
+
+
+

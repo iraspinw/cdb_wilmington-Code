@@ -1,0 +1,241 @@
+CREATE   PROCEDURE [dbo].[cw_GetDeposits] @FromDt datetime, @ToDt as datetime, @CpID char(12), 
+
+											   @COID char(2), @ExclUACash char(3), @GLAcct char(12), 
+
+											   @IncludeUndos bit, @ReportingGrp char(25), @SortByCust bit = 1
+
+AS
+
+-- 10/11/2007 MCM: Added SortPaymentDt to fix the string/datetime sort problem
+
+-- 11/25/2009 RS: @ReportingGrp added for Barnett
+
+-- 08/03/2010 DSH: Added UNION ALL
+
+-- 04/23/2014 MCM: Revised Unapplied cash query to return net amount (including bank fees)
+
+-- 11/17/2022 ZT: Removed hardcoded Payment date format
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+IF @SortByCust = 1
+
+	IF @ExclUACash = 'UAC' 
+
+	
+
+		-- exclude unapplied cash
+
+		SELECT '' as [Paid Date], CompanyNm AS [Company Name], convert(char(10),PaymentDt,101) as [Payment Date], Reference, CheckNo As [Payment No], PostingType AS [Posting Type], Sum(Amount) as Amount, Receipt.GLAcct + ' - ' + Glaccount.name As [GL Account], 
+
+
+
+
+
+
+IIF(CONVERT(NVARCHAR(10), Reversed) = '0', 'No', 'Yes') As [Reversed]
+
+		FROM ((RECEIPT WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK) ON Receipt.BuySellNo = BuySell.BuySellNo)
+
+		INNER JOIN Counterparty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID) 
+
+		INNER JOIN GLAccount on receipt.GLAcct = GLAccount.GLAcct
+
+		WHERE (@FromDt = '' OR PaymentDt >= @FromDt)
+
+		AND (@ToDt = '' OR PaymentDt <= @ToDt)
+
+		AND (@CpID = '' OR @CPID = Counterparty.CpID)
+
+		AND (@COID = '' OR @COID = BuySell.COID)
+
+		AND Receipt.PostingType <> 'OFF'
+
+		AND Receipt.PostingType <> 'UAC'
+
+		AND (@GLAcct = '' OR @GLAcct = Receipt.GLAcct)
+
+		AND (@IncludeUndos = 1 OR Receipt.Reversed = 0 )
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		Group By CompanyNm, PaymentDt, Reference, CheckNo, PostingType, Receipt.GLAcct, Reversed, GLAccount.name
+
+		Order By CompanyNm, [Payment Date], Reference, CheckNo, PostingType
+
+
+
+	ELSE
+
+	
+
+		--include unapplied cash
+
+		SELECT '' as [Paid Date], CompanyNm AS [Company Name], PaymentDt as [Payment Date], Reference, CheckNo As [Payment No], PostingType As [Posting Type], Sum(Amount) as Amount, Receipt.GLAcct + ' - ' + Glaccount.name As [GL Account], 
+
+
+
+
+
+IIF(CONVERT(NVARCHAR(10), Reversed) = '0', 'No', 'Yes') As [Reversed]
+
+		FROM ((RECEIPT WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK) ON Receipt.BuySellNo = BuySell.BuySellNo)
+
+		INNER JOIN Counterparty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID) 
+
+		inner join GLAccount on Receipt.GLAcct = GLAccount.GLAcct
+
+		WHERE (@FromDt = '' OR PaymentDt >= @FromDt)
+
+		AND (@ToDt = '' OR PaymentDt <= @ToDt)
+
+		AND (@CpID = '' OR @CPID = Counterparty.CpID)
+
+		AND (@COID = '' OR @COID = BuySell.COID)
+
+		AND Receipt.PostingType <> 'OFF'
+
+		AND Receipt.PostingType <> 'UAC'
+
+		AND (@GLAcct = '' OR @GLAcct = Receipt.GLAcct)
+
+		AND (@IncludeUndos = 1 OR Receipt.Reversed = 0 )
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		Group By CompanyNm, PaymentDt, Reference, CheckNo, PostingType, Receipt.GLAcct, Reversed, GLAccount.name	
+
+		UNION ALL
+
+		SELECT '' as [Paid Date], CompanyNm AS [Company Name], convert(char(10),EntryDt,101) as [Payment Date] , Reference, CheckNo As [Payment No], 'UAC' as [Posting Type], (ISNULL(OriginalAmount,0) - ISNULL(BankFees,0)) as Amount, UACashLedger.GLAcct + ' - ' 
+
+
+
+
+
+
++ Glaccount.name As [GL Account], IIF(CONVERT(NVARCHAR(10), Reversed) = '0', 'No', 'Yes') As [Reversed]
+
+		FROM UACashLedger WITH(NOLOCK) INNER JOIN Counterparty WITH(NOLOCK) ON UACashLedger.CustID = Counterparty.CpID
+
+		inner join GLAccount on GLAccount.GLAcct = UACashLedger.GLAcct
+
+		WHERE (EntryDt >= @FromDt AND EntryDt <= @ToDt)
+
+		AND (@CpID = '' OR @CPID = Counterparty.CpID)
+
+		AND (@COID = '' OR @COID = UACashLedger.COID)	
+
+		AND (@GLAcct = '' OR @GLAcct =  UACashLedger.GLAcct)
+
+		AND (@IncludeUndos = 1 OR UACashLedger.Reversed = 0 )
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		Order By CompanyNm, [Payment Date], Reference, CheckNo, PostingType, Reversed
+
+ELSE 
+
+	IF @ExclUACash = 'UAC' 
+
+		-- exclude unapplied cash
+
+		SELECT PaymentDt as [Paid Date], CompanyNm AS [Company Name], Reference ,CheckNo As [Payment No], PostingType AS [Posting Type], Sum(Amount) as Amount, Receipt.GLAcct + ' - ' + glaccount.name As [GL Account], IIF(CONVERT(NVARCHAR(10), Reversed) = '0', '
+No', 'Yes') As [Reversed], PaymentDt As [Payment Date]
+
+		FROM ((RECEIPT WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK) ON Receipt.BuySellNo = BuySell.BuySellNo)
+
+		INNER JOIN Counterparty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID) 
+
+		inner join GLAccount on GLAccount.GLAcct = receipt.GLAcct
+
+		WHERE (@FromDt = '' OR PaymentDt >= @FromDt)
+
+		AND (@ToDt = '' OR PaymentDt <= @ToDt)
+
+		AND (@CpID = '' OR @CPID = Counterparty.CpID)
+
+		AND (@COID = '' OR @COID = BuySell.COID)
+
+		AND Receipt.PostingType <> 'OFF'
+
+		AND Receipt.PostingType <> 'UAC'
+
+		AND (@GLAcct = '' OR @GLAcct = Receipt.GLAcct)
+
+		AND (@IncludeUndos = 1 OR Receipt.Reversed = 0 OR Receipt.Reversed is null)
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		Group By PaymentDt, CompanyNm, Reference,CheckNo, PostingType, Receipt.GLAcct , Reversed, GLAccount.name
+
+		Order By [Payment Date], CompanyNm, Reference,CheckNo, PostingType
+
+
+
+	ELSE
+
+
+
+		--include unapplied cash
+
+		SELECT PaymentDt as [Paid Date], CompanyNm AS [Company Name], Reference ,CheckNo As [Payment No], PostingType AS [Posting Type], Sum(Amount) as Amount, Receipt.GLAcct + ' - ' + glaccount.name As [GL Account], IIF(CONVERT(NVARCHAR(10), Reversed) = '0', '
+No', 'Yes') As [Reversed], PaymentDt As [Payment Date]
+
+		FROM ((RECEIPT WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK) ON Receipt.BuySellNo = BuySell.BuySellNo)
+
+		INNER JOIN Counterparty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID) 
+
+		inner join GLAccount on glaccount.GLAcct = Receipt.GLAcct
+
+		WHERE (@FromDt = '' OR PaymentDt >= @FromDt)
+
+		AND (@ToDt = '' OR PaymentDt <= @ToDt)
+
+		AND (@CpID = '' OR @CPID = Counterparty.CpID)
+
+		AND (@COID = '' OR @COID = BuySell.COID)
+
+		AND Receipt.PostingType <> 'OFF'
+
+		AND Receipt.PostingType <> 'UAC'
+
+		AND (@GLAcct = '' OR @GLAcct = Receipt.GLAcct)
+
+		AND (@IncludeUndos = 1 OR Receipt.Reversed = 0 OR Receipt.Reversed is null)
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		Group By PaymentDt, CompanyNm, Reference,CheckNo, PostingType, Receipt.GLAcct, Reversed , GLAccount.name
+
+		UNION ALL
+
+		SELECT convert(char(10),EntryDt,101) as [Paid Date], CompanyNm AS [Company Name], Reference ,CheckNo As [Payment No], 'UAC' as [Posting Type], (ISNULL(OriginalAmount,0) - ISNULL(BankFees,0)) as Amount, UACashLedger.GLAcct As [GL Account], IIF(CONVERT(NV
+ARCHAR(10), Reversed) = '0', 'No', 'Yes') As [Reversed], EntryDt As [Payment Date]
+
+		FROM UACashLedger WITH(NOLOCK) INNER JOIN Counterparty WITH(NOLOCK) ON UACashLedger.CustID = Counterparty.CpID
+
+		WHERE (EntryDt >= @FromDt AND EntryDt <= @ToDt)
+
+		AND (@CpID = '' OR @CPID = Counterparty.CpID)
+
+		AND (@COID = '' OR @COID = UACashLedger.COID)
+
+		AND (@GLAcct = '' OR @GLAcct = UACashLedger.GLAcct)
+
+		AND (@IncludeUndos = 1 OR UACashLedger.Reversed = 0)
+
+		AND (@ReportingGrp = '' OR @ReportingGrp = Counterparty.GroupNm)
+
+		Order By [Payment Date], CompanyNm, Reference,CheckNo, PostingType, Reversed
+
+
+
+--exec cw_GetDeposits @FromDt='2018-02-05 00:00:00',@ToDt='2018-03-05 00:00:00',@CpID=N'',@CoID=N'',@ExclUACash=N'',@GLAcct=N'',@IncludeUndos=N'0',@ReportingGrp=N'',@SortByCust=1
+
+
+

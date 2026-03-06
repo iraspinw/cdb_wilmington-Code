@@ -1,0 +1,22 @@
+CREATE PROC [dbo].[cw_GetTempImage] 
+
+	@Image_ID int
+
+	AS
+
+
+
+--6/2/22 MN: CREATED
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+	
+
+	SELECT TempImage FROM ImageTemp WHERE Image_ID = @Image_ID
+
+	
+

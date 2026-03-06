@@ -1,0 +1,31 @@
+
+
+CREATE PROC [dbo].[cw_GetUserRolesPermissions] AS
+
+
+
+
+
+--12/13/2016 MEC: Created.
+
+
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+SELECT 
+
+	UserRole.RoleID, UserRole.RoleNm, UserRole.RoleDescription,
+
+	UserRolePermission.PermissionNm, UserRolePermission.PermissionValue
+
+FROM
+
+	UserRole WITH(NOLOCK)
+
+	LEFT JOIN UserRolePermission WITH(NOLOCK) ON UserRolePermission.RoleID = UserRole.RoleID

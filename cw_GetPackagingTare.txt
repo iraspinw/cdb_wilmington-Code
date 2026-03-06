@@ -1,0 +1,20 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetPackagingTare] @UnitType char(10),
+
+    @Tare char(15) OUTPUT   
+
+AS
+
+SET NOCOUNT ON
+
+--05/06/2021 Alex Created
+
+
+
+
+
+    select @Tare=cast(isnull(UnitType.TareWt,0) as char(15)) from UnitType where TypeID=@UnitType
+
+
+

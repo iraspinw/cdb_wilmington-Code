@@ -1,0 +1,84 @@
+CREATE   PROCEDURE [dbo].[cw_GetShipToAddr] 
+
+	@CpID varchar(12),
+
+	@AddrType varchar(45)
+
+
+
+AS
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+If @CpID = '(INV)' Or @CpID = '(PLANT)' Begin
+
+	SELECT 
+
+		AddrWhse.Addr1, AddrWhse.Addr2, AddrWhse.Addr3, AddrWhse.City, AddrWhse.Region, AddrWhse.PostalCd,
+
+		AddrWhse.Country, IsNull(Contact.PhoneBusiness,'') Telephone, IsNull(Contact.ContactNm,'') Contact, '' LoadingHours, AddrWhse.Instructions, 
+
+		AddrLink.WarehouseID, '' Fax, ISNULL(Country.UseAltAddrFormat,0) 
+
+    FROM 
+
+		Address AddrWhse WITH (NOLOCK) 
+
+		INNER JOIN ADDRESS AddrLink WITH (NOLOCK) ON AddrLink.WarehouseID = AddrWhse.CPID 
+
+		LEFT JOIN Country WITH (NOLOCK) ON Country.CountryID = AddrWhse.Country 
+
+		LEFT JOIN Contact WITH (NOLOCK) ON AddrWhse.CpID = Contact.CpID AND AddrWhse.[Type] = Contact.Location
+
+    WHERE 
+
+		AddrLink.CpID = @CpID 
+
+		AND AddrLink.Type = @AddrType 
+
+		AND AddrWhse.InvoiceAddr = 'Y'
+
+End
+
+Else Begin
+
+	SELECT 
+
+		Addr1, Addr2, Addr3, City, Region, PostalCd, Country, 
+
+		IsNull(PhoneBusiness,'') Telephone, 
+
+		IsNull(ContactNm,'') Contact, 
+
+		'' LoadingHours, 
+
+		Instructions, 
+
+		'' as [Blank], 
+
+		'' Fax, 
+
+		ISNULL(UseAltAddrFormat,0) 
+
+	from 
+
+		[Address] WITH (NOLOCK) 
+
+		LEFT JOIN Country WITH (NOLOCK) ON Country.CountryID = Address.Country 
+
+		LEFT JOIN Contact WITH (NOLOCK) ON [Address].CpID = Contact.CpID AND [Address].[Type] = Contact.Location
+
+	where 
+
+		[Address].CpID = @CpID
+
+		AND [Address].[Type] = @AddrType
+
+End
+

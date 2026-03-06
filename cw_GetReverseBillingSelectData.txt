@@ -1,0 +1,832 @@
+CREATE PROC [dbo].[cw_GetReverseBillingSelectData] 
+
+
+
+	@FromDate DateTime, 
+
+	@ToDate DateTime, 
+
+	@ReverseBatchNo int = 0, 
+
+	@CoID char(2) = '', 
+
+	@InvoiceNo varchar(20) = '',
+
+	@ReferrerNo char(10) = '', 
+
+	@BillingCycle char(12) = '',
+
+	@BatchDescription varchar(100) = '',
+
+	@InvoiceDt datetime = '', 
+
+	@PostingDt datetime = '',
+
+	@IncludeAllAdj bit = 0, 
+
+	@UOM char(1) = 'S',
+
+	@Debug bit = 0
+
+
+
+AS
+
+
+
+--08/07/2019 MEC: Created for Reverse Billing Statement Generation
+
+
+
+--cw_GetReverseBillingSelectData '07/01/2019', '07/31/2019'
+
+
+
+SET ANSI_NULLS ON 
+
+SET NOCOUNT ON
+
+
+
+	-- Reverse Billing Currently Restricted to Home Currency Only
+
+	DECLARE @SysCurrency char(3) = 'USD'
+
+	SELECT @SysCurrency=CurrCode from SystemInfo 
+
+
+
+	CREATE TABLE #APLEDGER(
+
+		CompanyNm char(65),
+
+		BuySellNo Char(12),
+
+		ShippingDt datetime,
+
+		InvoiceDt datetime,
+
+		CurrencyCd char(3),
+
+		Amount Money,
+
+		ObjectID int,
+
+		CPID char(12),
+
+		InvoiceNo varchar(20),
+
+		COID CHAR(2),
+
+		FXAmount Money,
+
+		ItemIDSource char(1),
+
+		APTYPE char(1),
+
+		Posted bit,
+
+		ItemID int,
+
+		PickUpNo char(25),
+
+		Hold bit,
+
+		Rejected bit,
+
+		Claim bit,					 	
+
+		WeightLbs Decimal(18,5),
+
+		GLAcct varchar(12),
+
+		GLAcctNm char(30),
+
+		PO varchar(15),
+
+		SO varchar(15),
+
+		EQ varchar(30),
+
+		LastEdit int,
+
+		BookingNo char(15),
+
+		TradeType varchar(25),
+
+		BLNo varchar(25),
+
+		ScaleTicketNo int,
+
+		SalesRep char(30),
+
+		ReferrerNo1 char(10),
+
+		UserID char(10),
+
+		COID_DueTo char(2),
+
+		CompanyDesc varchar(60),
+
+		AllocTransNo int,
+
+		WksInvoiceDt datetime,
+
+		BillingCycle char(10),
+
+		ShipFromID char(45),
+
+		ShipToID char(45),
+
+		TaxCode char(20),
+
+		InvType char(6),
+
+		AccountingID varchar(100),
+
+		FxRate decimal(18,15)
+
+	)
+
+	
+
+	TRUNCATE TABLE #APLEDGER
+
+
+
+    -- A.) PAYABLES FROM EXPENSES.
+
+    INSERT #APLEDGER
+
+	SELECT 
+
+		Counterparty.CompanyNm,
+
+		Payables.BuySellNo, 
+
+		BuySell.ShippingDt, 
+
+		Payables.InvoiceDt, 
+
+		Payables.CurrencyCd, 
+
+		Payables.Amount, 
+
+		PayableID, 
+
+		Payables.CpID, 
+
+		Payables.InvoiceNo, 
+
+		BuySell.COID, 
+
+		Payables.FxAmount, 
+
+		ItemIDSource, 'P' AS APTYPE, 
+
+		Payables.Posted, 
+
+		Payables.ItemID, 
+
+		BuySell.PickUpNo,
+
+		InvoiceHold, 
+
+		Rejected, 
+
+		Claim, 
+
+		dbo.CnvToLbs(PWeight,PWeightUOM),
+
+		Payables.GLAcct,
+
+		GLAccount.Name,
+
+		space(25) AS PO,
+
+		space(25) AS SO,
+
+		space(30) AS EQ,
+
+		convert( int,Payables.lastedit),
+
+		BuySell.BookingNo, 
+
+		BuySell.TradeType,
+
+		space(25) as BLNo,
+
+		buysell.GradingID,  
+
+		space(30) as SalesRep, 
+
+		BuySell.ReferrerNo1, 
+
+		BuySell.UserID,
+
+		BuySell.COID_DueTo, 
+
+		CompanyInfo.CompanyDesc,
+
+		ExpenseAllocation.TransNo,
+
+		BuySell.InvoiceDt,
+
+		BillingCycle, 
+
+		BuySell.ShipFromID,
+
+		BuySell.ShipToID,
+
+		SPACE(20) TaxCode,
+
+		'' AS InvType,
+
+		AccountingID,
+
+		BuySell.FXRate
+
+    FROM ((Payables WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK) ON Payables.BuySellNo = BuySell.BuySellNo) 
+
+    INNER JOIN Counterparty WITH(NOLOCK) ON Payables.CpID = Counterparty.CpID) 
+
+    INNER JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.COID = BuySell.COID
+
+	INNER JOIN AccountingVendor WITH(NOLOCK) ON AccountingVendor.CPID = Payables.CpID AND AccountingVendor.COID = BuySell.COID
+
+	LEFT JOIN WKSDetail WITH(NOLOCK) ON WksDetail.DetailID = Payables.ItemID
+
+	LEFT JOIN GLAccount WITH(NOLOCK) ON Payables.GlAcct = GLAccount.GLAcct                
+
+    LEFT JOIN ExpenseAllocation WITH(NOLOCK) ON ExpenseAllocation.buysellno = Payables.BuySellNo
+
+	WHERE (
+
+        (@COID = '') 
+
+        OR (ItemIDSource = 'D' AND BuySell.COID = @COID)         
+
+        OR (ItemIDSource = 'S' AND BuySell.COID_DueTo = @COID )  
+
+        OR (ItemIDSource = 'S' AND BuySell.COID = @COID AND ISNULL(BuySell.COID_DueTo,'') = '')
+
+		)
+
+	AND (IsNull(Posted,0) = 0)
+
+    AND (Payables.InvoiceDt IS NULL)
+
+	AND (IsNull(Payables.APBatchNo,'') = '')
+
+    AND (ItemIDSource <> 'A') 
+
+    AND (
+
+			(@ReverseBatchNo = 0 AND (Payables.ReverseBatchNo IS NULL OR Payables.ReverseBatchNo = 0)) OR 
+
+			(@ReverseBatchNo <> 0)
+
+		)
+
+    AND (@FromDate = '' OR (BuySell.ShippingDt >= @FromDate AND ISNULL(Buysell.[Status],'') <> 'I') OR (BuySell.InvoiceDt >= @FromDate AND ISNULL(Buysell.[Status],'') = 'I'))
+
+    AND (@ToDate = '' OR (BuySell.ShippingDt <= @ToDate AND ISNULL(Buysell.[Status],'') <> 'I') OR (BuySell.InvoiceDt <= @ToDate AND ISNULL(Buysell.[Status],'') = 'I'))
+
+    AND (@ReverseBatchNo = 0 OR (Payables.ReverseBatchNo = @ReverseBatchNo))
+
+    AND (
+
+		((BuySell.[Status] = 'I' OR BuySell.[Status] = 'C' OR BuySell.[Status] = 'A') AND IsNull(Counterparty.BillOn,'') <> 'RCV') OR
+
+		(BuySell.[Status] = 'I' AND Counterparty.BillOn = 'RCV')
+
+		)
+
+	AND IsNull(CounterParty.ReverseBilling,0) = 1
+
+	AND (@BillingCycle = '' OR @BillingCycle = Counterparty.BillingCycle)
+
+	AND (Payables.CurrencyCd = @SysCurrency)
+
+
+
+    -- B.) PAYABLES FROM UNPOSTED ADJUSTMENTS.
+
+	INSERT #APLEDGER
+
+	SELECT 
+
+		Counterparty.CompanyNm, 
+
+		GpLedger.BuySellNo, 
+
+		BuySell.ShippingDt, 
+
+		null as InvoiceDt,   
+
+		AdjCurrencyCd, 
+
+		Cost, 
+
+		LedgerID, 
+
+		AdjCpID, 
+
+		substring(AdjNotes,1,15), 
+
+		GPLedger.AdjCoID, 
+
+		AdjFxAmount,
+
+		'-',
+
+		'A' AS APTYPE, 
+
+		0 AS Posted, 
+
+		LedgerID, 
+
+		BuySell.PickUpNo,
+
+		InvoiceHold, 
+
+		Rejected, 
+
+		Claim, 
+
+		dbo.CnvToLbs(GPLedger.AdjWeight,GPLedger.AdjWeightUOM),
+
+		GPLedger.GLAcct,
+
+		GLAccount.Name,
+
+		space(25) AS PO,
+
+		space(25) AS SO,
+
+		space(30) AS EQ,
+
+		convert( int,GPLedger.LastEdit),
+
+		BuySell.BookingNo, 
+
+		BuySell.TradeType, 
+
+		space(25) as BLNo,
+
+		' ' AS scaleticketno,
+
+		space(30) as SalesRep, 
+
+		BuySell.ReferrerNo1,
+
+		BuySell.UserID,
+
+		BuySell.COID_DueTo, 
+
+		CompanyInfo.CompanyDesc,
+
+		'' as AllocTransNo,
+
+		BuySell.InvoiceDt,
+
+		BillingCycle, 
+
+		BuySell.ShipFromID,
+
+		BuySell.ShipToID,
+
+		SPACE(20) TaxCode,
+
+		'' AS InvType,
+
+		AccountingID,
+
+		BuySell.FXRate
+
+  	FROM ((GPLedger WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK) ON GpLedger.BuySellNo = BuySell.BuySellNo) 
+
+   	INNER JOIN Counterparty WITH(NOLOCK) ON GpLedger.AdjCpID = Counterparty.CpID)	
+
+	INNER JOIN AccountingVendor WITH(NOLOCK) ON AccountingVendor.CPID = GPLedger.AdjCpID AND AccountingVendor.COID = GPLedger.AdjCOID
+
+    LEFT JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.COID = GPLedger.AdjCoID    
+
+    LEFT JOIN GLAccount  WITH(NOLOCK) ON GPLedger.GlAcct = GLAccount.GLAcct        
+
+	WHERE 
+
+	GpLedger.Source = 'A' 
+
+	AND GpLedger.AdjType = 'P'   
+
+    AND (@COID = '' OR @COID = GPLEDGER.AdjCOID)
+
+    --AND AdjCompleted = 'Y' 
+
+	AND IsNull(AdjPosted,'') <> 'Y' 
+
+	AND (
+
+			(@ReverseBatchNo = 0 AND (GpLedger.ReverseBatchNo IS NULL OR GpLedger.ReverseBatchNo = 0)) OR 
+
+			(@ReverseBatchNo <> 0)
+
+		)   
+
+	AND (
+
+		@IncludeAllAdj = 1 
+
+		OR 
+
+		(@FromDate = '' OR (BuySell.ShippingDt >= @FromDate AND BuySell.[Status] <> 'I') OR (BuySell.InvoiceDt >= @FromDate AND BuySell.[Status] = 'I'))
+
+		AND 
+
+		(@ToDate = '' OR (BuySell.ShippingDt <= @ToDate AND BuySell.[Status] <> 'I') OR (BuySell.InvoiceDt <= @ToDate AND BuySell.[Status] = 'I'))
+
+	)
+
+    
+
+	AND (@ReverseBatchNo = 0 OR (GpLedger.ReverseBatchNo = @ReverseBatchNo))
+
+
+
+
+
+	AND (((BuySell.[Status] = 'I' OR BuySell.[Status] = 'C' OR BuySell.[Status] = 'A') AND IsNull(BuySell.Rejected,0) = 0 AND IsNull(Counterparty.BillOn,'') <> 'RCV') OR
+
+		(BuySell.[Status] = 'I' AND Counterparty.BillOn = 'RCV')
+
+		)
+
+
+
+	AND IsNull(CounterParty.ReverseBilling,0) = 1
+
+	AND (@BillingCycle = '' OR @BillingCycle = Counterparty.BillingCycle)
+
+	AND (GPLedger.AdjCurrencyCd = @SysCurrency)
+
+
+
+
+
+    --(BACKWARD COMPATABILITY FIX)
+
+    -- UPDATE INTERCO DEPT ON ADJUSTMENTS.
+
+    UPDATE #APLEDGER SET 
+
+        #APLEDGER.COID = BuySell.COID, 
+
+        #APLEDGER.CompanyDesc =  CompanyInfo.CompanyDesc 
+
+        FROM #APLEDGER INNER JOIN BUYSELL ON #APLEDGER.BUYSELLNO = BUYSELL.BUYSELLNO 
+
+        INNER JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.COID = BUYSELL.COID
+
+        WHERE APTYPE='A' AND #APLEDGER.COID IS NULL 
+
+
+
+    -- CORRECT DEPARTMENT
+
+    UPDATE #APLEDGER SET COID = COID_DueTo  WHERE ItemIDSource='S' AND COID_DueTo <> '' AND COID_DueTo IS NOT NULL
+
+
+
+    -- UPDATE ORDER NUMBERS
+
+    UPDATE #APLEDGER SET PO = WksDetail.PPO FROM #APLEDGER INNER JOIN WKSDETAIL WITH(NOLOCK) ON #APLEDGER.BuySellno = WksDetail.Buysellno
+
+    UPDATE #APLEDGER SET SO = WksDetail.SPO FROM #APLEDGER INNER JOIN WKSDETAIL WITH(NOLOCK) ON #APLEDGER.BuySellno = WksDetail.Buysellno
+
+    
+
+    -- UPDATE EQUIP NO
+
+    UPDATE #APLEDGER SET EQ = TrailerNo from #APLEDGER INNER JOIN WksDelivery WITH(NOLOCK) ON #APLEDGER.ItemID = WksDelivery.ItemID Where #APLedger.ItemIDSource = 'D'
+
+    UPDATE #APLEDGER SET EQ = ContainerNo from #APLEDGER INNER JOIN WksDetail WITH(NOLOCK) ON #APLEDGER.BuySellNo = WksDetail.BuysellNo Where #APLedger.ItemIDSOurce <> 'D' And #APLedger.ItemIDSOurce <> '-'
+
+    UPDATE #APLEDGER SET EQ = Convert(varchar(12),scaleticketno) from #APLEDGER Where scaleticketno <> 0
+
+
+
+    --UPDATE B/L #
+
+	UPDATE #APLEDGER SET BLNo = WksDelivery.Manifest FROM #APLEDGER INNER JOIN WksDelivery WITH(NOLOCK) ON #APLEDGER.BuySellNo = WksDelivery.BuySellNo And WksDelivery.Manifest IS NOT NULL and WksDelivery.Manifest <> ''
+
+
+
+    --UPDATE SALES REP
+
+	UPDATE #APLEDGER SET SalesRep = Referrer.[Name] FROM #APLEDGER INNER JOIN Referrer ON #APLEDGER.ReferrerNo1 = Referrer.ReferrerNo
+
+	
+
+    --REMOVE ZEROS FROM AllocTransNo column
+
+	UPDATE #APLEDGER SET AllocTransNo = NULL WHERE RTRIM(AllocTransNo) = '0'
+
+		
+
+	--UPDATE TAX CODES.
+
+	UPDATE #APLEDGER SET TaxCode = salestaxcode.SalesTaxCode FROM #APLEDGER INNER JOIN Address  ON #APLEDGER.CPID = Address.CPID AND #APLEDGER.ShipFromID = Address.[TYPE]
+
+		INNER JOIN salestaxcode ON Address.SalesTaxCodeID = salestaxcode.SalesTaxCodeID
+
+
+
+
+
+	UPDATE #APLEDGER SET InvType = 'Adj' WHERE APType = 'A'
+
+	UPDATE #APLEDGER SET InvType = 'Inv' WHERE InvType IS NULL
+
+	UPDATE #APLEDGER SET InvType = 'Prepay' WHERE APType = 'PP'
+
+
+
+    --RETURN DATA
+
+    
+
+	--SELECT * FROM #APLEDGER
+
+
+
+	--SELECT A.* FROM #APLEDGER A
+
+	--INNER JOIN GPLedger G ON A.ItemID = G.LedgerID
+
+	--WHERE A.APTYPE = 'A'
+
+
+
+	--SELECT A.* FROM Payables P
+
+	--INNER JOIN #APLEDGER A ON A.ItemID = P.ItemID
+
+	--WHERE A.APTYPE = 'P'
+
+
+
+	--SELECT A.* FROM BuySell B
+
+	--INNER JOIN #APLEDGER A ON A.BuySellNo = B.BuySellNo
+
+	--WHERE A.APTYPE = 'P'
+
+
+
+	--RETURN
+
+
+
+	IF @ReverseBatchNo = 0 BEGIN --NEW LINE
+
+		
+
+		WHILE 1 = 1 BEGIN				
+
+			exec dbo.q_GetNextSystemIDXP 'ReverseBill', @ReverseBatchNo output
+
+			IF NOT EXISTS(SELECT 1 FROM ReverseBillingBatch WHERE ReverseBatchNo = @ReverseBatchNo)
+
+				BREAK
+
+		END
+
+
+
+		INSERT INTO ReverseBillingBatch(
+
+			ReverseBatchNo,
+
+			BatchDescription,
+
+			FromDt,
+
+			ToDt,
+
+			InvoiceNo,
+
+			InvoiceDt,
+
+			PostingDt,
+
+			ReportType,
+
+			COID,
+
+			UOM,
+
+			BillingCycle,
+
+			SalesRep,
+
+			AllAdjustments)
+
+		VALUES(
+
+			@ReverseBatchNo, 
+
+			@BatchDescription ,
+
+			@FromDate ,
+
+			@ToDate ,
+
+			@InvoiceNo , 
+
+			@InvoiceDt , 
+
+			@PostingDt ,
+
+			0, 
+
+			@COID , 
+
+			@UOM,
+
+			@BillingCycle ,
+
+			@ReferrerNo,
+
+			@IncludeAllAdj)
+
+
+
+	END
+
+
+
+	DELETE FROM ReverseBillingStatement WHERE ReverseBatchNo = @ReverseBatchNo
+
+
+
+	CREATE TABLE #RevBillStmtTemp
+
+	(
+
+		CpID char(12),
+
+		NetAmt decimal(18,5),
+
+		CurrencyCd char(3),
+
+		TaxCode char(3),
+
+		TaxAmt decimal(18,5),
+
+		Tonnage decimal(18,5),
+
+		FxRate decimal(18,15),
+
+		COID char(2),
+
+		PostType char(2)
+
+	)
+
+		
+
+	INSERT #RevBillStmtTemp
+
+	SELECT
+
+		CPID,
+
+		FXAmount,
+
+		CurrencyCd,
+
+		TaxCode,
+
+		0,
+
+		dbo.CnvFromLbs(WeightLbs,'S'),
+
+		FxRate,
+
+		COID,
+
+		'AP'
+
+	FROM #APLEDGER
+
+
+
+
+
+	INSERT ReverseBillingStatement
+
+		(ReverseBatchNo,
+
+		CpID,
+
+		NetAmt,
+
+		CurrencyCd,
+
+		TaxCode,
+
+		TaxAmt,
+
+		Tonnage,
+
+		NoOfRows,
+
+		FxRate,
+
+		COID,
+
+		PostType)
+
+	SELECT 
+
+		@ReverseBatchNo,
+
+		CPID,
+
+		Sum(NetAmt),
+
+		CurrencyCd,
+
+		TaxCode,
+
+		0,
+
+		Sum(Tonnage),
+
+		(Select Count(*) From #RevBillStmtTemp Where 
+
+			#RevBillStmtTemp.CpID = Results.CpID AND #RevBillStmtTemp.COID = Results.COID 
+
+			AND #RevBillStmtTemp.CurrencyCd = Results.CurrencyCd AND #RevBillStmtTemp.TaxCode = Results.TaxCode 
+
+			AND #RevBillStmtTemp.FxRate = Results.FxRate AND #RevBillStmtTemp.PostType = Results.PostType),
+
+		FxRate,
+
+		COID,
+
+		PostType
+
+	FROM #RevBillStmtTemp Results
+
+	GROUP BY CPID, COID, CurrencyCd, TaxCode, FxRate, PostType
+
+
+
+
+
+
+
+	-- UPDATE PAYABLES AND LEDGER ENTRIES FOR REVERSE BILLING BATCH
+
+	UPDATE G
+
+	Set G.ReverseBatchNo = @ReverseBatchNo
+
+	FROM GPLedger G
+
+	INNER JOIN #APLEDGER A ON A.ItemID = G.LedgerID
+
+	WHERE A.APTYPE = 'A'
+
+	
+
+	UPDATE P
+
+	Set P.ReverseBatchNo = @ReverseBatchNo
+
+	FROM Payables P
+
+	INNER JOIN #APLEDGER A ON A.ItemID = P.ItemID
+
+	WHERE A.APTYPE = 'P'
+
+	
+
+	UPDATE B
+
+	Set B.ReverseBatchNo = @ReverseBatchNo
+
+	FROM BuySell B
+
+	INNER JOIN #APLEDGER A ON A.BuySellNo = B.BuySellNo
+
+	WHERE A.APTYPE = 'P'
+
+
+
+	--Return Reverse Batch No
+
+	Select @ReverseBatchNo
+

@@ -1,0 +1,102 @@
+CREATE proc [dbo].[cw_GetAllocationAttachments] 
+
+	@TransNo varchar(12)
+
+
+
+as
+
+
+
+SELECT 
+
+	DocID As [-Hidden-DocumentID], 
+
+	desc1 As [Description], 
+
+	--Docname, 
+
+	'IMG' As [-Hidden-Type], 
+
+	FileExt As [-Hidden-FileExt],
+
+	createddt as 'Created',
+
+	'' as '-Hidden-FormID',
+
+	'' as '-Hidden-DocFormID',
+
+	Desc1 as '-Hidden-DocTitle',
+
+	userdef.UserNm as 'User',
+
+	Contact.Email As '-Hidden-DefaultEmail'
+
+from documentimage with (NOLOCK) 
+
+	left JOIN userdef ON DocumentImage.Createdby = userdef.UserID 
+
+	left join buysell on buysell.buysellno = documentimage.refid
+
+	left join [address] on [address].cpid = buysell.CustID and invoiceaddr='Y'
+
+	left join Contact on Contact.cpid = buysell.CustID AND IsPrimary = '1'
+
+where 
+
+	reftype='X' 
+
+	and refid=@TransNo
+
+	
+
+	
+
+		UNION ALL
+
+				SELECT 
+
+					xdocheader.DocID,
+
+					upper(xdocform.title) as '-Hidden-DocTitle',
+
+					'DOC' as '-Hidden-Type',
+
+					'.ctdoc',
+
+					convert(char(10),CreatedDt,101) AS CreatedDt, 
+
+					xDocForm.FormID,
+
+					xdocform.docformid as '-Hidden-DocFormID',
+
+					upper(xdocform.title) as '-Hidden-DocTitle',
+
+					userdef.UserNm AS 'User',
+
+					'' As '-Hidden-DefaultEmail'
+
+				FROM xDocHeader 
+
+				INNER JOIN xDocForm ON xDocHeader.DocFormID = xDocForm.DocFormID
+
+				INNER JOIN xDocMaster ON xDocForm.FormID = xDocMaster.FormID
+
+				LEFT JOIN userdef  ON xDocHeader.CreatedBy = userdef.UserID
+
+
+
+				WHERE  xDocForm.FormID <> 'DOCIMG'
+
+				AND (FormSource = 'X')
+
+				AND (SourceID = @TransNo)
+
+
+
+--cw_GetAllocationAttachments '1'
+
+
+
+
+

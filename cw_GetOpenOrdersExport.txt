@@ -1,0 +1,38 @@
+create proc [dbo].[cw_GetOpenOrdersExport] @CPID varchar(25), @Side char(2) as
+
+	if @Side = 'SO' begin
+
+		select distinct po.ponumber
+
+		from po
+
+		where (@CPID=Po.CpID)
+
+		and (@side = po.source)
+
+		and po.status='OPEN'
+
+		order by ponumber
+
+	end
+
+	if @Side = 'PO' begin
+
+		select distinct po.ponumber, grade.[Description], podetail.UnitType, podetail.Price, podetail.PO_ID, podetail.gradeid, podetail.PriceUOM
+
+		from po
+
+		inner join podetail on podetail.PONumber = po.PONumber
+
+		inner join grade on grade.gradeid = podetail.GradeID
+
+		where (@CPID=Po.CpID)
+
+		and (@side = po.source)
+
+		and po.status='OPEN'
+
+		order by ponumber
+
+	end
+

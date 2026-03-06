@@ -1,0 +1,44 @@
+CREATE   PROCEDURE [dbo].[cw_GetBarcodeLabel] 
+
+
+
+	@BarcodeLabelFormatName varchar(200),
+
+	@BarcodeLabelDirection varchar(10)
+
+
+
+AS
+
+
+
+--cw_GetBarcodeLabel 'General', 'Inbound'
+
+
+
+-- 04/21/2020 MEC: Created 
+
+
+
+set transaction isolation level read uncommitted
+
+set nocount on
+
+
+
+Select * from 
+
+	BarcodeLabel B
+
+	INNER JOIN BarcodeLabelClass C On B.BarcodeLabelID = C.BarcodeLabelID
+
+Where
+
+	B.BarcodeLabelFormatName = @BarcodeLabelFormatName And B.BarcodeLabelDirection = @BarcodeLabelDirection
+
+
+
+
+
+
+

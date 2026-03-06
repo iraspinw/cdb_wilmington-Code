@@ -1,0 +1,96 @@
+CREATE   PROCEDURE [dbo].[cw_GetPackingList] @BuySellNo char(12), @ForGradeID varchar(15) = ''
+
+ AS
+
+--05/05/2009 BF Copied from q_GetExpInvoice2 for Commercial Invoice (new doc format)
+
+--07/09/2009 JW: added FormatQty function around the weight
+
+--07/15/2009 BF: Added spec string to select
+
+--08/05/2009 JW: added @Notes to print invoice notes
+
+--02/14/2013 RS: @WksInvoiceAmt,@WksCurrency added
+
+--03/12/2013 RS: @ShowExp added for Com. Inv. Basic per Fortex
+
+--10//26/2022 DSH: Fixed Unit Cost on Packing List "/ fxrate"
+
+--04/04/2023 DN: changed the unit cost UOM extension to reference wksinventory.unitcostuom instead of wksdetail.sweightUOM big discussion
+
+SET NOCOUNT ON
+
+	
+
+	
+
+	SELECT  
+
+		WksInventory.LotNo [Item No], 
+
+		Inventory.SerialNo [Serial No], 
+
+		b.[Description], 
+
+		Supplier.CompanyNm Supplier,
+
+		convert(varchar(5), wksinventory.Units) + ' ' +  dbo.cnvunitname(inventory.unittype) [Packaging],
+
+		convert(varchar(60), CONVERT(DECIMAL(22,3),WksInventory.UnitCost))  + '/' + dbo.CnvUOM_Names(WksInventory.UnitCostUOM) [Unit Cost],	
+
+		dbo.cw_removeTrailingZeros(dbo.formatweightUOM(WksInventory.[Weight], wksinventory.UOM), 0) + ' ' + dbo.CnvUOM_Names(WeightUOM) as [Quantity],		 
+
+		--dbo.cw_removeTrailingZeros(dbo.CALCVALUE((inventory.originvvalue / inventory.[weight]), WeightUOM, wksinventory.[weight], wksinventory.uom, 1),2) Cost,
+
+		dbo.cw_removeTrailingZeros(wksinventory.wksInvValue, 2) Cost,
+
+		dbo.formatweightUOM(WksInventory.[Weight], wksinventory.UOM) as [-Hidden-Wt],
+
+		dbo.CnvUOM_Names(WeightUOM) as [-Hidden-WTUOM],
+
+		weightUOM as [-Hidden-UOM],
+
+		IsReturned as [-Hidden-IsReturned],
+
+		' ' [Return],
+
+		returnedaslotno as [-Hidden-ReturnedAsLotNo],
+
+		(Select Top 1 Container.BookingNo From Container inner join ContainerContents on ContainerContents.LotNo = WksInventory.LotNo And Container.ContainerID = ContainerContents.ContainerID Where Container.SaleBuySellNo = WksInventory.BuySellNo)  AS [Booking 
+No],
+
+		(Select Top 1 Container.ContainerNo From Container inner join ContainerContents on ContainerContents.LotNo = WksInventory.LotNo And Container.ContainerID = ContainerContents.ContainerID Where Container.SaleBuySellNo = WksInventory.BuySellNo) AS [Contain
+er No],
+
+		(Select Top 1 Container.SealNo From Container inner join ContainerContents on ContainerContents.LotNo = WksInventory.LotNo And Container.ContainerID = ContainerContents.ContainerID Where Container.SaleBuySellNo = WksInventory.BuySellNo) AS [Seal No]
+
+		
+
+	FROM WksInventory WITH (NOLOCK)
+
+		INNER JOIN Inventory WITH (NOLOCK) ON WksInventory.LotNo = Inventory.LotNo
+
+		left JOIN Counterparty Supplier WITH (NOLOCK) ON Inventory.VendorID = Supplier.CpID
+
+		LEFT JOIN Grade b WITH (NOLOCK) ON Inventory.GradeID = b.GradeID
+
+		LEFT JOIN WKSDetail WITH (NOLOCK) ON WksDetail.Lotno = Inventory.LotNo
+
+		LEFT JOIN PO WITH (NOLOCK) ON Inventory.ReservePoNumber = PO.PoNumber
+
+		--LEFT JOIN Container ON Container.SaleBuySellNo = WksInventory.BuySellNo
+
+	WHERE WksInventory.BuySellNo = @BuySellNo
+
+	AND NOT EXISTS(SELECT ContainerNo FROM Container INNER JOIN ContainerContents ON Container.ContainerID = ContainerContents.ContainerID 
+
+		WHERE ContainerContents.LotNo = WksInventory.LotNo AND Container.ContainerType = 'S' And Container.RcvBuySellNo = @BuySellNo)
+
+	and (@ForGradeID='' or @ForGradeID=wksinventory.orderlinkid)
+
+
+
+		
+
+
+

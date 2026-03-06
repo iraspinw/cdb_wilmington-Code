@@ -1,0 +1,8 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetOrderTimeStamp] @PONumber char(15), @EditStamp int OUTPUT AS
+
+select @EditStamp = convert(int,lastedit) FROM PO WITH (NOLOCK) Where PONumber = @PONumber
+

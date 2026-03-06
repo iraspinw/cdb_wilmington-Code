@@ -1,0 +1,16 @@
+CREATE   PROCEDURE [dbo].[cw_GetDrivers] AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	SELECT DriverID, RTRIM(DriverNm) DriverNm, RTRIM(Email) AS Email, RTRIM(WarehouseNm) WarehouseNm, ISNULL(UsesCieDispatch,0) As UsesCieDispatch, RTRIM(UserID) As UserID, RTRIM(Password) AS [Password] FROM Drivers ORDER BY DriverNm
+
+
+
+
+

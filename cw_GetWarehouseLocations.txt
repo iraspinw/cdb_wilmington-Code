@@ -1,0 +1,50 @@
+CREATE PROC [dbo].[cw_GetWarehouseLocations]
+
+
+
+	@LocationName varchar(100) = '',
+
+	@CpID char(12) = ''
+
+AS
+
+
+
+
+
+
+
+--05/02/2015 MEC: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		ID As [ID], 
+
+		LocationName [Location],
+
+		WarehouseType [Warehouse]
+
+	FROM 
+
+		WarehouseLocation WITH (NOLOCK)
+
+	WHERE
+
+		(@LocationName = '' OR LocationName like '%' + @LocationName + '%')
+
+	ORDER BY LocationName
+
+
+
+
+
+
+

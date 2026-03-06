@@ -1,0 +1,8 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetConvertingTimeStamp] @jobno int, @EditStamp int OUTPUT AS
+
+select @EditStamp = convert(int,lastedit) FROM convertingjob WITH (NOLOCK) Where jobno=@jobno
+

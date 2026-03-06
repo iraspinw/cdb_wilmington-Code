@@ -1,0 +1,228 @@
+CREATE proc [dbo].[cw_GetWksAttachments] @buysellno varchar(15), @WksAsReceiving int = 0 as
+
+
+
+--04/15/2016 MEC: Created for new Wks Document fills
+
+--04/06/2017 MEC: Added Purch/Sales Adjs to document list
+
+--12/04/2018 MEC: Add FormSource for Booking for Certificate Documents
+
+--04/07/2021 MEC: Added Timezone Assignment to EmailDt
+
+
+
+-- cw_GetWksAttachments '501266'
+
+		declare @WksName varchar(32)
+
+
+
+		IF(@WksAsReceiving = 1) 
+
+			SET @WksName = 'RECEIVING'
+
+		else
+
+			SET @WksName = 'WORKSHEET'
+
+		declare @WksStatus char(1)
+
+		select @WksStatus = [status] from buysell where buysellno = @buysellno
+
+
+
+		SELECT		
+
+			
+
+					'' as ' ',
+
+					DocID as '-Hidden-DocumentID', 	
+
+					Desc1 as 'Description',
+
+					createddt as 'Created',
+
+					userdef.UserNm as 'User',
+
+					FileExt as '-Hidden-FileExt',
+
+					'IMG' as '-Hidden-Type',
+
+					'' as '-Hidden-FormID',
+
+					'' as '-Hidden-DocFormID',
+
+					Desc1 as '-Hidden-DocTitle',
+
+					EmailAddr + '   ' + convert(nvarchar(500), Case When TimeZone.TimeZoneNm is null Then EmailDt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), EmailDt) End, 0) as 'Email Sent',
+
+					convert(varchar(200),'') As '-Hidden-DefaultEmail',
+
+					documentimage.IsContainer as '-Hidden-IsContainer'
+
+			INTO #TEMP
+
+			FROM DocumentImage
+
+				left JOIN userdef ON DocumentImage.Createdby = userdef.UserID
+
+				left join buysell on buysell.buysellno = documentimage.refid
+
+				left join [address] on [address].cpid = buysell.CustID and invoiceaddr='Y'
+
+				left join TimeZone on UserDef.TimeZoneNm = TimeZone.TimeZoneNm
+
+			WHERE RefID = @BuySellNo
+
+				AND (IsNull(ciePhoto,0)=0 OR IsNull(IsConfirmed,0)=1)
+
+				AND (RefType='W' OR RefType='#')
+
+		
+
+		UNION ALL
+
+				SELECT 
+
+					'' as ' ',
+
+					xdocheader.DocID,
+
+					IIF(upper(DocTitle) = 'WORKSHEET', IIF(@WksAsReceiving = 0, 'WORKSHEET', 'RECEIVING'), upper(DocTitle)) As DocTitle, 
+
+					--upper(DocTitle) as DocTitle, 					
+
+					convert(char(10),CreatedDt,101) AS CreatedDt, 
+
+					userdef.usernm, 					
+
+					isnull(xDocMaster.DocType,'.ctdoc'),
+
+					'DOC' as '-Hidden-Type',
+
+					xDocForm.FormID,
+
+					xdocform.docformid as '-Hidden-DocFormID',
+
+					upper(xdocform.title) as '-Hidden-DocTitle',
+
+					EmailAddr + '   ' + convert(nvarchar(500), Case When TimeZone.TimeZoneNm is null Then EmailDt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), EmailDt) End, 0) as 'Email Sent',
+
+					'' As '-Hidden-DefaultEmail',
+
+					0 as '-Hidden-IsContainer'
+
+					
+
+				FROM xDocHeader 
+
+				INNER JOIN xDocForm ON xDocHeader.DocFormID = xDocForm.DocFormID
+
+				INNER JOIN xDocMaster ON xDocForm.FormID = xDocMaster.FormID
+
+				LEFT JOIN userdef  ON xDocHeader.CreatedBy = userdef.UserID
+
+				left join TimeZone on UserDef.TimeZoneNm = TimeZone.TimeZoneNm
+
+
+
+				WHERE  xDocForm.FormID <> 'DOCIMG'
+
+				AND (FormSource = 'W' Or FormSource = 'A' Or FormSource = 'E' Or FormSource = 'G' Or FormSource = 'H' Or FormSource = 'F' Or FormSource = 'W' or formsource='I' OR FormSource = 'L' OR FormSource = 'D' OR FormSource = 'B')
+
+				AND (SourceID = @BuySellNo)
+
+
+
+				
+
+				update #temp set [-Hidden-DefaultEmail] = 
+
+					(select top 1 Email from Contact inner join contactroleassignment on contact.ct_id = contactroleassignment.ct_id Where Contact.CpID = buysell.CustID And RoleNm = 'Billing')
+
+					from #TEMP 
+
+					inner join xdocheader on xDocHeader.docid = #temp.[-Hidden-DocumentID]
+
+					inner join buysell on buysell.buysellno = xdocheader.SourceID					
+
+					inner join [address] on [address].cpid = buysell.CustID
+
+					where #TEMP.[-Hidden-FormID] in('INVOICE') and [address].InvoiceAddr='Y'
+
+
+
+				--update #temp set [-Hidden-DefaultEmail] = 
+
+				--	(select top 1 Email from Contact inner join contactroleassignment on contact.ct_id = contactroleassignment.ct_id Where Contact.CpID = buysell.CustID And RoleNm = 'Billing')
+
+				--	from #TEMP 
+
+				--	inner join xdocheader on xDocHeader.docid = #temp.[-Hidden-DocumentID]
+
+				--	inner join buysell on buysell.buysellno = xdocheader.SourceID					
+
+				--	inner join [address] on [address].cpid = buysell.VendorID
+
+				--	where #TEMP.[-Hidden-FormID] in('BOLSHORT') and [address].InvoiceAddr='Y'
+
+				
+
+				update #temp set [-Hidden-DefaultEmail] = 
+
+					(select top 1 Email from Contact inner join contactroleassignment on contact.ct_id = contactroleassignment.ct_id Where Contact.CpID = buysell.vendorid And RoleNm = 'Billing') 
+
+					from #TEMP 
+
+					inner join xdocheader on xDocHeader.docid = #temp.[-Hidden-DocumentID]
+
+					inner join buysell on buysell.buysellno = xdocheader.SourceID					
+
+					inner join [address] on [address].cpid = buysell.VendorID
+
+					where #TEMP.[-Hidden-FormID] in('PICKUPCONF') and [address].InvoiceAddr='Y'
+
+
+
+				update #temp set [-Hidden-DefaultEmail] = 
+
+					(select top 1 Email from Contact inner join contactroleassignment on contact.ct_id = contactroleassignment.ct_id Where Contact.CpID = buysell.CustID And RoleNm = 'Billing')
+
+					from #TEMP 
+
+					inner join xdocheader on xDocHeader.docid = #temp.[-Hidden-DocumentID]
+
+					inner join WksDelivery on WksDelivery.buysellno = xdocheader.SourceID	
+
+					inner join buysell on buysell.buysellno = xdocheader.SourceID							
+
+					inner join [address] on [address].cpid = WksDelivery.VendorID
+
+					where #TEMP.[-Hidden-FormID] in('SHIPCONFRM') and [address].InvoiceAddr='Y'
+
+
+
+				update #temp set [-Hidden-DefaultEmail] = 
+
+					(select top 1 Email from Contact inner join contactroleassignment on contact.ct_id = contactroleassignment.ct_id Where Contact.CpID = wksdelivery.VendorID And RoleNm = 'Billing')
+
+					from #TEMP 
+
+					inner join xdocheader on xDocHeader.docid = #temp.[-Hidden-DocumentID]
+
+					inner join WksDelivery on WksDelivery.buysellno = xdocheader.SourceID			
+
+					inner join buysell on buysell.buysellno = xdocheader.SourceID					
+
+					inner join [address] on [address].cpid = WksDelivery.VendorID
+
+					where #TEMP.[-Hidden-FormID] in('FRTCONFRM ') and [address].InvoiceAddr='Y'
+
+
+
+				select * from #TEMP
+
+
+

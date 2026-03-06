@@ -1,0 +1,22 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetARAccrualGLAcctForCash]
+
+AS
+
+BEGIN
+
+--08/31/2015 BF: Created
+
+--03/23/2018 MCM: Changed to return A/R ACCRUAL account instead of A/R
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT TOP 1 GLAcct FROM GLAccount WHERE Cat = 'A/R'
+
+END
+

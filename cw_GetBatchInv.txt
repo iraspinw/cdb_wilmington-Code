@@ -1,0 +1,136 @@
+CREATE proc [dbo].[cw_GetBatchInv]  
+
+
+
+@FromDt     DATETIME, 
+
+@ToDt       DATETIME,
+
+@CustId     VARCHAR(10),
+
+@Dept       VARCHAR(4) ,
+
+@TradeType  VARCHAR(25),
+
+@BatchNo    INT = 0  
+
+
+
+AS
+
+set nocount on 
+
+set transaction isolation level read uncommitted
+
+
+
+--11/05/2020 Alex: excluded the Wks with null ship  date 
+
+--4/20/2023 DN: added location = invoice onto the contact table join, some clients had multiple primary contacts causing duplicates.
+
+--05/05/2023 Nick: Fixed contact join so it looks for primary address, not just location name of invoice
+
+--5/9/2023 MEC: Reverted back to only pull contacts as IsPrimary
+
+
+
+
+
+SELECT 
+
+	   BuySellNo as 'Invoice No',
+
+	   ShippingDt as 'Ship-Date',
+
+	   CounterParty.CompanyNm as Customer,
+
+	   BuySell.FxInvoiceAmt as Amount,
+
+	   --case when isnull(CounterParty.DistributionMode,'')='' then 'Post Only'  when  isnull(CounterParty.DistributionMode,'')='E'  then isnull(Contact.Email,'') else 'Print Invoice' end as [Action],
+
+	   [dbo].[GetDistribution](isnull(CounterParty.DistributionMode,'')) as [Action],
+
+	   isnull(Contact.Email,'') as Email,
+
+	   Address.Addr2 as [Address],
+
+	   BuySell.CustID as '-hidden-CustID',
+
+	   BuySell.Terms as '-hidden-Terms',
+
+	   convert( int,BuySell.lastedit) AS EditStamp,
+
+	   BuySell.COID,
+
+	   VendorID as '-hidden-VendorID',
+
+	   BuySell.FxInvoiceAmt as '-hidden-FxInvoiceAmt',
+
+	   BuySell.SalesAmt as '-hidden-InvoiceAmt',
+
+	   IsNull(IsBillingSheet,0) '-hidden-WksType',
+
+	   BuySell.CurrencyCd as '-hidden-Currency',
+
+	   IsNull(Counterparty.BatchInvoiceGroup,0) as '-hidden-IsAutoGroup',
+
+	   CASE WHEN IsNull(Counterparty.BatchInvoiceGroup,0)=0 THEN 'NO' ELSE 'YES' END  as 'Is Grouped',
+
+	   BillSheet.InvoiceNotes as [BillSheet Notes]
+
+	   INTO #tBatchInvTemp
+
+   FROM BuySell 
+
+	   LEFT JOIN CounterParty  on CounterParty.CpID = BuySell.CustID	   
+
+	   LEFT JOIN Address  on CounterParty.CpID = Address.CpID AND Address.InvoiceAddr='Y'
+
+	   LEFT JOIN Contact  on CounterParty.CpID = Contact.CpID AND IsNull(Contact.IsPrimary,0) = 1 --and Address.InvoiceAddr='Y'
+
+	   LEFT JOIN BillSheet ON BillSheet.BillSheetID = BuySell.BuySellNo
+
+   WHERE 
+
+      (
+
+		   ((BuySell.status = 'A' and isnull(IsOffset,0) <> 1 
+
+		   AND (@FromDt = '' OR (@FromDt<=BuySell.ShippingDt))
+
+		   AND (@ToDt = '' OR (@ToDt>=BuySell.ShippingDt))
+
+		   AND (@CustId = '' OR (@CustId=BuySell.CustID))
+
+		   AND (@Dept = '' OR (@Dept=BuySell.COID))
+
+		   AND (@TradeType = '' OR (@TradeType=BuySell.TradeType))
+
+		   AND BuySell.FxInvoiceAmt<>0
+
+		   AND ShippingDt is not null and ShippingDt<>'') AND  @BatchNo=0)
+
+	  OR 
+
+		   (@BatchNo<>0 AND BuySell.BuySellNo IN (SELECT InvoiceBatch.BuySellNo FROM InvoiceBatch WHERE InvoiceBatch.BatchNo = @BatchNo))
+
+	   )
+
+	ORDER BY CounterParty.DistributionMode, CounterParty.CompanyNm
+
+
+
+
+
+	select * from #tBatchInvTemp
+
+    select count(*) as GroupedCount from #tBatchInvTemp where [Is Grouped] = 'YES'
+
+
+
+	
+
+
+
+
+

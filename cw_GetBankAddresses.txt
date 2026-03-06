@@ -1,0 +1,12 @@
+CREATE   PROCEDURE [dbo].[cw_GetBankAddresses] AS
+
+--4/4/2019 MN: CREATED
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	SELECT RTRIM(BankNm) AS [BankNm], RTRIM([BankAddress]) AS [BankAddress] FROM BankAddresses ORDER BY BankNm
+
+
+

@@ -1,0 +1,22 @@
+Create PROC [dbo].[cw_GetAddressForLocationCompany] @Locationlabel varchar(255),@CompanyName varchar(255)
+
+
+
+AS
+
+
+
+--12/19/2018 Alex: Created
+
+
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+select * from [Address] where Type  = @Locationlabel and Addr1 = @CompanyName
+

@@ -1,0 +1,18 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetLogTypes]
+
+AS
+
+BEGIN
+
+--11/11/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+
+
+    SELECT DISTINCT [Object] AS [Type] FROM SystemLog WHERE ISNULL([Object],'') <> '' ORDER BY [Object]
+
+END
+

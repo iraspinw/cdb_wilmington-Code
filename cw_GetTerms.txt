@@ -1,0 +1,4 @@
+CREATE proc [dbo].[cw_GetTerms] as
+
+select ID as [-Hidden-ID], Term, DaystoPay as [Days to Pay], DueType as [Due Type] from billingterm
+

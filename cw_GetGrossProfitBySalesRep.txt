@@ -1,0 +1,1744 @@
+
+
+-- [dbo].[cw_GetGrossProfitBySalesRep]  'SPLIT PROFIT', '3/1/2025', '3/31/2025', '', '', '', 0, '', 0, 0, 'L', NULL, 0  -- detail
+
+
+
+CREATE Procedure [dbo].[cw_GetGrossProfitBySalesRep] 
+
+	@ReportType CHAR(12), 
+
+	@FromDate datetime, 
+
+	@ToDate datetime, 
+
+	@CoID char(2), 
+
+    @TradeType varchar(25), 
+
+	@ReferrerNo char(10), 
+
+	@ExclUnassigned as bit, 
+
+	@ExclSalesDisc as bit, 
+
+    @DoSummary bit = 0, 
+
+	@UsePaymentDate bit = 0,	--REPORT BY PAYMENT DATE	
+
+	@ReportUOM CHAR(1), 
+
+	@WksNo CHAR(12) = NULL, 	
+
+	@AccountingAR bit = 0 
+
+	
+
+	
+
+
+
+AS
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+--2/7/2005: (DSH) CREATED.
+
+--2/25/2005: Allocate by value.
+
+--3/4/2005: (DSH) Revised to handle zero value inventory allocations and inventory sales with nothing pulled.
+
+--3/4/2005: (DSH) Also corrected referrer filter.
+
+--11/10/2005 DSH  Add filter for Trade Type.
+
+--11/23/2005 (JW): Added section for GP adjs entered from the GP Adj Ledger
+
+--12/11/2005 DSH: Changed GPLEDGER.TradeType to MiscTradeType
+
+--12/28/2005 DSH: Revised JOIN for fetching referrers for grossprofit adjustments.
+
+--10/23/2007 JW: Added Summary section for new split profit summary report  
+
+--10/27/2007 DSH: Fixed Conditional statement for Summary Section 
+
+--12/17/2007 DSH: Corrected to show trend using a moving 12 month period not a fixed period.
+
+--12/18/2007 DSH Correct issues with subtotals.
+
+--04/16/2008 JJW: exclude new internal interest gpledger records
+
+--02/23/2009 JJW: modified "INV PURCHASE REPS **" section to use new wksInvValue field
+
+--09/25/2009 DSH Revised allocation based on contributing profitability.
+
+--10/03/2009 DSH Corrected issue with zero gross profit
+
+--11/06/2009 DSH Corrected problem wiuth negatives cause dby group by clause with dup weights,
+
+--11/08/2009 DSH Added support for per each inventory.
+
+--12/29/2009 DSH Adjustments on inventory sales now allocate by weight instead of profit.
+
+--01/13/2010 DSH Revised to calc total profit for allocation including worksheet expenses. 
+
+--01/26/2010 DSH Revised to allocate bank fees like adjustments.
+
+--02/01/2010 DSH Revised to allocate interest charges like adjustments. **Updated 2/8
+
+--03/12/2010 RS: ORDER BY ReferrerName added to the SUMMARY section 
+
+--06/11/2010 DSH: Modified to show the actual cost and sales amounts for inventory buyers 
+
+	--not the allocated amounts from the final worksheet.  Note *(1)
+
+--06/16/2010 DSH: Revised Note *(1) change to exclude adjustments.	
+
+--06/30/2010 DSH: Revised to correct sales/costs repeating on adjustments; Reviewed by Riche
+
+--08/26/2010 DSH: Added support for allocation by buyer only report.
+
+--11/09/2010 DSH: Revised Note *(2) Corrected buy-side only report with hardcoded allocation.
+
+--01/28/2011 DSH: Corrected use of 'J' role where it was missing.
+
+--03/14/2011 DSH: Sales Price on Inventory Sales is macthed to Worksheet Line Item.
+
+--10/21/2011 DSH: Added Support to run report by Last Payment Date to support gross profit calculations.
+
+--11/09/2011 MCM: Corrected the @UsePaymentDate parameter
+
+--04/10/2012 DSH: RENAMED FROM [q_GetGrossProfitBySalesRep]
+
+--04/10/2012 DSH: Updataed to recognize inventory sublot allocations for suppliers/reps.  
+
+--04/10/2012 DSH: Convert Weights to Report UOM.
+
+--05/31/2012 DSH Revised to correct gross profit reporting errors from data inconsistencies (IGI)
+
+--06/08/2012 DSH Corrected handling of inventory purchase adjustments.
+
+--06/08/2012 DSH Correct per each inventory sale handling where looking for blank reps
+
+--07/27/2012 DSH Reclassified brokerage worksheets with one rep or same rep on two sides as 100% allocation.
+
+--05/01/2016 DSH Updated to support reporting by Sales Rep Only.     
+
+--05/01/2016 DSH Renamed "from" q_GetGrossProfit_SalesRepX
+
+--09/30/2020 DSH Adjuts Reporting Bank Fees from Unapplied Cash.
+
+--10/20/2020 DSH Corrected logic for filtering gross profit records based on cash receipt.
+
+--01/22/2022 DSH Added handling of /EA inventory sales.  Issue reported by Pinnacle.
+
+--02/24/2023 Nick: Removed ClosePeriodDt
+
+--11/14/2024 Nick: Added Margin %
+
+
+
+
+
+	IF @FromDate = '' OR @ToDate = '' BEGIN
+
+		SET @FromDate = '1/1/1980' 
+
+		SET @ToDate = DATEADD(DAY,1,GETDATE())
+
+	END
+
+    
+
+    
+
+    Create Table #zeroalloc(
+
+		BuySellNo char(12),    
+
+		LedgerID int,
+
+		Cnt decimal(25,18)
+
+	)
+
+
+
+    --Table to account for Per Each Items added to Inventory Sales.
+
+    Create Table #ChargeBackItems(
+
+		BuySellNo char(12),    		
+
+		ChargeBackAmt decimal(25,8)
+
+    )
+
+	Create Index #IE_ChargeBackItems ON #ChargeBackItems(BuySellNo)    
+
+
+
+    
+
+    Create Table #SalesRepAlloc(
+
+		AllocID int IDENTITY (1000, 1) NOT NULL ,
+
+		BuySellNo char(12),
+
+		WksDetailID int,
+
+		LedgerID int,
+
+		[Source] char(1),
+
+		ReferrerNo char(10),
+
+		Role char(1),
+
+		VendorID char(12) , 
+
+		Allocation decimal(25,18) DEFAULT 0,
+
+		TotalVal decimal(25,2) DEFAULT 0,
+
+		InvVal decimal(25,2) DEFAULT 0,
+
+		ExpVal decimal(25,2) DEFAULT 0,
+
+		InvSale decimal(25,2) DEFAULT 0,    
+
+		InvSaleChgBk decimal(25,2) DEFAULT 0, 
+
+		ProfitPerItem decimal(25,8) DEFAULT 0,
+
+		TotalWeightLbs decimal(25,8) DEFAULT 0,		
+
+		TotalProfit decimal(25,2) DEFAULT 0,    
+
+		Wt decimal(25,8) DEFAULT 0,
+
+		WtUOM char(1),
+
+		WeightAlloc decimal(14,3),
+
+		TradeDesc varchar(25),
+
+		Rep_Sales Money DEFAULT 0,
+
+		Rep_Cost Money DEFAULT 0,
+
+		Rep_GrossProfit Money DEFAULT 0,
+
+		AdjQty decimal(25,8),
+
+		TxType CHAR(3),
+
+		TotalEAQty decimal(25,8) DEFAULT 0,
+
+		EaQty  decimal(25,8) DEFAULT 0
+
+ )
+
+   Create Index #IE_SalesRepAlloc ON #SalesRepAlloc(BuySellNo)
+
+
+
+	Create Table #BuySellList (
+
+		LedgerID INT,
+
+		BuySellNo CHAR(12),
+
+		GrossProfit Money,
+
+		[Source] CHAR(1),
+
+		TradeDt Datetime,
+
+		--ClosePeriodDt Datetime, --ADDED BY MN
+
+		CustID CHAR(12),
+
+		VendorID CHAR(12),
+
+		TotalWeightLbs Decimal(22,12),
+
+		Sale Money,
+
+		Cost Money,
+
+		AdjType CHAR(1),
+
+		AdjReason VARCHAR(30),
+
+		GLAcct VARCHAR(12),
+
+		AdjustQty decimal(25,8),
+
+		Rep1 Char(10),
+
+		Rep2 Char(10),
+
+		TxType CHAR(3),
+
+		PmtRcvdDate DATE
+
+	)
+
+	Create Index #PK_BuysellList ON #BuySelllist(BuysellNo)	
+
+
+
+
+
+	
+
+
+
+	Create TABLE #_SubInventory(
+
+		BuysellNo CHAR(12),
+
+		LedgerID INT,
+
+		DetailID INT,
+
+		WksInvID int,
+
+		Source CHAR(1),
+
+		LotNo CHAR(15),	
+
+		LotSeq INT DEFAULT 0,	
+
+		VendorID CHAR(15),
+
+		RefID char(10),	
+
+		InvValuePrct decimal(18,5),
+
+		WeightPrct decimal(18,5),
+
+		TotalInvValue Money,
+
+		TotalWeightLbs Decimal(18,5),			
+
+		InvValue Money,
+
+		InvWeight Decimal(18,5),
+
+		AdjQty decimal(25,8)		
+
+	)
+
+
+
+
+
+	/* DEFINE SPLIT FACTOR */
+
+	-------------------------
+
+	Declare @SplitFactor Money
+
+	SET @SplitFactor = .5		
+
+	IF @ReportType <> 'SPLIT PROFIT'
+
+		SET @SplitFactor = 1	
+
+
+
+
+
+    /* GET GROSS PROFIT TRANSACTIONS */
+
+	--==============================
+
+	
+
+	--FILL WORKSHEETS.	
+
+	INSERT #BuySelllist
+
+	SELECT	gpLedger.LedgerID,gpledger.BUYSELLNO,GrossProfit,[Source],TradeDT,CustID,VendorID, 
+
+			TotalWeightLbs,Sale,Cost,AdjType,AdjReason,GPLedger.GLAcct,0,
+
+			Coalesce(ReferrerNo1,''),Coalesce(ReferrerNo2,''), CASE WHEN CustID <> '(INV)' AND VendorID <> '(INV)' THEN 'BRK' ELSE 'INV' END,
+
+			NULL   
+
+		FROM GPLedger WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK)  ON gpledger.buysellno = buysell.buysellno	
+
+		WHERE
+
+		GPLedger.[Source] = 'B' AND BUYSELL.[Status] = 'I'
+
+		AND (@CoID = '' OR (BuySell.CoID = @CoID)) 
+
+		AND	(@TradeType = '' OR (BUYSELL.TradeType = @TradeType)) 
+
+		AND (
+
+				(@UsePaymentDate= 1 AND SPayments <> 0 and SBalancedue <= 0) 
+
+			OR 
+
+				(@UsePaymentDate=0 AND TradeDt >=@FromDate  AND TradeDt <=@ToDate)
+
+			)
+
+		AND (buysell.custid <> '(INV)' AND buysell.custid <> '(PLANT)' AND buysell.custid  <> '{C}' )
+
+		AND (@WksNo IS NULL OR buysell.buysellno = @WksNo)
+
+		
+
+	--FILL ADJUSTMENTS.	
+
+	INSERT #BuySelllist
+
+	SELECT	gpLedger.LedgerID,
+
+			gpledger.BUYSELLNO,
+
+			GrossProfit,
+
+			[Source],
+
+			TradeDT,
+
+			--GPLedger.ClosePeriodDt,
+
+			CASE WHEN AdjType = 'B' THEN GPLedger.AdjCPID ELSE CustID END,
+
+			VendorID, 
+
+			TotalWeightLbs,
+
+			Sale,Cost,
+
+			AdjType,
+
+			AdjReason,
+
+			GPLedger.GLAcct,
+
+			dbo.CnvToBaseQtyUOM(AdjWeight,AdjWeightUOM),
+
+			Coalesce(ReferrerNo1,''),
+
+			Coalesce(ReferrerNo2,''), 
+
+			CASE WHEN CustID <> '(INV)' AND VendorID <> '(INV)' THEN 'BRK' ELSE 'INV' END,
+
+			NULL        
+
+		FROM GPLedger WITH(NOLOCK) LEFT JOIN BuySell WITH(NOLOCK)  ON gpledger.buysellno = buysell.buysellno	
+
+		WHERE
+
+		GPLedger.[Source] <> 'B' AND GPLedger.[Source] <> 'C' AND GPLedger.[Source] <> 'J'
+
+		AND (GPLedger.TradeDt >=@FromDate AND GPLedger.TradeDt <=@ToDate) 
+
+		AND GPLEdger.AdjPosted = 'Y'
+
+		AND (@CoID = '' OR (BuySell.CoID = @CoID OR GPLedger.MiscCOID = @COID)) 
+
+		AND (@TradeType = '' OR (GPLEDGER.MiscTradeType = @TradeType OR BUYSELL.TradeType = @TradeType)) 		
+
+		AND (@WksNo IS NULL OR buysell.buysellno = @WksNo)		
+
+
+
+
+
+
+
+
+
+    -- RECOGNIZE PROFIT BASED ON CASH RECEIVED DATE (FOR COMMISSION REPORTING).		        
+
+	IF @UsePaymentDate = 1 BEGIN
+
+		UPDATE #BuySelllist SET #BuySelllist.PmtRcvdDate = 
+
+			(select TOP 1 PaymentDt from RECEIPT where Receipt.BuySellNo = #BuySelllist.BuySellNo  And (Reversed <> 1 or Reversed IS Null) ORDER BY PaymentDt DESC) 
+
+		FROM #BuySelllist WHERE Source = 'B'	
+
+
+
+        DELETE #BuySelllist  WHERE (Source = 'B' AND (PmtRcvdDate < @FromDate  OR PmtRcvdDate > @ToDate)) 
+
+		
+
+    END
+
+
+
+
+
+
+
+
+
+    /* SALES REP ALLOCATION RECORDS FOR EVERY TRANSACTION. */
+
+    --==========================================================
+
+
+
+    --SALES SIDE REPS (INVENTORY).
+
+    INSERT #SalesRepAlloc(BuySellNo,LedgerID,ReferrerNo,Role,Allocation,TotalVal,InvVal,[Source],TotalWeightLbs,AdjQty,VendorID,TxType)
+
+        SELECT BUYSELL.BuySellNo, LedgerID, ReferrerNo1,'S',.5,NULL,NULL,#BUYSELLLIST.[Source], #BUYSELLLIST.TotalWeightLbs,#BUYSELLLIST.AdjustQty,#BUYSELLLIST.Vendorid,'INV'
+
+        FROM BUYSELL WITH(NOLOCK)  INNER JOIN #BUYSELLLIST ON BUYSELL.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+        WHERE (@ReportType = 'SPLIT PROFIT') AND  BuySell.VendorID = '(INV)'  --Split Profit Only
+
+
+
+
+
+    --SALES SIDE REPS (BROKERAGE) (2 different reps).
+
+    INSERT #SalesRepAlloc(BuySellNo,LedgerID,ReferrerNo,Role,Allocation,TotalVal,InvVal,[Source],TotalWeightLbs,AdjQty,VendorID,TxType)
+
+        SELECT BUYSELL.BuySellNo, LedgerID, ReferrerNo1,'S',.5,NULL,NULL,#BUYSELLLIST.[Source], #BUYSELLLIST.TotalWeightLbs,#BUYSELLLIST.AdjustQty,#BUYSELLLIST.Vendorid,'BRK'
+
+        FROM BUYSELL WITH(NOLOCK)  INNER JOIN #BUYSELLLIST ON BUYSELL.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+        WHERE (@ReportType = 'SPLIT PROFIT') AND  BuySell.VendorID <> '(INV)' --Split Profit Only
+
+        AND #BUYSELLLIST.Rep1 <> #BUYSELLLIST.Rep2 AND #BUYSELLLIST.Rep1 <> '' AND #BUYSELLLIST.Rep2 <> ''   
+
+
+
+    --SALES SIDE REPS (BROKERAGE) (1 sales rep or same rep twice.).
+
+    INSERT #SalesRepAlloc(BuySellNo,LedgerID,ReferrerNo,Role,Allocation,TotalVal,InvVal,[Source],TotalWeightLbs,AdjQty,VendorID,TxType)
+
+        SELECT BUYSELL.BuySellNo, LedgerID, ReferrerNo1,'S',1,NULL,NULL,#BUYSELLLIST.[Source], #BUYSELLLIST.TotalWeightLbs,#BUYSELLLIST.AdjustQty,#BUYSELLLIST.Vendorid,'BRK'
+
+        FROM BUYSELL WITH(NOLOCK)  INNER JOIN #BUYSELLLIST ON BUYSELL.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+        WHERE (@ReportType = 'SPLIT PROFIT') AND BuySell.VendorID <> '(INV)' --Split Profit Only
+
+        AND ( (#BUYSELLLIST.Rep1 <> '' AND #BUYSELLLIST.Rep2 = '') OR (#BUYSELLLIST.Rep1 = #BUYSELLLIST.Rep2))
+
+
+
+    --SALES SIDE REPS (BROKERAGE) (1 buy rep).
+
+    INSERT #SalesRepAlloc(BuySellNo,LedgerID,ReferrerNo,Role,Allocation,TotalVal,InvVal,[Source],TotalWeightLbs,AdjQty,VendorID,TxType)
+
+        SELECT BUYSELL.BuySellNo, LedgerID, ReferrerNo2,'S',1,NULL,NULL,#BUYSELLLIST.[Source], #BUYSELLLIST.TotalWeightLbs,#BUYSELLLIST.AdjustQty,#BUYSELLLIST.Vendorid,'BRK'
+
+        FROM BUYSELL WITH(NOLOCK)  INNER JOIN #BUYSELLLIST ON BUYSELL.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+        WHERE (@ReportType = 'SPLIT PROFIT') AND BuySell.VendorID <> '(INV)' --Split Profit Only
+
+        AND (#BUYSELLLIST.Rep1 = '' AND #BUYSELLLIST.Rep2 <> '')
+
+
+
+
+
+    --BROKERAGE BUY SIDE REPS.
+
+    INSERT #SalesRepAlloc(BuySellNo,LedgerID,ReferrerNo,Role,Allocation,TotalVal,InvVal,[Source],TotalWeightLbs,AdjQty,TxType)
+
+        SELECT BUYSELL.BuySellNo, LedgerID, ReferrerNo2,'B',@SplitFactor,NULL, NULL,#BUYSELLLIST.[Source], #BUYSELLLIST.TotalWeightLbs, #BUYSELLLIST.AdjustQty,'BRK'   -- *(2)
+
+        FROM BUYSELL WITH(NOLOCK)  INNER JOIN #BUYSELLLIST ON BUYSELL.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+     WHERE 
+
+		(
+
+			(@ReportType = 'SPLIT PROFIT' AND BUYSELL.CustID <> '(INV)' AND BUYSELL.VendorID <> '(INV)' 
+
+			    AND  (#BUYSELLLIST.Rep1 <> #BUYSELLLIST.Rep2 AND #BUYSELLLIST.Rep1 <> '' AND #BUYSELLLIST.Rep2 <> '') 
+
+			) 	------Split                  (dsh changed 5/21/2012)  --added: AND BUYSELL.CustID <> '(INV)'
+
+			OR 
+
+			(@ReportType = 'BUYER' AND BUYSELL.VENDORID <> '(INV)')		--Buyer-Only, Brokerage
+
+		)
+
+
+
+
+
+    --BROKERAGE & INVENTORY SALE -- SELL SIDE REP ONLY.
+
+    INSERT #SalesRepAlloc(BuySellNo,LedgerID,ReferrerNo,Role,Allocation,TotalVal,InvVal,[Source],TotalWeightLbs,AdjQty,TxType)
+
+        SELECT BUYSELL.BuySellNo, LedgerID, ReferrerNo1,'B',@SplitFactor,NULL, NULL,#BUYSELLLIST.[Source], #BUYSELLLIST.TotalWeightLbs, #BUYSELLLIST.AdjustQty,'BRK'   -- *(2)
+
+        FROM BUYSELL WITH(NOLOCK)  INNER JOIN #BUYSELLLIST ON BUYSELL.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+        WHERE 
+
+		(@ReportType = 'SELLER' )		--Seller Only, Brokerage   AND BUYSELL.VENDORID <> '(INV)'
+
+
+
+
+
+
+
+    --INV PURCHASE ADJUSTMENT SPLIT PROFIT ONLY.     
+
+    IF @ReportType = 'SPLIT PROFIT' BEGIN
+
+		INSERT #SalesRepAlloc(BuySellNo,LedgerID,ReferrerNo,Role,Allocation,TotalVal,InvVal,[Source],TotalWeightLbs,AdjQty,TxType)
+
+			SELECT BUYSELL.BuySellNo, LedgerID, ReferrerNo2,'B',@SplitFactor,NULL, NULL,#BUYSELLLIST.[Source], #BUYSELLLIST.TotalWeightLbs, 0, 'INV'
+
+			FROM BUYSELL WITH(NOLOCK)  INNER JOIN #BUYSELLLIST ON BUYSELL.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+			WHERE 
+
+			#BUYSELLLIST.[Source] = 'A'
+
+			AND #BUYSELLLIST.CustID = '(INV)' AND #BUYSELLLIST.VendorID <> '(INV)'  	
+
+			AND  (#BUYSELLLIST.Rep1 <> #BUYSELLLIST.Rep2 AND #BUYSELLLIST.Rep1 <> '' AND #BUYSELLLIST.Rep2 <> '') --(2 different reps)
+
+	END
+
+	
+
+
+
+
+
+
+
+
+
+IF @ReportType <> 'SELLER' BEGIN
+
+
+
+ 
+
+    --INV PURCHASE REPS FOR (WEIGHT) INVENTORY **NON-CONVERTING**. 
+
+    --===========================================================
+
+	INSERT #SalesRepAlloc(BuySellNo,LedgerID,WksDetailID,[Source],ReferrerNo,Role,VendorID,WtUOM,Wt,InvVal,AdjQty)
+
+        SELECT WksInventory.BuySellNo, 
+
+			#BUYSELLLIST.LedgerID,
+
+			WksInventory.DetailID,  --Sales Worksheet Detail ID
+
+			#BUYSELLLIST.[Source],
+
+			Inventory.RefID,
+
+			'I',  
+
+			Inventory.VendorID, 
+
+			'L',		
+
+			sum( dbo.convert_to_uom(WksInventory.[Weight],WksInventory.UOM,'L') ),
+
+			sum(WksInventory.wksInvValue),
+
+			#BUYSELLLIST.AdjustQty
+
+        FROM WksInventory WITH(NOLOCK)  INNER JOIN #BUYSELLLIST ON WksInventory.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+        INNER JOIN Inventory WITH(NOLOCK)  ON WksInventory.Lotno = Inventory.Lotno 
+
+        INNER JOIN BUYSELL InvoiceBuysell WITH(NOLOCK)  ON WksInventory.BUYSELLNO = InvoiceBuysell.BUYSELLNO        
+
+        WHERE dbo.convert_to_uom(WksInventory.[Weight],WksInventory.UOM,'L') <> 0         
+
+			AND Coalesce(ConvertingJobNo,0) = 0		--Exclude Converting Lots.
+
+			AND WksInventory.UOM <> 'E' 
+
+        Group By WksInventory.BuySellNo, LedgerID, DetailID,[Source],RefID,Inventory.VendorID,#BUYSELLLIST.AdjustQty
+
+
+
+
+
+
+
+
+
+
+
+
+
+    --INV PURCHASE REPS FOR (PER EACH) INVENTORY **NON-CONVERTING**. 
+
+    --=============================================================
+
+	INSERT #SalesRepAlloc(BuySellNo,LedgerID,WksDetailID,[Source],ReferrerNo,Role,VendorID,WtUOM,Wt,InvVal,AdjQty)
+
+        SELECT WksInventory.BuySellNo, 
+
+			#BUYSELLLIST.LedgerID,
+
+			WksInventory.DetailID,
+
+			#BUYSELLLIST.[Source],
+
+			Inventory.RefID,'I',			
+
+			Inventory.VendorID, 
+
+			'E',		
+
+			sum(WksInventory.[Weight]),
+
+			sum(WksInventory.wksInvValue),
+
+			#BUYSELLLIST.AdjustQty						
+
+        FROM WksInventory WITH(NOLOCK)  
+
+			INNER JOIN #BUYSELLLIST ON WksInventory.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+			INNER JOIN Inventory WITH(NOLOCK)  ON WksInventory.Lotno = Inventory.Lotno         
+
+			INNER JOIN BUYSELL InvoiceBuysell WITH(NOLOCK)  ON WksInventory.BUYSELLNO = InvoiceBuysell.BUYSELLNO        
+
+        WHERE ((InvoiceBuysell.Referrerno1 = '' OR InvoiceBuysell.ReferrerNo1 IS NULL)  OR (InvoiceBuysell.ReferrerNo2 = '' OR InvoiceBuysell.ReferrerNo2 IS NULL)) 
+
+			 AND Coalesce(ConvertingJobNo,0) = 0	
+
+			AND WksInventory.UOM = 'E' 			
+
+        Group By WksInventory.BuySellNo, LedgerID, DetailID,[Source],RefID,Inventory.VendorID,#BUYSELLLIST.AdjustQty
+
+
+
+
+
+
+
+
+
+
+
+    --INV PURCHASE REPS FOR (WEIGHT) **CONVERTING**.    
+
+    --==============================================
+
+    -- Breakdown by Sublot. 
+
+	INSERT #_SubInventory
+
+        SELECT 
+
+			WksInventory.BuySellNo, 
+
+			#BUYSELLLIST.LedgerID,
+
+			WksInventory.DetailID,  --Sales Worksheet Detail ID
+
+			WksInventory.WksInvID,  
+
+			#BUYSELLLIST.[Source],
+
+			InventorySubLots.LotNo,
+
+			row_number() OVER (Partition by WksInventory.WksInvID, #BUYSELLLIST.LedgerID order by WksInventory.WksInvID, #BUYSELLLIST.LedgerID), 	
+
+			InventorySubLots.VendorID, 
+
+			InventorySubLots.RefID,
+
+			InventorySubLots.InvValuePrct,
+
+			InventorySubLots.WeightPrct,
+
+			WksInventory.WksInvValue,
+
+			dbo.convert_to_uom(WksInventory.[Weight],WksInventory.UOM,'L'),
+
+			NULL,NULL,
+
+			#BUYSELLLIST.AdjustQty
+
+        FROM WksInventory WITH(NOLOCK)  INNER JOIN #BUYSELLLIST ON WksInventory.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+        INNER JOIN Inventory WITH(NOLOCK)  ON WksInventory.Lotno = Inventory.Lotno 
+
+        INNER JOIN InventorySubLots ON InventorySubLots.Lotno = Inventory.LotNo 
+
+        INNER JOIN BUYSELL InvoiceBuysell WITH(NOLOCK)  ON WksInventory.BUYSELLNO = InvoiceBuysell.BUYSELLNO        
+
+        WHERE 
+
+			dbo.convert_to_uom(WksInventory.[Weight],WksInventory.UOM,'L') <> 0 							
+
+			AND Coalesce(ConvertingJobNo,0) <> 0 
+
+
+
+		UPDATE #_SubInventory SET 
+
+			InvValue = Round(TotalInvValue * InvValuePrct,2),
+
+			InvWeight = Round(TotalWeightLbs * WeightPrct,0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		/* NEW METHOD 2 */
+
+		-- TRUE-UP COST ALLOCATION VARIANCES. (DSH 05/21/2012 Added LedgerDI to fix dup on lotno with adj + buysell on same wks no)
+
+		CREATE TABLE #_TrueUp(WksInvID INT, LedgerID INT, Lotno CHAR(10), TotalCost Money, TotalWeight Decimal(18,5), 
+
+						AllocCost Money, AllocWeight Decimal(18,5), Variance Money DEFAULT 0, 
+
+						WtVariance Decimal(18,5) DEFAULT 0)
+
+		
+
+		INSERT #_TrueUp( WksInvID, LedgerID, Lotno, TotalCost, TotalWeight, AllocCost, AllocWeight )
+
+			SELECT WksInvID, LedgerID, Lotno, TotalInvValue, TotalWeightLbs, SUM(InvValue), SUM(InvWeight)  
+
+			FROM #_SubInventory GROUP BY WksInvID, LedgerID, Lotno, TotalInvValue, TotalWeightLbs
+
+
+
+		UPDATE #_TrueUp SET Variance = TotalCost - AllocCost,
+
+							WtVariance = TotalWeight - AllocWeight
+
+
+
+		--True-up Cost.					
+
+		UPDATE #_SubInventory 
+
+			SET	#_SubInventory.InvValue = #_SubInventory.InvValue + Variance 		
+
+			FROM #_SubInventory INNER JOIN #_TrueUp ON #_SubInventory.LedgerID = #_TrueUp.LedgerID AND #_SubInventory.WksInvID = #_TrueUp.WksInvID
+
+			WHERE #_SubInventory.LotSeq = 1 AND Variance <> 0	
+
+		--True-up Weight.					
+
+		UPDATE #_SubInventory 
+
+			SET	#_SubInventory.InvWeight = #_SubInventory.InvWeight + WtVariance 		
+
+			FROM #_SubInventory INNER JOIN #_TrueUp ON #_SubInventory.LedgerID = #_TrueUp.LedgerID AND #_SubInventory.WksInvID = #_TrueUp.WksInvID
+
+			WHERE #_SubInventory.LotSeq = 1 AND WtVariance <> 0	
+
+
+
+		-- POPULATE REP ALLOCATION TABLE.
+
+		INSERT #SalesRepAlloc(BuySellNo,LedgerID,WksDetailID,[Source],ReferrerNo,Role,VendorID,AdjQty,WtUOM,Wt,InvVal)
+
+			SELECT BuySellNo, 
+
+				LedgerID,
+
+				DetailID,
+
+				[Source],
+
+				RefID,'I',			
+
+				VendorID, 
+
+				AdjQty,
+
+				'L',		
+
+				sum(InvWeight),
+
+				sum(InvValue)			
+
+			FROM #_SubInventory GROUP BY BuySellNo, LedgerID, DetailID,[Source],RefID, VendorID, AdjQty
+
+
+
+	END
+
+	--================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    --ADDIN: GP ADJUSTMENTS AND WRITE-OFFS FROM GP ADJUSTMENT LEDGER.
+
+    INSERT #SalesRepAlloc(BuySellNo,LedgerID,[Source],ReferrerNo,Role,Allocation,TotalVal,InvVal)
+
+        SELECT '', GpLedger.LedgerID, #BUYSELLLIST.[Source], ReferrerNo, 'G',1,NULL, NULL
+
+        FROM GPLedger WITH(NOLOCK)  INNER JOIN #BuySellList ON GPLedger.LedgerID = #BuySellList.LedgerID
+
+    WHERE #BUYSELLLIST.[Source] = 'E' OR #BUYSELLLIST.[Source] = 'I'
+
+
+
+
+
+	-- HANDLE EMPTY INVENTORY SALES    
+
+    UPDATE #SalesRepAlloc SET 		
+
+		Allocation = 1		
+
+        FROM #SalesRepAlloc 
+
+     WHERE 
+
+			#SalesRepAlloc.VendorID = '(INV)' 
+
+			AND NOT EXISTS(SELECT 1 FROM #SalesRepAlloc a WHERE a.BuysellNo = #SalesRepAlloc.BuySellNo AND Role = 'I')
+
+
+
+
+
+    --INV PURCHASES WITH NO REPS; SET UNASSIGNED.
+
+    UPDATE #SalesRepAlloc SET ReferrerNo = '(U)' WHERE Role = 'I'
+
+        AND (ReferrerNo = '' OR ReferrerNo IS NULL OR ReferrerNo = 'NULL')
+
+
+
+    --TOTALLY UNASSIGNED WORKSHEET.
+
+    SELECT #BUYSELLLIST.LedgerID, #BUYSELLLIST.BUYSELLNO,'(U)' AS REFID,'U' AS Role,1 AS Allocation
+
+		INTO #UnAssignedList
+
+		FROM #BUYSELLLIST
+
+		WHERE NOT EXISTS(SELECT * FROM #SalesRepAlloc WHERE #SalesRepAlloc.BuySellno = #BUYSELLLIST.BuySellNo)
+
+    INSERT #SalesRepAlloc(BuySellNo,LedgerID,ReferrerNo,Role,Allocation)
+
+        SELECT BUYSELLNO,LedgerID,REFID,ROLE,Allocation FROM #UnassignedList
+
+
+
+
+
+    --UNASSIGNED HALF OF INVENTORY SALE WITH NO INVENTORY.
+
+    UPDATE #SalesRepAlloc 
+
+		SET Allocation = 1 
+
+		FROM BUYSELL WITH(NOLOCK)  INNER JOIN #SalesRepAlloc ON BUYSELL.BUYSELLNO = #SalesRepAlloc.BUYSELLNO
+
+		WHERE 
+
+		(
+
+			(BUYSELL.VENDORID = '(INV)' AND NOT EXISTS(SELECT * FROM WKSINVENTORY WITH(NOLOCK)  WHERE WKSINVENTORY.BuySellNo = #SalesRepAlloc.BuySellNo ))
+
+		)
+
+		AND ((Referrerno1 = '' OR ReferrerNo1 IS NULL) OR  (Referrerno2 = '' OR ReferrerNo2 IS NULL))
+
+
+
+
+
+    -- BUILD TOTAL VALUE & WEIGHT TABLE FOR EACH WORKSHEET.
+
+    SELECT BuySellno, 
+
+		LedgerID, 
+
+		Sum(isnull(InvVal,0)) AS Total_InvVal, 
+
+		Sum( Wt) AS Total_WeightLbs
+
+    INTO #TotalInvVal
+
+    FROM #SalesRepAlloc
+
+    WHERE (ROLE='I' OR ROLE = 'J' ) 
+
+    Group By BuySellNo, LedgerID
+
+    Create index #PK_TotalInvVal ON #TotalInvVal(BuySellNo,LedgerID)
+
+
+
+
+
+
+
+
+
+	-- GET MISSING EA WEIGHT -- 
+
+	SELECT BuySellNo, SUM(Wt) TotalQtyEA INTO #TotalQtyEA FROM #SalesRepAlloc WHERE Role = 'I' AND WtUOM = 'E' GROUP BY BuySellNo
+
+	UPDATE #SalesRepAlloc  SET 
+
+		TotalWeightLbs = TotalQtyEA, 
+
+		WtUOM = 'E',
+
+		Wt = TotalQtyEA 
+
+		FROM #SalesRepAlloc INNER JOIN #TotalQtyEA ON #SalesRepAlloc.BuysellNo = #TotalQtyEA.BuysellNo 
+
+		WHERE #SalesRepAlloc.Role = 'S' AND #SalesRepAlloc.TotalWeightLbs=0 AND #SalesRepAlloc.vendorID = '(INV)' AND Wt = 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-- BUILD TABLE OF CHARGE-BACKS FROM INVENTORY SALES WHERE WKS DETAIL LINES HAVE NO RELATED INVENTORY.  
+
+	INSERT #ChargeBackItems
+
+		SELECT WksDetail.BuySellNo, Sum(SAmount)
+
+			FROM WksDetail INNER JOIN #BUYSELLLIST ON WksDetail.BUYSELLNO = #BUYSELLLIST.BUYSELLNO
+
+			WHERE #BUYSELLLIST.VendorID = '(INV)' AND Source = 'B'
+
+				AND NOT EXISTS(SELECT WksInvID FROM WksInventory WITH (NOLOCK) WHERE WksInventory.DetailID = WksDetail.DetailID )
+
+			GROUP BY WksDetail.BuysellNo
+
+
+
+
+
+	--GET TOTAL WEIGHT OF INVENTORY PURCHASES. 
+
+	--(Note: Can not use worksheet totalweightlbs field because sale wt may be diff then purchase weights)
+
+    UPDATE #SalesRepAlloc SET 
+
+		TotalWeightLbs = Total_WeightLbs,
+
+		TotalProfit= (BuySell.SalesAmt+BuySell.SFreightChg-BuySell.PFreightChg)- Total_InvVal		
+
+    FROM #SalesRepAlloc INNER JOIN #TotalInvVal ON #SalesRepAlloc.BuySellNo = #TotalInvVal.BuysellNo
+
+        AND #SalesRepAlloc.LedgerID = #TotalInvVal.LedgerID
+
+        INNER JOIN BUYSELL WITH(NOLOCK) ON BUYSELL.BUYSELLNO = #SalesRepAlloc.BUYSELLNO
+
+    WHERE ROLE='I' OR ROLE = 'J' 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	---- ALLOCATE SALES (BY WORKSHEET LINE ITEM) *WEIGHT*
+
+    UPDATE #SalesRepAlloc 		
+
+		SET 
+
+			--(Amount of sale to assign to inventory based on qty)
+
+			InvSale=( (WksDetail.SAmount / dbo.convert_to_uom(WksDetail.PWeight,WksDetail.PWeightUOM,'L')) * Wt), 
+
+			InvSaleChgBk = (((BuySell.SFreightChg + COALESCE(#ChargeBackItems.ChargeBackAmt,0)) / #SalesRepAlloc.TotalWeightLbs) * Wt),			
+
+			ExpVal =((( BuySell.PFreightChg) / #SalesRepAlloc.TotalWeightLbs) * Wt)		 	  -- 
+
+    FROM WKSDETAIL WITH(NOLOCK) INNER JOIN #SalesRepAlloc ON WKSDETAIL.DetailID = #SalesRepAlloc.WksDetailID
+
+		INNER JOIN BUYSELL WITH(NOLOCK) ON BUYSELL.BUYSELLNO = #SalesRepAlloc.BuySellNo		
+
+		LEFT JOIN #ChargeBackItems ON BUYSELL.BuySellNo = #ChargeBackItems.BuySellNo
+
+	WHERE (Role = 'I' OR Role = 'J') AND (Source = 'B') AND WTUOM <> 'E'
+
+		AND Wt <> 0 and WksDetail.PWeight <> 0    --AND WksDetail.SAmount <> 0   DSH 05/21/2012 removed to handle chargebacks with zero sales.
+
+
+
+	
+
+	
+
+	---- ALLOCATE SALES (BY WORKSHEET LINE ITEM) *EACH*
+
+    UPDATE #SalesRepAlloc 		
+
+		SET 
+
+			InvSale=( (WksDetail.SAmount / WksDetail.PWeight) * Wt), 
+
+			InvSaleChgBk = (((BuySell.SFreightChg + COALESCE(#ChargeBackItems.ChargeBackAmt,0)) / #SalesRepAlloc.TotalWeightLbs) * Wt),			
+
+			ExpVal =  ((( BuySell.PFreightChg) / #SalesRepAlloc.TotalWeightLbs) * Wt)		 	  -- 
+
+    FROM WKSDETAIL WITH(NOLOCK) INNER JOIN #SalesRepAlloc ON WKSDETAIL.DetailID = #SalesRepAlloc.WksDetailID
+
+		INNER JOIN BUYSELL WITH(NOLOCK) ON BUYSELL.BUYSELLNO = #SalesRepAlloc.BuySellNo		
+
+		LEFT JOIN #ChargeBackItems ON BUYSELL.BuySellNo = #ChargeBackItems.BuySellNo
+
+		WHERE (Role = 'I' OR Role = 'J') AND (Source = 'B') AND WTUOM = 'E'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	-- ASSIG PROFIT.
+
+	UPDATE #SalesRepAlloc 	
+
+		SET ProfitPerItem = round((InvSale + InvSaleChgBk) - ExpVal - InvVal,2),
+
+			InvSale = InvSale+InvSaleChgBk
+
+	WHERE (Role = 'I' OR Role = 'J') AND (Source = 'B')
+
+
+
+
+
+
+
+
+
+	-- (a.) CALCULATE ALLOCATION-FACTOR BY WEIGHT (For Adjustments). 	
+
+    UPDATE #SalesRepAlloc 
+
+    SET 		
+
+		Allocation = (Wt/TotalWeightLbs)
+
+    FROM #SalesRepAlloc INNER JOIN #TotalInvVal ON #SalesRepAlloc.BuySellNo = #TotalInvVal.BuysellNo
+
+        AND #SalesRepAlloc.LedgerID = #TotalInvVal.LedgerID
+
+    WHERE (ROLE='I' OR ROLE = 'J') AND TotalWeightLbs <> 0 AND TotalWeightLbs IS NOT NULL 
+
+			AND (Source = 'A' Or Source='F' Or Source='N' OR Source = 'D')  --*7/6/11  'D'
+
+
+
+
+
+
+
+
+
+    -- (b.) CALCULATE ALLOCATION-FACTOR BY PROFIT (For Worksheets). 
+
+    UPDATE #SalesRepAlloc 
+
+    SET 		
+
+		Allocation = (ProfitPerItem/TotalProfit)
+
+    FROM #SalesRepAlloc INNER JOIN #TotalInvVal ON #SalesRepAlloc.BuySellNo = #TotalInvVal.BuysellNo
+
+        AND #SalesRepAlloc.LedgerID = #TotalInvVal.LedgerID
+
+    WHERE	(ROLE='I' OR ROLE = 'J') 
+
+			AND TotalProfit <> 0 
+
+			AND TotalProfit IS NOT NULL 
+
+			AND
+
+			( 
+
+				(Source <> 'A' And Source <> 'F' AND Source <> 'N' AND Source <> 'D' AND ISNULL(TotalWeightLbs,0) <> 0)
+
+				OR
+
+				((Source = 'A' OR Source='F' OR Source='D' OR Source='N') AND ISNULL(TotalWeightLbs,0) = 0)    --*7/6/11  'D'
+
+			)
+
+
+
+
+
+
+
+
+
+
+
+    -- SPLIT FACTORS IN HALF FOR INVENTORY PURCHASE REPS (OTHER HALF IS FINAL WKS SALES REP)    
+
+	UPDATE #SalesRepAlloc 
+
+		SET ALLOCATION = ((ALLOCATION*100)* @SplitFactor)/100 WHERE (Role='I' OR Role = 'J')
+
+
+
+
+
+    -- ASSIGN SUPPLIERS FROM NON-INVENTORY SALES.
+
+    UPDATE #SalesRepAlloc 
+
+		SET VendorID = #BuySellList.VendorID 
+
+        FROM #SalesRepAlloc INNER JOIN #BuySellList ON #BuySellList.BuysellNo = #SalesRepAlloc.BuysellNo
+
+        WHERE #SalesRepAlloc.VendorID IS NULL
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	--**NEED TO FIX WEIGHT ALLOCATION SECTION -- Used for reporting converions created rounding errors.**
+
+    -- ASSIGN WEIGHT ALLOCATION FOR REPORTING.
+
+    UPDATE #SalesRepAlloc SET 
+
+        WeightAlloc = 0        
+
+        WHERE (Source <> 'B') 
+
+    
+
+    UPDATE #SalesRepAlloc SET 
+
+        WeightAlloc = round(TotalWeightLbs*Allocation,0) 
+
+        WHERE (Source = 'B' ) AND (Role <> 'I' AND Role <> 'J')  
+
+
+
+    UPDATE #SalesRepAlloc SET 
+
+        WeightAlloc = round(AdjQty*Allocation,0) 
+
+        WHERE (Source = 'A') 
+
+
+
+          
+
+    UPDATE #SalesRepAlloc SET 
+
+        WeightAlloc = (Wt * @SplitFactor) 
+
+        WHERE (Source = 'B') AND (Role = 'I' OR Role = 'J')
+
+
+
+    UPDATE #SalesRepAlloc SET 
+
+        WeightAlloc = (Wt * Allocation) 
+
+        WHERE (Source = 'B') AND Role = 'S' AND WtUom = 'E'
+
+
+
+
+
+	---- ALLOCATE SALES, COSTS AND GROSS PROFIT USING EITHER ALLOCATION FACTOR OR ACTUAL COSTS IF INVENTORY *(1)
+
+	UPDATE #SalesRepAlloc SET
+
+		Rep_Sales = round(Sale*Allocation,2),		
+
+		Rep_Cost = round(Cost*Allocation,2),
+
+		Rep_GrossProfit = round(GrossProfit*Allocation,2)   
+
+        FROM #BuySellList INNER JOIN #SalesRepAlloc ON #BuySellList.BuysellNo = #SalesRepAlloc.BuysellNo
+
+			AND #BuySellList.LedgerID = #SalesRepAlloc.LedgerID
+
+		WHERE Role <> 'I' OR ((Role = 'I' OR Role = 'J') and #BuySellList.Source <> 'B')
+
+    
+
+
+
+	UPDATE #SalesRepAlloc SET
+
+		Rep_Sales = round(InvSale* @SplitFactor,2),		
+
+		Rep_Cost = round((InvVal+ExpVal)* @SplitFactor,2),
+
+		Rep_GrossProfit = round((InvSale-((InvVal+ExpVal))) * @SplitFactor ,2) 		
+
+		FROM #BuySellList INNER JOIN #SalesRepAlloc ON #BuySellList.BuysellNo = #SalesRepAlloc.BuysellNo
+
+			AND #BuySellList.LedgerID = #SalesRepAlloc.LedgerID
+
+			WHERE (Role = 'I' OR Role = 'J') AND (#BuySellList.Source = 'B') -- OR #BuySellList.Source = 'D' )
+
+			
+
+	
+
+	IF @ReportType = 'SELLER' 
+
+		UPDATE 	#SalesRepAlloc SET Role ='I' where vendorid = '(INV)'
+
+
+
+
+
+
+
+
+
+			
+
+---------------------------------------DETAIL---------------------------------------------------------------------
+
+
+
+    --** PRODUCE FINAL DETAIL REPORT WITH A RECORD FOR EACH REP'S ALLOCATION. **
+
+    SELECT 
+
+		Referrer.Name ReferrerName, 
+
+        #SalesRepAlloc.BuySellNo, 
+
+        #BuySellList.TradeDt, 
+
+		--#BuySellList.ClosePeriodDt, -- ADDED BY MN
+
+        Customer.CompanyNm Customer, 
+
+        Supplier.CompanyNm Supplier,
+
+        dbo.SETTRADETYPE(#BuySellList.[Source],#BuySellList.AdjType,#BuySellList.VendorID) AS TransType,		
+
+        #BuySellList.AdjReason,         
+
+        #SalesRepAlloc.Role,            
+
+        CASE WHEN @ReportUOM='L' THEN WeightAlloc ELSE dbo.convert_to_uom(WeightAlloc,'L',@ReportUOM) END  AS Weight, 
+
+        Rep_Sales,  
+
+        Rep_Cost, 
+
+        Rep_GrossProfit						       
+
+		INTO #Result
+
+        FROM #BuySellList INNER JOIN #SalesRepAlloc ON #BuySellList.BuysellNo = #SalesRepAlloc.BuysellNo
+
+			AND #BuySellList.LedgerID = #SalesRepAlloc.LedgerID
+
+        LEFT JOIN BUYSELL WITH(NOLOCK)  ON #BuySellList.BUYSELLNO = BUYSELL.BUYSELLNO
+
+        left join Referrer ON  #SalesRepAlloc.ReferrerNo=Referrer.ReferrerNo
+
+        left join Counterparty Customer ON Customer.CPID = #BuySellList.CustID
+
+        left join Counterparty Supplier ON Supplier.CPID = #SalesRepAlloc.VendorID
+
+        WHERE (@ExclUnassigned=0 OR (@ExclUnassigned=1 AND Referrer.Name IS NOT NULL )) 
+
+        AND   (@ExclSalesDisc = 0 OR (@ExclSalesDisc = 1 AND #BuySellList.[Source] <> 'D'))    
+
+        AND (@ReferrerNo = '' OR (#SalesRepAlloc.ReferrerNo = @ReferrerNo ))
+
+        order by Referrer.Name, TradeDT, #SalesRepAlloc.Role DESC
+
+
+
+PRINT '** PRODUCE FINAL DETAIL REPORT WITH A RECORD FOR EACH REP ALLOCATION. ** - table #result'
+
+
+
+
+
+
+
+		IF @DoSummary = 0 BEGIN
+
+			SELECT	ReferrerName,
+
+					#Result.BuySellNo,
+
+					TradeDt,
+
+					--#Result.ClosePeriodDt,
+
+					Customer,
+
+					Supplier,
+
+					TransType,
+
+					[Weight],
+
+					Rep_Sales,
+
+					Rep_Cost,
+
+					Rep_GrossProfit,
+
+					BuySell.CustID AS [-Hidden-CustID],
+
+					BuySell.VendorID AS [-Hidden-VendorID],
+
+					BuySell.UserDefined1 as [Destination Country],
+
+					CAST(ISNULL(#Result.Rep_GrossProfit/NULLIF(#Result.Rep_Sales,0),0) * 100 As decimal(22,2)) As [Margin %]
+
+			FROM #Result 	
+
+			left join BuySell on 	BuySell.BuySellNo = #Result.BuySellNo
+
+
+
+			ORDER BY ReferrerName			
+
+			
+
+			----/*TEST BLOCK*/
+
+			--SELECT SUM(Rep_GrossProfit) GrossProfit, SUM(dbo.convert_to_uom( [Weight],'S','L')) Weight FROM #Result	--where buysellno = '162253'
+
+			--SELECT buysellno,Source,sum(rep_GrossProfit) FROM #Result 
+
+			--	--where buysellno = '33189'
+
+			--	group by buysellno,Source 
+
+			--	order by buysellno			
+
+			
+
+			
+
+		END	
+
+			
+
+
+
+---------------------------------------SUMMARY----------------------------------------------------------------
+
+
+
+		ELSE
+
+			BEGIN
+
+			SELECT isnull(ReferrerName, '(UNASSIGNED)') as ReferrerName,  TradeDt, Rep_GrossProfit
+
+			INTO #RawResult
+
+			FROM #Result
+
+			ORDER BY ReferrerName, TradeDt
+
+
+
+
+
+
+
+			-- CREATE EACH REFERRER/MONTH ROW 
+
+            Declare @OffsetDate datetime, @OffsetYTD_Date datetime, @OffsetYTD_Mnth int
+
+            SET @OffsetDate = dateadd(day,-1,convert(varchar(10),Month(@FromDate))+'/1/'+convert(varchar(10),year(@FromDate)))
+
+            SET @OffsetYTD_Date = '1/1/'+convert(varchar(10),year(@ToDate))
+
+            SET @OffsetYTD_Mnth = datediff(month,@OffsetDate,@OffsetYTD_Date)
+
+
+
+			SELECT ReferrerName, datediff(month,@OffsetDate,TradeDt)  AS Mnth, sum(isnull(Rep_GrossProfit,0)) AS GP  
+
+			INTO #RefMnthResult
+
+			FROM #RawResult
+
+			GROUP BY ReferrerName, datediff(month,@OffsetDate,TradeDt)
+
+
+
+
+
+			SELECT ReferrerName, sum(isnull(GP,0)) AS YTDGP  
+
+			INTO #RefMnthResult_YTD
+
+			FROM #RefMnthResult
+
+            WHERE Mnth >= @OffsetYTD_Mnth
+
+			GROUP BY ReferrerName
+
+
+
+
+
+
+
+			CREATE TABLE #SummaryResult(
+
+			ReferrerName varchar(30),
+
+			MON1 money,
+
+			MON2 money,
+
+			MON3 money,
+
+			MON4 money,
+
+			MON5 money,
+
+			MON6 money,
+
+			MON7 money,
+
+			MON8 money,
+
+			MON9 money,
+
+			MON10 money,
+
+			MON11 money,
+
+			MON12 money,
+
+			YTDTotal money)
+
+			Create Index #PK_SummaryResult ON #SummaryResult(ReferrerName)
+
+			
+
+			-- ASSIGN REFERRER RECORDS
+
+			INSERT #SummaryResult(ReferrerName)
+
+			SELECT DISTINCT UPPER(ReferrerName) FROM #RawResult
+
+			
+
+			-- UPDATE AMOUNT FOR EACH REFERRER/MONTH
+
+			UPDATE #SummaryResult set MON1 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 1
+
+			UPDATE #SummaryResult set MON2 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 2
+
+			UPDATE #SummaryResult set MON3 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 3
+
+			UPDATE #SummaryResult set MON4 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 4
+
+			UPDATE #SummaryResult set MON5 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 5
+
+			UPDATE #SummaryResult set MON6 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 6
+
+			UPDATE #SummaryResult set MON7 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 7
+
+			UPDATE #SummaryResult set MON8 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 8
+
+			UPDATE #SummaryResult set MON9 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 9
+
+			UPDATE #SummaryResult set MON10 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 10
+
+			UPDATE #SummaryResult set MON11 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 11
+
+			UPDATE #SummaryResult set MON12 = isnull(GP, 0) from #SummaryResult inner join #RefMnthResult on #SummaryResult.ReferrerName = #RefMnthResult.ReferrerName and Mnth = 12
+
+            UPDATE #SummaryResult set YTDTotal = YTDGP from #SummaryResult inner join #RefMnthResult_YTD on #SummaryResult.ReferrerName = #RefMnthResult_YTD.ReferrerName 
+
+
+
+
+
+			
+
+            SELECT ReferrerName, 
+
+                isnull(convert(decimal(12,0),MON1),0) AS MON1, 
+
+                isnull(convert(decimal(12,0),MON2),0) AS MON2, 
+
+                isnull(convert(decimal(12,0),MON3),0) AS MON3, 
+
+                isnull(convert(decimal(12,0),MON4),0) AS MON4, 
+
+                isnull(convert(decimal(12,0),MON5),0) AS MON5, 
+
+                isnull(convert(decimal(12,0),MON6),0) AS MON6, 
+
+                isnull(convert(decimal(12,0),MON7),0) AS MON7, 
+
+                isnull(convert(decimal(12,0),MON8),0) AS MON8, 
+
+                isnull(convert(decimal(12,0),MON9),0) AS MON9, 
+
+                isnull(convert(decimal(12,0),MON10),0) AS MON10, 
+
+                isnull(convert(decimal(12,0),MON11),0) AS MON11, 
+
+                isnull(convert(decimal(12,0),MON12),0) AS MON12, 
+
+                isnull(convert(decimal(12,0),YTDTotal),0) AS YTDTotal 
+
+                FROM #SummaryResult
+
+                ORDER BY ReferrerName
+
+
+
+			SELECT 
+
+                isnull(convert(decimal(12,0),sum(MON1)),0) AS MON1, 
+
+                isnull(convert(decimal(12,0),sum(MON2)),0) AS MON2, 
+
+                isnull(convert(decimal(12,0),sum(MON3)),0) AS MON3, 
+
+                isnull(convert(decimal(12,0),sum(MON4)),0) AS MON4, 
+
+                isnull(convert(decimal(12,0),sum(MON5)),0) AS MON5, 
+
+                isnull(convert(decimal(12,0),sum(MON6)),0) AS MON6, 
+
+                isnull(convert(decimal(12,0),sum(MON7)),0) AS MON7, 
+
+				isnull(convert(decimal(12,0),sum(MON8)),0) AS MON8, 
+
+				isnull(convert(decimal(12,0),sum(MON9)),0) AS MON9, 
+
+                isnull(convert(decimal(12,0),sum(MON10)),0) AS MON10, 
+
+                isnull(convert(decimal(12,0),sum(MON11)),0) AS MON11, 
+
+                isnull(convert(decimal(12,0),sum(MON12)),0) AS MON12, 
+
+				isnull(convert(decimal(12,0),sum(YTDTotal)),0) AS YTDTotal 
+
+                FROM #SummaryResult
+
+                
+
+		END
+
+
+
+
+
+
+
+--GO
+
+--cw_GetGrossProfitBySalesRep 
+
+--	@FromDate='2021-11-30 00:00:00',@ToDate='2021-11-30 00:00:00',
+
+--	@CoID=N'',@TradeType=N'',@ReferrerNo=N'',@ExclUnassigned=0,@ExclSalesDisc=0,@DoSummary=0,@ReportType=N'SPLIT PROFIT',@UsePaymentDate=0,@ReportUOM=N'L',@AccountingAR=0 --,@WksNo='537037'
+
+
+
+
+
+--select * from gpledger where buysellno = '537037' and source = 'B'
+
+
+

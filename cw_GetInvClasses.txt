@@ -1,0 +1,12 @@
+CREATE PROC [dbo].[cw_GetInvClasses] as
+
+--02/04/2015 MEC: Created for cieTrade.net
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT rtrim(InvClassName) As [InvClassName] FROM InvClass
+

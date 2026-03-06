@@ -1,0 +1,148 @@
+CREATE PROC [dbo].[cw_GetPublicTradePOS] @TradeID int AS
+
+--03/12/2011 MCM: Created for Public Trading
+
+--03/28/2011 MCM: Added ReceiveDt
+
+--05/23/2013 MCM: Added PublicTrade.Status, PublicTradeDetail.[Paid],PublicTradeDetail.[PaidDt],PublicTradeDetail.[PaidUser] and PublicTradeDetail.[BuySellNo]
+
+--					Removed PublicTrade.BuySellNo and PublicTrade.Paid
+
+--07/26/2017 MCM: ATMAdjustment
+
+--09/08/2017 DSH Renamed AND added fields for Public Trade POS
+
+--11/20/2017 DSH Added Customer Inactive Flag
+
+--01/15/2018 DSH Added Cash Paid column to help identify ATM payments in code.
+
+--07/12/2019 DSH Added Void status
+
+SET NOCOUNT ON
+
+
+
+	DECLARE @PTCustID INT
+
+	SELECT @PTCustID = PTCustID FROM [PublicTrade] WHERE TradeID = @TradeID
+
+
+
+	SELECT 
+
+		[PublicTrade].[PTCustID]
+
+		,[PublicTrade].[ReceiveDt]
+
+		,[PublicTrade].[COID]
+
+		,[PublicTrade].[TradeType]
+
+		,[PublicTrade].[WarehouseID]
+
+		,[PublicTrade].[TagNo]
+
+		,[PublicTrade].[TagState]
+
+		,[PublicTrade].[VehicleMake]
+
+		,[PublicTrade].[VehicleModel]
+
+		,[PublicTrade].[UserID]
+
+		,[PublicTrade].[PaymentAmt]
+
+		,[PublicTrade].[TicketWeight]
+
+		,[PublicTrade].[WtUOM]
+
+		,CONVERT(int,[PublicTrade].[LastEdit]) AS [LastEdit]
+
+		,[PublicTrade].[Notes]
+
+		,[PublicTrade].[Status]
+
+		--,[PublicTrade].[ATMAdjustment]
+
+		,FirstName, LastName 
+
+		,LicenseNo
+
+		,PublicTradeCustomer.PLID
+
+		,PublicPriceListName
+
+		--,Reference
+
+		,PublicTradeCustomer.IsActive
+
+		,PublicTradeCustomer.Fileas
+
+		,ISNULL((SELECT SUM(SalesAmount) FROM PublicTradeDetail WHERE TradeID = @TradeID), 0.00) AS [TotalSales]
+
+		,ISNULL((SELECT SUM(NetWt) FROM PublicTradeDetail WHERE TradeID = @TradeID), 0.00) AS [TotalWeight]
+
+		,[Reference]
+
+		,ISNULL(BuySell.BuySellNo, '') AS [BuySellNo],
+
+		--,CashPaid	
+
+		--,ATMVoided	
+
+		(SELECT COUNT(Posted) FROM Payables WHERE Payables.BuySellNo = BuySell.BuySellNo AND Payables.Posted = 1) AS PayableCount
+
+	FROM [PublicTrade] WITH(NOLOCK) 
+
+		INNER JOIN PublicTradeCustomer ON PublicTrade.PTCustID =  PublicTradeCustomer.PTCustID
+
+		LEFT JOIN publicpricelist ON PublicTradeCustomer.PLID = publicpricelist.PLID 
+
+		LEFT JOIN BuySell ON BuySell.PublicTradeID = PublicTrade.TradeID 
+
+		WHERE TradeID = @TradeID
+
+
+
+	SELECT [DetailID]
+
+		  ,[PublicTradeDetail].[GradeID]
+
+		  ,[WtUOM]
+
+		  ,[GrossWt]
+
+		  ,[TareWt]
+
+		  ,[NetWt]
+
+		  ,[PDID]
+
+		  ,[Price]
+
+		  ,[PriceUOM]
+
+		  ,[SalesAmount]
+
+		  ,[Paid]
+
+		  ,[PaidDt]
+
+		  ,[PaidUser]
+
+		  ,[BuySellNo]
+
+		  ,Grade.Description 
+
+	  FROM [PublicTradeDetail] WITH(NOLOCK) INNER JOIN Grade ON PublicTradeDetail.GradeID = Grade.GradeID
+
+		WHERE TradeID = @TradeID
+
+
+
+
+
+	SELECT TOP 1 ReceiveDt, PaymentAmt FROM PublicTrade WITH(NOLOCK) WHERE PTCustID = @PTCustID ORDER BY TradeID DESC
+
+
+

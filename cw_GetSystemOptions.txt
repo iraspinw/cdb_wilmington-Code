@@ -1,0 +1,26 @@
+CREATE   PROCEDURE [dbo].[cw_GetSystemOptions] AS
+
+--05/09/2007 DSH Cleanup. SstemSetup
+
+--09/21/2015 MCM: Added Accting tokens
+
+SET NOCOUNT ON
+
+Begin
+
+    SELECT optionName, optionValue FROM Options WITH (NOLOCK) ORDER BY optionName 
+
+    SELECT CurrCode, DoClosing, AcctToken, AcctSecret, AcctCompany, Symbol
+
+	FROM SystemInfo WITH (NOLOCK) 
+
+		INNER JOIN Currency WITH(NOLOCK) ON Currency.CurCode = SystemInfo.CurrCode
+
+	WHERE ID = '00'
+
+	select enablear from companyinfo where coid='00'
+
+End
+
+
+

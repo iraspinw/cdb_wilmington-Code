@@ -1,0 +1,104 @@
+CREATE   PROCEDURE [dbo].[cw_GetInvRcvInquiryImportSupplier] 
+
+	@CreationDate datetime
+
+	AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+
+
+
+
+
+
+	SELECT  
+
+		BuySell.BuySellNo [Rcv-No], 
+
+		ShippingDt [Received],
+
+		Case When InvoiceDt < '1/1/1980' Then NULL Else InvoiceDt End [Post Date],
+
+		Grade.Description [Product-Grade],
+
+		Supplier.CompanyNm [Supplier], 
+
+		BuySell.ShipFromID [Ship From],
+
+		Warehouse.[Type] [Warehouse],
+
+		BuySell.RefPONo [Order No],				
+
+		convert(int,IsNull(BuySell.TotalWeightLBS,0)) [Weight LBS],
+
+		dbo.cw_RemoveTrailingZeros(Round(dbo.CnvFromLbs(IsNull(TotalWeightLbs, 0), 'K'), 0),0) [Weight KG],
+
+		Referrer.Name [Buyer],
+
+		upper([dbo].[CnvShipStatus_Name](BuySell.ShippingOK)) Logistics,	
+
+		refequipno as [Equipment No],
+
+		Buysell.BLNo [BOL],	
+
+		W.CompanyDesc As [Dept],
+
+		BuySell.TradeType As [Trade-Type],			
+
+		BuySell.FxSupplierCost, 
+
+		BuySell.CurrencyCd As [Currency],		
+
+		BuySell.PSupplierCost [HCPurchaseAmt],
+
+		ClaimStatus AS [Claim Status],
+
+		[dbo].[CnvWksStatus_Name](ISNULL(BuySell.[Status],''''),BuySell.CustID) [Status],
+
+		RTRIM((SELECT TOP 1 dbo.CnvUnitName(WksDetail.[UnitType]) FROM WksDetail WHERE WksDetail.BuySellNo = BuYSell.BuySellNo)) +'-'+
+
+		RTRIM(CONVERT(VARCHAR(10),(SELECT COUNT(*) FROM WksDetail WHERE WksDetail.BuySellNo = BuYSell.BuySellNo)))	[Packaging],
+
+		BuySell.WarehouseStatus	As [Warehouse-Status],
+
+		BookSheet.BookingNo,
+
+		BuySell.UserDefined1 ,
+
+		BuySell.UserDefined2 ,
+
+		Driver,
+
+		BuySell.PickupNo as [Pickup No],
+
+		case when (select count(*) from BuySell b where b.PickupNo= BuySell.PickupNo) > 1 then 1 else 0 end as [-hidden-Duplicate]
+
+	FROM 
+
+		BuySell 		
+
+		INNER JOIN Counterparty Supplier ON BuySell.VendorID = Supplier.CpID
+
+		left JOIN [Address] Warehouse ON BuySell.ShipToID = Warehouse.[Type] AND Warehouse.CpID = '(INV)'
+
+		INNER JOIN [CompanyInfo] W ON W.COID = BuySell.COID
+
+		LEFT JOIN GRADE ON Grade.GradeID = BuySell.RefGradeID		
+
+		LEFT JOIN Referrer ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+		left join BookSheet on BookSheet.BookingNo= BuySell.BookingNo
+
+		inner join InvRcvCreatedByImport on InvRcvCreatedByImport.BuySellNo = BuySell.BuySellNo
+
+		where InvRcvCreatedByImport.CreatedDateTime = @CreationDate
+
+	 
+

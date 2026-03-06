@@ -1,0 +1,19 @@
+CREATE proc [dbo].[cw_GetUserDefDropdowns]
+
+@Module varchar(30),
+
+@Field varchar(20)
+
+ as
+
+	
+
+--10/14/2022 Nick: Created
+
+
+
+select distinct UserDefinedFldValues.FieldVal from UserDefinedFlds
+
+inner join UserDefinedFldValues on UserDefinedFldValues.udf_id = UserDefinedFlds.UDF_ID
+
+where UserDefinedFlds.Module = @Module and UserDefinedFlds.Field = @Field

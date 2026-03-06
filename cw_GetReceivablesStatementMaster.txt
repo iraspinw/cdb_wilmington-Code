@@ -1,0 +1,438 @@
+CREATE   PROCEDURE [dbo].[cw_GetReceivablesStatementMaster]  @FromDt datetime, @todate datetime, @CPID char(15), 
+
+										@COID char(2), @TradeType varchar(25), @AgeByShipDate bit, 
+
+										@InclUACash bit, @ForCurrency char(3), @ExcludeCust bit = 0,
+
+										@OrderBy tinyint = 0,@ReturnEmpty bit=0,@IsHeaderDetailShow bit=0
+
+AS
+
+BEGIN
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+
+
+    
+
+
+
+--8/3/2021 Alex : Copied from q_GetReceivablesStatement
+
+--08/22/2022 Nick: Invoice List now checks for an Invoice Status of 'I' so the doc matches the statement report
+
+--04/28/2023 DN: added statementNo
+
+--05/11/2023 Nick: --05/11/2023 Nick: OrderBy is now int instead of bit, added third option for grouped invoice
+
+
+
+--[dbo].[cw_GetReceivablesStatement] '1/1/2019','1/1/2022','','','',0,0,'USD',0,0
+
+
+
+    
+
+        
+
+    Create Table #Report(
+
+    CPID varchar(12),
+
+    InvoiceNo varchar(15),
+
+    Type varchar(25),
+
+    BuySellNo char(25),
+
+    Seq char(1),
+
+    TxDate datetime,
+
+    PastDue integer,
+
+    Amount money,
+
+    BalanceDue money,
+
+    FXAmount money,
+
+    FXBalanceDue money,
+
+    DaysToPay varchar(15),
+
+    UseUserDueDt bit DEFAULT 0,
+
+    DueDate datetime,
+
+    CurrencyCd char(3),
+
+	VendorID varchar(12),
+
+	StatementNo Varchar(15)
+
+    )
+
+
+
+    Declare @SYSCURRENCY CHAR(3)
+
+    SELECT @SYSCURRENCY=CURRCODE FROM SYSTEMINFO
+
+
+
+
+
+    -- CREATE REPORT INVOICE-LIST.
+
+    SELECT BuySellNo, CustID, CurrencyCd,VendorID
+
+    INTO #INVOICELIST 
+
+    FROM BuySell WITH(NOLOCK)  
+
+    WHERE INVOICEDT >= @FromDt AND InvoiceDt <= @ToDate AND CustID <> '(INV)' AND CustID <> '(PLANT)' AND CustID <> '{C}' 
+
+    AND status = 'I'--Invoiced = '1'
+
+    AND (@CoID = '' OR @CoID = BuySell.CoID)
+
+	AND (@CpID = '' OR CustID = @CpID)
+
+    AND (@ForCurrency = '' OR @ForCurrency = BuySell.CurrencyCd)
+
+    AND (@TradeType = '' OR @TradeType = BuySell.TradeType)
+
+	AND ISNULL(BuySell.IsAgency,0) <> 1
+
+	and @ReturnEmpty<>1
+
+    Create Index #pk on #INVOICELIST(BuySellNo)
+
+
+
+
+
+
+
+    -- INVOICES..
+
+    INSERT #REPORT(CPID,InvoiceNo,Type,BuySellNo,Seq,TxDate,Amount,BalanceDue,DaysToPay,UseUserDueDt,DueDate,CurrencyCd,FXAmount,FXBalanceDue,VendorID,StatementNo)
+
+    SELECT BuySell.CustID,BuySell.BuySellNo, 'INVOICE',BuySell.BuySellNo, '1' AS Seq, InvoiceDt, 
+
+        SalesAmt+SFreightChg+isnull(SalesTaxAmt,0) As InvoiceAmt,SBalanceDue,
+
+        DaysToPay, UseUserDueDT, BuySell.DueDt, BuySell.CurrencyCd, 
+
+        FXInvoiceAmt+isnull(FXSalesTaxAmt,0) As InvoiceAmt,FXBalanceDue,
+
+		#INVOICELIST.VendorID,buysell.StatementNo
+
+    FROM BuySell WITH(NOLOCK)  INNER JOIN #INVOICELIST ON BuySell.BUYSELLNO = #INVOICELIST.BUYSELLNO    
+
+    LEFT JOIN BillingTerm ON BuySell.Terms = BillingTerm.Term 
+
+
+
+    -- PAYMENTS..  '     PAYMENT'
+
+    INSERT #REPORT(CPID,InvoiceNo,Type,BuySellNo,Seq,TxDate,Amount,CurrencyCd,FXAmount,VendorID)
+
+    Select CustID,Receipt.BuySellNo,''+PostingType,'Pmt# ' + CheckNo,'2' As Seq, PaymentDt,Amount * -1 , #INVOICELIST.CurrencyCd, FXAmount * -1,
+
+		#INVOICELIST.VendorID
+
+    FROM Receipt WITH(NOLOCK) INNER JOIN #INVOICELIST ON Receipt.BUYSELLNO = #INVOICELIST.BUYSELLNO
+
+    WHERE (Reversed = 0 or reversed is null)
+
+
+
+    -- CREDIT MEMOS..
+
+    INSERT #REPORT(CPID,InvoiceNo,Type,BuySellNo,Seq,TxDate,Amount,CurrencyCd,FXAmount,VendorID)
+
+    Select CustID,GPLedger.BuySellNo,'CREDIT MEMO',AdjReason+'/'+GPLedger.BuySellNo, '2' as Seq, TradeDt,Sale+AdjSalesTaxAmt, #INVOICELIST.CurrencyCd, AdjFXAmount+AdjFxSalesTaxAmt ,
+
+		#INVOICELIST.VendorID
+
+    FROM GPLedger WITH(NOLOCK)  INNER JOIN #INVOICELIST ON gpledger.BUYSELLNO = #INVOICELIST.BUYSELLNO
+
+    where Sale < 0 AND (Reversed = 0 or reversed is null) AND (source = 'A') and adjtype = 'S' and AdjApproved = 'Y'
+
+
+
+    -- DEBIT MEMOS..
+
+    INSERT #REPORT(CPID,InvoiceNo,Type,BuySellNo,Seq,TxDate,Amount,CurrencyCd,FXAmount,VendorID)
+
+    Select CustID,GPLedger.BuySellNo,'DEBIT MEMO',AdjReason+'/'+GPLedger.BuySellNo, '2' as Seq, TradeDt,Sale+AdjSalesTaxAmt, #INVOICELIST.CurrencyCd, AdjFXAmount+AdjFxSalesTaxAmt,
+
+		#INVOICELIST.VendorID
+
+    FROM GPLedger WITH(NOLOCK)  INNER JOIN #INVOICELIST ON gpledger.BUYSELLNO = #INVOICELIST.BUYSELLNO
+
+    where Sale > 0 AND (Reversed = 0 or reversed is null) AND (source = 'A') and adjtype = 'S' and AdjApproved = 'Y'
+
+
+
+    -- ADJUSTMENTS..
+
+    INSERT #REPORT(CPID,InvoiceNo,Type,BuySellNo,Seq,TxDate,Amount,CurrencyCd,FXAmount,VendorID)
+
+    Select CustID,GPLedger.BuySellNo,'     ' + AdjReason,gpledger.buysellno,'2' as Seq, TradeDt, Sale+AdjSalesTaxAmt, #INVOICELIST.CurrencyCd, AdjFXAmount+AdjFxSalesTaxAmt,
+
+		#INVOICELIST.VendorID
+
+    FROM GPLedger WITH(NOLOCK)  INNER JOIN #INVOICELIST ON gpledger.BUYSELLNO = #INVOICELIST.BUYSELLNO
+
+    where (reversed = 0  or reversed is null)
+
+    and (Source = 'D' or source = 'F') and adjtype = 'S'
+
+    
+
+    -- INTEREST CHG..
+
+    INSERT #REPORT(CPID,InvoiceNo,Type,BuySellNo,Seq,TxDate,Amount,CurrencyCd,FXAmount,VendorID)
+
+    Select CustID,GPLedger.BuySellNo,'     ' + AdjReason,gpledger.buysellno,'2' as Seq, TradeDt, Sale+AdjSalesTaxAmt, #INVOICELIST.CurrencyCd, AdjFXAmount+AdjFxSalesTaxAmt,
+
+		#INVOICELIST.VendorID
+
+    FROM GPLedger WITH(NOLOCK)  INNER JOIN #INVOICELIST ON gpledger.BUYSELLNO = #INVOICELIST.BUYSELLNO
+
+    where (reversed = 0  or reversed is null)
+
+    and Source = 'N' and adjtype = 'S'
+
+    
+
+
+
+    -- ADD-IN UNAPPLIED CASH.
+
+    IF @InclUACash = 1 Begin
+
+        INSERT #REPORT(CPID,InvoiceNo,Type,BuySellNo,Seq,TxDate,Amount,BalanceDue,CurrencyCd,FXAmount,FXBalanceDue)
+
+        Select CustID,'UNAPPLIED','UNAPPLIED PAYMENT','Pmt# ' + CheckNo,'1' As Seq, EntryDt, Balance * -1, Balance * -1 , CurrencyCd, FXBalance * -1, FXBalance * -1  --Balance, Balance * -1,
+
+        FROM UACashLedger WITH (NOLOCK)
+
+        WHERE round(Balance,2) > 0 
+
+        AND EXISTS(SELECT * FROM #INVOICELIST WHERE UACashLedger.CustID = #INVOICELIST.CUSTID)
+
+        AND (@CpID = '' OR @CpID = UACashLedger.CustID)  
+
+        AND (@ForCurrency = '' OR @ForCurrency = CurrencyCd)
+
+        AND (@COID = '' OR @COID = UACashLedger.COID) 
+
+        AND (UACashLedger.Reversed = 0	or UACashLedger.Reversed is null)
+
+    End
+
+
+
+
+
+
+
+    IF @AgeByShipDate = 1 BEGIN
+
+        UPDATE #REPORT SET TXDate = ShippingDt FROM #REPORT INNER JOIN BUYSELL WITH(NOLOCK)  ON #REPORT.BuySellNo = BuySell.BuysellNo
+
+        WHERE Type = 'INVOICE' -- 10/23/06 AND UseUserDueDt = 0 OR UseUserDueDt IS NULL
+
+    END
+
+
+
+
+
+    -- SET DUE DATE & PAST DUE DAYS
+
+    UPDATE #REPORT SET DaysToPay = 0 WHERE DaysToPay IS NULL AND Type = 'INVOICE'  
+
+    --06/26/2012 RS: Removed 
+
+    --UPDATE #REPORT SET DueDate = DATEADD(day, DaysToPay, TxDate) WHERE Type = 'INVOICE' and (UseUserDueDt = 0 OR UseUserDueDt IS NULL)
+
+    UPDATE #REPORT SET DaysToPay = datediff(day,DueDate,getdate()) WHERE Type = 'INVOICE' AND BalanceDue > 0
+
+    UPDATE #REPORT SET DaysToPay = 0 WHERE Type = 'INVOICE' AND BalanceDue = 0
+
+    DELETE FROM #REPORT WHERE CPID = '(OTHER)'
+
+
+
+
+
+    -- REPORT IN TRANSACTION CURRENCY.
+
+    --=='IF @ForCurrency <> '' 
+
+    UPDATE #REPORT SET AMOUNT = FXAMOUNT, BALANCEDUE=FXBALANCEDUE
+
+	
+
+
+
+	If @IsHeaderDetailShow = 1 Begin
+
+		-- Header Detail
+
+		SELECT
+
+			CompanyNm As Company, 
+
+			RTRIM(LTRIM(dbo.cw_GetCompanyAddress(COID, 0))) As CompanyAddr, 
+
+			(SELECT CompanyNm FROM Counterparty WHERE CpID = @CpID) As Customer, 
+
+			RTRIM(LTRIM(dbo.xDoc_GetLocationAddress(@CpID, ''))) As CustomerAddr,
+
+			LogoImage,
+
+			@FromDt as FromDt,
+
+			@ToDate as ToDt,
+
+			@OrderBy as OrderBy
+
+		    From CompanyInfo Where COID = '00'
+
+	End
+
+
+
+
+
+
+
+	
+
+	IF @ExcludeCust = 1 BEGIN
+
+		SELECT CPID,Sum(BalanceDue) as TotBalDue
+
+		INTO #NOZEROCPID
+
+		FROM #REPORT
+
+		GROUP BY CPID
+
+		HAVING Sum(BalanceDue)<>0
+
+		
+
+		-- FINAL REPORT.
+
+		IF @OrderBy = 0 BEGIN
+
+			-- ORDER BY INVOICE NO
+
+			SELECT #REPORT.CPID, InvoiceNo as [Invoice No], Type As [Transaction], BuySellno AS [Document No], case when TxDate='1900-01-01 00:00:00.000' then null else TxDate end as Date, DueDate as [Due Date],
+
+			case when isnull(DaysToPay,0)=0 then '' else DaysToPay end as [Past Due], CurrencyCd, Amount,isnull(BalanceDue,0) as [{C}Balance]  ,VendorID as [-Hidden-VendorID],isnull(BalanceDue,0) as [Balance],rtrim(StatementNo) as StatementNo
+
+			FROM #REPORT INNER JOIN Counterparty ON #Report.cpid = Counterparty.cpid
+
+			INNER JOIN #NOZEROCPID ON #REPORT.CPID = #NOZEROCPID.CPID
+
+			ORDER BY CompanyNm,CurrencyCd, InvoiceNo, Seq, TxDate
+
+		END
+
+		ELSE BEGIN
+
+			-- ORDER BY DATE
+
+			SELECT #REPORT.CPID, InvoiceNo as [Invoice No], Type As [Transaction], BuySellno AS [Document No], case when TxDate='1900-01-01 00:00:00.000' then null else TxDate end as Date, DueDate as [Due Date],
+
+			case when isnull(DaysToPay,0)=0 then '' else DaysToPay end as [Past Due], CurrencyCd, Amount,isnull(BalanceDue,0) as [{C}Balance]  ,VendorID as [-Hidden-VendorID],isnull(BalanceDue,0) as [Balance], rtrim(StatementNo) as StatementNo
+
+			FROM #REPORT INNER JOIN Counterparty ON #Report.cpid = Counterparty.cpid
+
+			INNER JOIN #NOZEROCPID ON #REPORT.CPID = #NOZEROCPID.CPID
+
+			ORDER BY CompanyNm,CurrencyCd,TxDate,InvoiceNo, Seq
+
+		END
+
+	END
+
+	ELSE BEGIN
+
+		-- FINAL REPORT.
+
+		IF @OrderBy = 0 BEGIN
+
+			-- ORDER BY INVOICE NO
+
+			SELECT #REPORT.CPID, InvoiceNo as [Invoice No], Type As [Transaction], BuySellno AS [Document No], case when TxDate='1900-01-01 00:00:00.000' then null else TxDate end as Date, DueDate as [Due Date],
+
+			case when isnull(DaysToPay,0)=0 then '' else DaysToPay end as [Past Due], CurrencyCd, Amount,isnull(BalanceDue,0) as [{C}Balance]  ,VendorID as [-Hidden-VendorID],isnull(BalanceDue,0) as [Balance], rtrim(StatementNo) as StatementNo
+
+			FROM #REPORT INNER JOIN Counterparty ON #Report.cpid = Counterparty.cpid
+
+			ORDER BY CompanyNm,CurrencyCd, InvoiceNo, Seq, TxDate
+
+		END
+
+		ELSE IF @OrderBy = 1 BEGIN
+
+			-- ORDER BY DATE
+
+			SELECT #REPORT.CPID, InvoiceNo as [Invoice No], Type As [Transaction], BuySellno AS [Document No], case when TxDate='1900-01-01 00:00:00.000' then null else TxDate end as Date, DueDate as [Due Date],
+
+			case when isnull(DaysToPay,0)=0 then '' else DaysToPay end as [Past Due], CurrencyCd, Amount,isnull(BalanceDue,0) as [{C}Balance] ,VendorID as [-Hidden-VendorID],isnull(BalanceDue,0) as [Balance],rtrim(StatementNo) as StatementNo
+
+			FROM #REPORT INNER JOIN Counterparty ON #Report.cpid = Counterparty.cpid
+
+			ORDER BY CompanyNm,CurrencyCd,TxDate,InvoiceNo, Seq
+
+		END
+
+		ELSE BEGIN
+
+			-- ORDER BY GROUPED INVOICE NO
+
+			SELECT #REPORT.CPID, InvoiceNo as [Invoice No], Type As [Transaction], BuySellno AS [Document No], case when TxDate='1900-01-01 00:00:00.000' then null else TxDate end as Date, DueDate as [Due Date],
+
+			case when isnull(DaysToPay,0)=0 then '' else DaysToPay end as [Past Due], CurrencyCd, Amount,isnull(BalanceDue,0) as [{C}Balance]  ,VendorID as [-Hidden-VendorID],isnull(BalanceDue,0) as [Balance], rtrim(StatementNo) as StatementNo
+
+			FROM #REPORT INNER JOIN Counterparty ON #Report.cpid = Counterparty.cpid
+
+			ORDER BY CompanyNm,CurrencyCd, StatementNo, InvoiceNo, Seq, TxDate
+
+		END
+
+	END
+
+
+
+END
+
+
+
+
+
+--select BuySellNo from BuySell where status= 'A' --and BuySellNo='501859'
+
+	-- Returns the list of table names for the report datasouce
+
+	SELECT 'Headers', 'Details'
+
+
+
+--q_GetReceivablesStatement '01/01/1901','01/04/2012','14358','','','1',1,'',0
+
+
+

@@ -1,0 +1,924 @@
+CREATE   PROCEDURE [dbo].[cw_GetInventoryInquiryPick] 
+
+	@WhseID varchar(300),
+
+	@Class varchar(50),
+
+	@RcvFromDt datetime,
+
+	@RcvToDt datetime,
+
+	@InFromDt datetime,
+
+	@InToDt datetime,
+
+	@GradeID char(15),
+
+	@SupplierID char(12),
+
+	@SalesRep char(10),
+
+	@ForSale bit = 0,
+
+	@PONO varchar(15) = '',
+
+	@ItemNo varchar(20) = '',
+
+	@UOMType char(1) = '',
+
+	@BarcodePickList varchar(8000) = '',
+
+	@PackingSlip varchar(12) = '',
+
+	@Color varchar(48) = '',
+
+	@Melt varchar(30) = '',
+
+	@Form varchar(30) = '',
+
+	@TypeGrade varchar(30) = '',
+
+	@Location varchar(20) = '',
+
+	
+
+	@Language char(5) = 'en-US',
+
+	
+
+
+
+	@BasisWtUOM varchar(3) = 'LB',
+
+	@BasisWtFrom Decimal(22,3) = 0.0,
+
+	@BasisWtTo Decimal(22,3) = 0.0,
+
+	@CaliperFrom Decimal(22,3) = 0.0,
+
+	@CaliperTo Decimal(22,3) = 0.0,
+
+	@RollWdUOM varchar(3) = 'CM', 
+
+	@RollWdFrom Decimal(22,3) = 0.0,
+
+	@RollWdTo Decimal(22,3) = 0.0,
+
+	@DiameterUOM varchar(3) = 'CM',
+
+	@DiameterFrom Decimal(22,3) = 0.0,
+
+	@DiameterTo Decimal(22,3) = 0.0,
+
+
+
+	@Reserve char(2) = 'I',
+
+	@ReserveCust varchar(75)= '',
+
+	@ReserveOrder varchar(75)= '',
+
+	@ReserveSalesRep varchar(100)= '',
+
+
+
+	@DetailUDF1 varchar(50)= '',
+
+    @DetailUDF2 varchar(50)= '',
+
+    @DetailUDF3 varchar(50)= '',
+
+    @DetailUDF4 varchar(50)= '',
+
+    @DetailUDF5 varchar(50)= '',
+
+
+
+	@DetailUDF41 varchar(50)= '',
+
+    @DetailUDF42 varchar(50)= '',
+
+    @DetailUDF43 varchar(50)= '',
+
+    @DetailUDF44 varchar(50)= '',
+
+    @DetailUDF45 varchar(50)= '',
+
+	@DetailUDF46 varchar(50)= '',
+
+    @DetailUDF47 varchar(50)= '',
+
+    @DetailUDF48 varchar(50)= '',
+
+    @DetailUDF49 varchar(50)= '',
+
+    @DetailUDF50 varchar(50)= ''
+
+
+
+	AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+	
+
+-- 01/26/2016 MEC: Created for cieTrade.net Inventory Manager
+
+-- 12/29/2016 DSH Fixed single item pick to exclude zero quantity
+
+-- 03/30/2017 MEC: Added -Hidden-WeightUOM and -Hidden-UnitType for Packing Slip selection
+
+-- 08/25/2020 Alex: AddedColor,PlasticMelt,PlasticType,PlasticForm 
+
+-- 02/17/2021 MEC: Added Plastics and Reserve
+
+-- 05/18/2022 ZT: Added -Hidden-LastEdit
+
+-- 09/20/2022 DN: added -Hidden-GrossWt, changed [Gross weight] from inventory.tareWt to inventory.GrossWt
+
+
+
+-- cw_GetInventoryInquiryPick '', '', '', '', '', '', '', '', '',''
+
+--select unittype, units, * from inventory where lotno = '230886-1'
+
+--cw_GetInventoryInquiryPick 'Cheapside 2','','','','','','','','',1,'','','','','T10043'      ,'','','','','',0,0,0,0,'',0,0,'',0,0,'I','','',''
+
+	declare @SQL varchar(max)
+
+
+
+	declare @UseResere bit = 0
+
+	
+
+	If @ReserveCust <> '' OR @ReserveOrder <> '' OR @ReserveSalesRep <> '' Begin
+
+		Set @UseResere = 1
+
+	End
+
+
+
+	if @BarcodePickList = '' And @PackingSlip = '' begin
+
+
+
+		If @Language = 'en-US' BEGIN
+
+			SELECT  
+
+				Inventory.LotNo [Item No],
+
+				IsNull(WarehouseLocation.LocationName,'') [Location],
+
+				Grade.[Description] [Product/Grade], 
+
+				Inventory.SerialNo [Serial No],
+
+				Inventory.BarcodeNo [Barcode No],
+
+				dbo.formatweightuom(dbo.RemoveTrailingZeros(Inventory.QtyOnHand), inventory.weightUOM) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Quantity],
+
+				Inventory.QtyOnHand [-Hidden-QtyOnHand],
+
+				dbo.RemoveTrailingZeros(Inventory.[Weight]) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Original Qty],
+
+				Inventory.[Weight] [-Hidden-Weight],
+
+				Inventory.Units, 
+
+				isnull(dbo.CnvUnitName(Inventory.[UnitType]),'') + ' - ' + convert(varchar(20),inventory.units) [Packaging],
+
+				Inventory.Condition [Condition],
+
+				CONVERT(DECIMAL(18,2),round(InvValue / (CASE WHEN IsNull(Inventory.FxRate,0) = 0 THEN 1 ELSE Inventory.FxRate END),2)) as [Value],
+
+				Inventory.CurrencyCd [Currency],  
+
+				CONVERT(DECIMAL(18,2),ISNULL(InvValue, 0)) as [Extension],
+
+				RcvDt [Received],
+
+				RcvDt [Posted],
+
+				Inventory.BuySellNo [Rcv-No], 
+
+				Supplier.CompanyNm AS Supplier, 
+
+				WarehouseNm AS [Warehouse Name], 
+
+				Inventory.InvClass [Class], 
+
+				Dept.CompanyDesc [Dept Name],
+
+				ProductGroup.GroupID [Product Group],
+
+				ProductGroup.CategoryID [Product Category],
+
+				PONumber [PO Number], 
+
+				BuySell.RefEquipNo [Equipment No],
+
+				Referrer.Name [Buyer],  
+
+				Inventory.Comments, 
+
+				Datediff(day,InDate, getdate()) AS Aging,
+
+				dbo.RemoveTrailingZeros(Inventory.TareWt) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Tare Weight],
+
+				dbo.RemoveTrailingZeros(Inventory.GrossWt) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Gross Weight],	--temp changed by dakota
+
+				dbo.RemoveTrailingZeros(Inventory.GrossWt) [-Hidden-GrossWt],
+
+				dbo.ConvertToLBS(convert(int, Inventory.QtyOnHand), Inventory.WeightUOM) [-Hidden-WeightInLbs],
+
+				inventory.GradeID,
+
+				inventory.SpecString as Specification,
+
+				inventory.UnitType as [-Hidden-UnitType],
+
+				Inventory.WeightUOM as [-Hidden-WeightUOM],
+
+				Inventory.Color,
+
+				convert( int,Inventory.lastedit) As [-Hidden-LastEdit],
+
+				Inventory.PlasticType as [Plastic Type],
+
+				Inventory.PlasticForm as [Plastic Form],
+
+				Inventory.PlasticMelt as [Plastic Melt],
+
+
+
+				dbo.cw_removeTrailingZeros(Inventory.Caliper,0) as CALIPER,
+
+				dbo.cw_RemoveTrailingZeros(Inventory.BasisWt, 0) As [BW],
+
+				Inventory.BasisWtUOM As [BW-UOM],
+
+				dbo.cw_removeTrailingZeros(Inventory.RollWd,0) As [RW],
+
+				Inventory.RollWdUOM As [RW-UOM],
+
+				dbo.cw_removeTrailingZeros(Inventory.CoreSize,0) As [CORE],
+
+				Inventory.CoreSizeUOM As [CORE-UOM],
+
+				dbo.cw_removeTrailingZeros(Inventory.Diameter,0) as DIA,
+
+				Inventory.DiameterUOM As [DIA-UOM],
+
+				dbo.cw_removeTrailingZeros(Inventory.LinearLen,0) AS [ROLL-LENGTH]
+
+
+
+			FROM 
+
+				Inventory WITH(NOLOCK) 
+
+				INNER JOIN GRADE WITH(NOLOCK) ON Inventory.GradeID = Grade.GradeID		
+
+				LEFT JOIN Counterparty Supplier WITH(NOLOCK) ON Inventory.VendorID = Supplier.CpID
+
+				left JOIN BuySell WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo 		
+
+				LEFT JOIN ProductGroup WITH(NOLOCK) ON ProductGroup.GroupID = Grade.ProductGroupID
+
+				LEFT JOIN Counterparty Customer  WITH(NOLOCK) ON Customer.CpID = Inventory.DesignatedCpID 
+
+				LEFT JOIN CompanyInfo Dept WITH (NOLOCK) ON Dept.COID = Inventory.COID
+
+				LEFT JOIN Referrer WITH(NOLOCK) ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+				LEFT JOIN WarehouseLocation WITH(NOLOCK) ON WarehouseLocation.ID = Inventory.WarehouseLocation
+
+		
+
+			WHERE inventory.QtyOnHand > 0
+
+				and lotno not in(select lotno from ContainerContents)
+
+				AND 
+
+				(
+
+					(@ItemNo <> '' AND (@ItemNo = inventory.LotNo OR Inventory.SerialNo like @ItemNo + '%'))
+
+					OR 
+
+					(@Itemno = '' AND
+
+						(@WhseID = '' OR @WhseID = inventory.warehousenm)
+
+						AND (@RcvFromDt = '' OR Inventory.RcvDt >= @RcvFromDt)
+
+						AND (@RcvToDt = '' OR Inventory.RcvDt <= @RcvToDt)
+
+						AND (@InFromDt = '' OR Inventory.InDate >= @InFromDt)
+
+						AND (@InToDt = '' OR Inventory.InDate <= @InToDt)
+
+						AND (@GradeID = '' OR @GradeID = Inventory.GradeID)
+
+						AND (@SupplierID = '' OR @SupplierID = Inventory.VendorID)
+
+						AND (@SalesRep = '' OR @SalesRep = Inventory.RefID)
+
+						AND (@Class = '' OR @Class = Inventory.InvClass)
+
+						AND (@PONO= '' OR @PONO = Inventory.PONumber)			
+
+						AND (@UOMType='' or ((@UOMType='E' and inventory.WeightUOM='E') or (@UOMType='W' and inventory.WeightUOM <> 'E')))
+
+
+
+						AND (@Color= '' OR @Color = Inventory.Color)	
+
+						AND (@TypeGrade= '' OR @TypeGrade = Inventory.PlasticType)	
+
+						AND (@Form= '' OR @Form = Inventory.PlasticForm)	
+
+						AND (@Melt= '' OR @Melt = Inventory.PlasticMelt)	
+
+						AND (@Location= '' OR @Location = Inventory.WarehouseLocation)	
+
+					
+
+						AND (@BasisWtFrom = 0 OR Inventory.BasisWt >= @BasisWtFrom) 
+
+						AND (@BasisWtTo = 0 OR Inventory.BasisWt <= @BasisWtTo) 
+
+						AND (@CaliperFrom = 0 OR Inventory.Caliper >= @CaliperFrom) 
+
+						AND (@CaliperTo = 0 OR Inventory.Caliper <= @CaliperTo) 
+
+						AND (@RollWdFrom = 0 OR Inventory.RollWd >= @RollWdFrom) 
+
+						AND (@RollWdTo = 0 OR Inventory.RollWd <= @RollWdTo) 
+
+						AND (@DiameterFrom = 0 OR Inventory.Diameter >= @DiameterFrom) 
+
+						AND (@DiameterTo = 0 OR Inventory.Diameter <= @DiameterTo) 
+
+					
+
+						AND (@ReserveCust = '' or Inventory.ReserveCustID = @ReserveCust)
+
+						AND (@ReserveOrder = '' or Inventory.ReservePONumber = @ReserveOrder)
+
+						AND (@ReserveSalesRep = '' or Inventory.ReserveSalesRep = @ReserveSalesRep)
+
+						AND (@Reserve = 'I' or (isnull(Inventory.IsReserved,0) = 0 and @Reserve = 'E') or (isnull(Inventory.IsReserved,0) = 1 and @Reserve = 'S'))
+
+						AND (@DetailUDF1 = '' or isnull(Inventory.UserDefined1,'') = @DetailUDF1)
+
+						AND (@DetailUDF2 = '' or Inventory.UserDefined2 = @DetailUDF2)
+
+						AND (@DetailUDF3 = '' or Inventory.UserDefined3 = @DetailUDF3)
+
+						AND (@DetailUDF4 = '' or Inventory.UserDefined4 = @DetailUDF4)
+
+						AND (@DetailUDF5 = '' or Inventory.UserDefined5 = @DetailUDF5)
+
+					
+
+						AND (@DetailUDF41 = '' or isnull(Inventory.UserDefinedFourth1,'') = @DetailUDF41)
+
+						AND (@DetailUDF42 = '' or isnull(Inventory.UserDefinedFourth2,'') = @DetailUDF42)
+
+						AND (@DetailUDF43 = '' or isnull(Inventory.UserDefinedFourth3,'') = @DetailUDF43)
+
+						AND (@DetailUDF44 = '' or isnull(Inventory.UserDefinedFourth4,'') = @DetailUDF44)
+
+						AND (@DetailUDF45 = '' or isnull(Inventory.UserDefinedFourth5,'') = @DetailUDF45)
+
+						AND (@DetailUDF46 = '' or isnull(Inventory.UserDefinedFourth6,'') = @DetailUDF46)
+
+						AND (@DetailUDF47 = '' or isnull(Inventory.UserDefinedFourth7,'') = @DetailUDF47)
+
+						AND (@DetailUDF48 = '' or isnull(Inventory.UserDefinedFourth8,'') = @DetailUDF48)
+
+						AND (@DetailUDF49 = '' or isnull(Inventory.UserDefinedFourth9,'') = @DetailUDF49)
+
+						AND (@DetailUDF50 = '' or isnull(Inventory.UserDefinedFourth10,'') = @DetailUDF50)
+
+				
+
+					)
+
+				)
+
+			ORDER BY
+
+				Inventory.LotNo
+
+		END
+
+		ELSE IF @Language = 'es' BEGIN
+
+			SELECT  
+
+				Inventory.LotNo [# Articulo],
+
+				Inventory.SerialNo [Núm. de Serie],
+
+				Grade.[Description] [Producto/Grado], 
+
+				isnull(dbo.CnvUnitName(Inventory.[UnitType]),'') + ' - ' + convert(varchar(20),inventory.units) [Empaque],
+
+				inventory.SpecString as [Especificaciones],
+
+				dbo.RemoveTrailingZeros(Inventory.GrossWt) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Peso Bruto],	--temp changed by dakota
+
+				dbo.formatweightuom(dbo.RemoveTrailingZeros(Inventory.QtyOnHand), inventory.weightUOM) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Cantidad],
+
+				CONVERT(DECIMAL(18,2),round(InvValue / (CASE WHEN IsNull(Inventory.FxRate,0) = 0 THEN 1 ELSE Inventory.FxRate END),2)) as [Valor],
+
+				RcvDt [Contabilizado],
+
+				Supplier.CompanyNm AS Proveedor, 
+
+				WarehouseNm AS [Bodega], 
+
+				BuySell.RefEquipNo [Núm. de Equipo],
+
+				Referrer.Name [Comprador]
+
+			FROM 
+
+				Inventory WITH(NOLOCK) 
+
+				INNER JOIN GRADE WITH(NOLOCK) ON Inventory.GradeID = Grade.GradeID		
+
+				LEFT JOIN Counterparty Supplier WITH(NOLOCK) ON Inventory.VendorID = Supplier.CpID
+
+				left JOIN BuySell WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo 		
+
+				LEFT JOIN ProductGroup WITH(NOLOCK) ON ProductGroup.GroupID = Grade.ProductGroupID
+
+				LEFT JOIN Counterparty Customer  WITH(NOLOCK) ON Customer.CpID = Inventory.DesignatedCpID 
+
+				LEFT JOIN CompanyInfo Dept WITH (NOLOCK) ON Dept.COID = Inventory.COID
+
+				LEFT JOIN Referrer WITH(NOLOCK) ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+				LEFT JOIN WarehouseLocation WITH(NOLOCK) ON WarehouseLocation.ID = Inventory.WarehouseLocation
+
+		
+
+			WHERE inventory.QtyOnHand > 0
+
+				and lotno not in(select lotno from ContainerContents)
+
+				AND 
+
+				(
+
+					(@ItemNo <> '' AND (@ItemNo = inventory.LotNo OR Inventory.SerialNo like @ItemNo + '%'))
+
+					OR 
+
+					(@Itemno = '' AND
+
+						(@WhseID = '' OR @WhseID = inventory.warehousenm)
+
+						AND (@Class = '' OR @Class = Inventory.InvClass)
+
+						AND (@RcvFromDt = '' OR Inventory.RcvDt >= @RcvFromDt)
+
+						AND (@RcvToDt = '' OR Inventory.RcvDt <= @RcvToDt)
+
+						AND (@InFromDt = '' OR Inventory.InDate >= @InFromDt)
+
+						AND (@InToDt = '' OR Inventory.InDate <= @InToDt)
+
+						AND (@GradeID = '' OR @GradeID = Inventory.GradeID)
+
+						AND (@SupplierID = '' OR @SupplierID = Inventory.VendorID)
+
+						AND (@SalesRep = '' OR @SalesRep = Inventory.RefID)
+
+						AND (@PONO= '' OR @PONO = Inventory.PONumber)
+
+					)
+
+				)
+
+			ORDER BY
+
+				Inventory.LotNo
+
+		END
+
+
+
+
+
+	end
+
+	else if @BarcodePickList <> '' begin
+
+		If @Language = 'en-US' BEGIN
+
+			set @SQL = '
+
+			SELECT  
+
+				Inventory.LotNo [Item No],
+
+				IsNull(WarehouseLocation.LocationName,'''') [Location],
+
+				Grade.[Description] [Product/Grade], 
+
+				Inventory.SerialNo [Serial No],
+
+				Inventory.BarcodeNo [Barcode No],
+
+				dbo.formatweightuom(dbo.RemoveTrailingZeros(Inventory.QtyOnHand), inventory.weightUOM) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Quantity],
+
+				Inventory.QtyOnHand [-Hidden-QtyOnHand],
+
+				dbo.RemoveTrailingZeros(Inventory.[Weight]) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Original Qty],
+
+				Inventory.[Weight] [-Hidden-Weight],
+
+				Inventory.Units, 
+
+				isnull(dbo.CnvUnitName(Inventory.[UnitType]),'''') + '' - '' + convert(varchar(20),inventory.units) [Packaging],
+
+				Inventory.Condition [Condition],
+
+				CONVERT(DECIMAL(18,2),round(InvValue / (CASE WHEN IsNull(Inventory.FxRate,0) = 0 THEN 1 ELSE Inventory.FxRate END),2)) as [Value],
+
+				Inventory.CurrencyCd [Currency],  
+
+				CONVERT(DECIMAL(18,2),ISNULL(InvValue, 0)) as [Extension],
+
+				RcvDt [Received],
+
+				RcvDt [Posted],
+
+				Inventory.BuySellNo [Rcv-No], 
+
+				Supplier.CompanyNm AS Supplier, 
+
+				WarehouseNm AS [Warehouse Name], 
+
+				Inventory.InvClass [Class], 
+
+				Dept.CompanyDesc [Dept Name],
+
+				ProductGroup.GroupID [Product Group],
+
+				ProductGroup.CategoryID [Product Category],
+
+				PONumber [PO Number], 
+
+				BuySell.RefEquipNo [Equipment No],
+
+				Referrer.Name [Buyer],  
+
+				Inventory.Comments, 
+
+				Datediff(day,InDate, getdate()) AS Aging,
+
+				dbo.RemoveTrailingZeros(Inventory.TareWt) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Tare Weight],
+
+				dbo.RemoveTrailingZeros(Inventory.TareWt) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Gross Weight],
+
+				dbo.RemoveTrailingZeros(Inventory.GrossWt) [-Hidden-GrossWt],
+
+				dbo.ConvertToLBS(convert(int, Inventory.QtyOnHand), Inventory.WeightUOM) [-Hidden-WeightInLbs],
+
+				inventory.GradeID,
+
+				inventory.SpecString as Specification,
+
+				inventory.UnitType as [-Hidden-UnitType],
+
+				Inventory.WeightUOM as [-Hidden-WeightUOM],
+
+				Inventory.Color,
+
+				convert( int,Inventory.lastedit) As [-Hidden-LastEdit],
+
+
+
+				Inventory.PlasticType as [Plastic Type],
+
+				Inventory.PlasticForm as [Plastic Form],
+
+				Inventory.PlasticMelt as [Plastic Melt],
+
+
+
+				dbo.cw_removeTrailingZeros(Inventory.Caliper,0) as CALIPER,
+
+				dbo.cw_RemoveTrailingZeros(Inventory.BasisWt, 0) As [BW],
+
+				Inventory.BasisWtUOM As [BW-UOM],
+
+				dbo.cw_removeTrailingZeros(Inventory.RollWd,0) As [RW],
+
+				Inventory.RollWdUOM As [RW-UOM],
+
+				dbo.cw_removeTrailingZeros(Inventory.CoreSize,0) As [CORE],
+
+				Inventory.CoreSizeUOM As [CORE-UOM],
+
+				dbo.cw_removeTrailingZeros(Inventory.Diameter,0) as DIA,
+
+				Inventory.DiameterUOM As [DIA-UOM],
+
+				dbo.cw_removeTrailingZeros(Inventory.LinearLen,0) AS [ROLL-LENGTH]
+
+			FROM 
+
+				Inventory WITH(NOLOCK) 
+
+				INNER JOIN GRADE WITH(NOLOCK) ON Inventory.GradeID = Grade.GradeID		
+
+				LEFT JOIN Counterparty Supplier WITH(NOLOCK) ON Inventory.VendorID = Supplier.CpID
+
+				left JOIN BuySell WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo 		
+
+				LEFT JOIN ProductGroup WITH(NOLOCK) ON ProductGroup.GroupID = Grade.ProductGroupID
+
+				LEFT JOIN Counterparty Customer  WITH(NOLOCK) ON Customer.CpID = Inventory.DesignatedCpID 
+
+				LEFT JOIN CompanyInfo Dept WITH (NOLOCK) ON Dept.COID = Inventory.COID
+
+				LEFT JOIN Referrer WITH(NOLOCK) ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+				LEFT JOIN WarehouseLocation WITH(NOLOCK) ON WarehouseLocation.ID = Inventory.WarehouseLocation
+
+		
+
+			WHERE inventory.QtyOnHand > 0
+
+				AND lotno in(''' + @BarcodePickList + ''')
+
+				and lotno not in(select lotno from containercontents)'
+
+			IF NOT @Location = ''
+
+				SET @SQL = @SQL + ' AND (Inventory.WarehouseLocation  = ''' + @Location +  ''')'
+
+			
+
+			SET @SQL = @SQL + 'ORDER BY
+
+				Inventory.LotNo'
+
+		
+
+			exec(@SQL)
+
+		END 
+
+		ELSE IF @Language = 'es' BEGIN
+
+			set @SQL = '
+
+			SELECT  
+
+
+
+				Inventory.LotNo [# Articulo],
+
+				Inventory.SerialNo [Núm. de Serie],
+
+				Grade.[Description] [Producto/Grado], 
+
+				isnull(dbo.CnvUnitName(Inventory.[UnitType]),'''') + '' - '' + convert(varchar(20),inventory.units) [Empaque],
+
+				inventory.SpecString as [Especificaciones],
+
+				dbo.RemoveTrailingZeros(Inventory.TareWt) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Gross Weight],
+
+				dbo.formatweightuom(dbo.RemoveTrailingZeros(Inventory.QtyOnHand), inventory.weightUOM) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Quantity],
+
+				CONVERT(DECIMAL(18,2),round(InvValue / (CASE WHEN IsNull(Inventory.FxRate,0) = 0 THEN 1 ELSE Inventory.FxRate END),2)) as [Valor],
+
+				RcvDt [Contabilizado],
+
+				Supplier.CompanyNm AS Proveedor, 
+
+				WarehouseNm AS [Bodega], 
+
+				BuySell.RefEquipNo [Núm. de Equipo],
+
+				Referrer.Name [Comprador]
+
+			FROM 
+
+				Inventory WITH(NOLOCK) 
+
+				INNER JOIN GRADE WITH(NOLOCK) ON Inventory.GradeID = Grade.GradeID		
+
+				LEFT JOIN Counterparty Supplier WITH(NOLOCK) ON Inventory.VendorID = Supplier.CpID
+
+				left JOIN BuySell WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo 		
+
+				LEFT JOIN ProductGroup WITH(NOLOCK) ON ProductGroup.GroupID = Grade.ProductGroupID
+
+				LEFT JOIN Counterparty Customer  WITH(NOLOCK) ON Customer.CpID = Inventory.DesignatedCpID 
+
+				LEFT JOIN CompanyInfo Dept WITH (NOLOCK) ON Dept.COID = Inventory.COID
+
+				LEFT JOIN Referrer WITH(NOLOCK) ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+				LEFT JOIN WarehouseLocation WITH(NOLOCK) ON WarehouseLocation.ID = Inventory.WarehouseLocation
+
+		
+
+			WHERE inventory.QtyOnHand > 0
+
+				AND lotno in(''' + @BarcodePickList + ''')
+
+				and lotno not in(select lotno from containercontents)'
+
+			IF NOT @Location = ''
+
+				SET @SQL = @SQL + ' AND (Inventory.WarehouseLocation  = ''' + @Location +  ''')'
+
+			
+
+			SET @SQL = @SQL + 'ORDER BY
+
+				Inventory.LotNo'
+
+		
+
+			exec(@SQL)
+
+		END
+
+	end
+
+	else if @PackingSlip <> '' begin
+
+		set @SQL = '
+
+		SELECT  
+
+
+
+			Inventory.LotNo [Item No],
+
+			IsNull(WarehouseLocation.LocationName,'''') [Location],
+
+			Grade.[Description] [Product/Grade], 
+
+			Inventory.SerialNo [Serial No],
+
+			dbo.formatweightuom(dbo.RemoveTrailingZeros(Inventory.QtyOnHand), inventory.weightUOM) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Quantity],
+
+			Inventory.QtyOnHand [-Hidden-QtyOnHand],
+
+			dbo.RemoveTrailingZeros(Inventory.[Weight]) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Original Qty],
+
+			Inventory.[Weight] [-Hidden-Weight],
+
+			Inventory.Units, 
+
+			isnull(dbo.CnvUnitName(Inventory.[UnitType]),'''') + '' - '' + convert(varchar(20),inventory.units) [Packaging],
+
+			Inventory.Condition [Condition],
+
+			CONVERT(DECIMAL(18,2),round(InvValue / (CASE WHEN IsNull(Inventory.FxRate,0) = 0 THEN 1 ELSE Inventory.FxRate END),2)) as [Value],
+
+			Inventory.CurrencyCd [Currency],  
+
+			CONVERT(DECIMAL(18,2),ISNULL(InvValue, 0)) as [Extension],
+
+			RcvDt [Received],
+
+			RcvDt [Posted],
+
+			Inventory.BuySellNo [Rcv-No], 
+
+			Supplier.CompanyNm AS Supplier, 
+
+			WarehouseNm AS [Warehouse Name], 
+
+			Inventory.InvClass [Class], 
+
+			Dept.CompanyDesc [Dept Name],
+
+			ProductGroup.GroupID [Product Group],
+
+			ProductGroup.CategoryID [Product Category],
+
+			PONumber [PO Number], 
+
+			BuySell.RefEquipNo [Equipment No],
+
+			Referrer.Name [Buyer],  
+
+			Inventory.Comments, 
+
+			Datediff(day,InDate, getdate()) AS Aging,
+
+			dbo.RemoveTrailingZeros(Inventory.TareWt) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Tare Weight],
+
+			dbo.RemoveTrailingZeros(Inventory.TareWt) + '' '' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Gross Weight],
+
+			dbo.ConvertToLBS(convert(int, Inventory.QtyOnHand), Inventory.WeightUOM) [-Hidden-WeightInLbs],
+
+			inventory.GradeID,
+
+			inventory.SpecString as Specification,
+
+			inventory.UnitType as [-Hidden-UnitType],
+
+			Inventory.WeightUOM as [-Hidden-WeightUOM],
+
+			Inventory.Color,
+
+			convert( int,Inventory.lastedit) As [-Hidden-LastEdit],
+
+
+
+			Inventory.PlasticType as [Plastic Type],
+
+			Inventory.PlasticForm as [Plastic Form],
+
+			Inventory.PlasticMelt as [Plastic Melt],
+
+
+
+			dbo.cw_removeTrailingZeros(Inventory.Caliper,0) as CALIPER,
+
+			dbo.cw_RemoveTrailingZeros(Inventory.BasisWt, 0) As [BW],
+
+			Inventory.BasisWtUOM As [BW-UOM],
+
+			dbo.cw_removeTrailingZeros(Inventory.RollWd,0) As [RW],
+
+			Inventory.RollWdUOM As [RW-UOM],
+
+			dbo.cw_removeTrailingZeros(Inventory.CoreSize,0) As [CORE],
+
+			Inventory.CoreSizeUOM As [CORE-UOM],
+
+			dbo.cw_removeTrailingZeros(Inventory.Diameter,0) as DIA,
+
+			Inventory.DiameterUOM As [DIA-UOM],
+
+			dbo.cw_removeTrailingZeros(Inventory.LinearLen,0) AS [ROLL-LENGTH]
+
+		FROM 
+
+			Inventory WITH(NOLOCK) 
+
+			INNER JOIN GRADE WITH(NOLOCK) ON Inventory.GradeID = Grade.GradeID		
+
+			INNER JOIN WksPackingSlip WITH(NOLOCK) ON WksPackingSlip.LotNo = Inventory.LotNo
+
+			LEFT JOIN Counterparty Supplier WITH(NOLOCK) ON Inventory.VendorID = Supplier.CpID
+
+			LEFT JOIN BuySell WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo 		
+
+			LEFT JOIN ProductGroup WITH(NOLOCK) ON ProductGroup.GroupID = Grade.ProductGroupID
+
+			LEFT JOIN Counterparty Customer  WITH(NOLOCK) ON Customer.CpID = Inventory.DesignatedCpID 
+
+			LEFT JOIN CompanyInfo Dept WITH (NOLOCK) ON Dept.COID = Inventory.COID
+
+			LEFT JOIN Referrer WITH(NOLOCK) ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+			LEFT JOIN WarehouseLocation WITH(NOLOCK) ON WarehouseLocation.ID = Inventory.WarehouseLocation
+
+		
+
+		WHERE (inventory.QtyOnHand > 0)
+
+			AND (WksPackingSlip.BuySellNo  = ''' + @PackingSlip + ''')'
+
+		IF NOT @Location = ''
+
+			SET @SQL = @SQL + ' AND (Inventory.WarehouseLocation  = ''' + @Location +  ''')'
+
+	
+
+		SET @SQL = @SQL + 'ORDER BY
+
+			Inventory.LotNo'
+
+		
+
+		exec(@SQL)
+
+	end
+
+
+

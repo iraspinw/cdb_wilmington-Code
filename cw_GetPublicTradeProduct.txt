@@ -1,0 +1,72 @@
+CREATE   PROCEDURE [dbo].[cw_GetPublicTradeProduct] 
+
+	@DetailID int = 0,
+
+	@TradeID int = 0
+
+
+
+AS
+
+--10/28/2016: MN CREATED
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT
+
+		DetailID,
+
+		TradeID,
+
+		[PublicTradeDetail].GradeID,
+
+		WtUOM,
+
+		GrossWt,
+
+		TareWt,
+
+		NetWt,
+
+		PDID,
+
+		Price,
+
+		PriceUOM,
+
+		SalesAmount,
+
+		Paid,
+
+		PaidDt,
+
+		PaidUser,
+
+		BuySellNo,
+
+		PayableDt,
+
+		Grade.[Description]
+
+		
+
+	FROM [PublicTradeDetail]
+
+	INNER JOIN Grade ON Grade.GradeID = [PublicTradeDetail].GradeID
+
+	AND (@DetailID = 0 OR DetailID = @DetailID)
+
+	AND (@TradeID = 0 OR TradeID = @TradeID)
+
+
+
+	ORDER BY DetaiLID
+
+
+

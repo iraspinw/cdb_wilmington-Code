@@ -1,0 +1,92 @@
+CREATE PROC [dbo].[cw_GetPublicTradePOSList] 
+
+@Status char(9) = '',
+
+@SearchString VARCHAR(100) = '',
+
+@DateLimit datetime
+
+AS
+
+--03/12/2011 MCM: Created for Public Trading
+
+--03/28/2011 MCM: Added ReceiveDt
+
+--05/23/2013 MCM: Added PublicTrade.Status, PublicTradeDetail.[Paid],PublicTradeDetail.[PaidDt],PublicTradeDetail.[PaidUser] and PublicTradeDetail.[BuySellNo]
+
+--					Removed PublicTrade.BuySellNo and PublicTrade.Paid
+
+--07/26/2017 MCM: ATMAdjustment
+
+--09/08/2017 DSH Renamed AND added fields for Public Trade POS
+
+--11/20/2017 DSH Added Customer Inactive Flag
+
+--01/15/2018 DSH Added Cash Paid column to help identify ATM payments in code.
+
+--07/12/2019 DSH Added Void status
+
+SET NOCOUNT ON
+
+
+
+	SELECT 
+
+		[PublicTrade].TradeID AS [Ticket No]
+
+		,[PublicTrade].[PTCustID]  AS [-Hidden-PTCustID]
+
+		,[PublicTrade].[ReceiveDt] AS [Date]
+
+		,[PublicTradeCustomer].[FirstName] + ' ' + [PublicTradeCustomer].LastName AS [Customer Name]
+
+		,[PublicTradeCustomer].Company
+
+		,SUM([PublicTradeDetail].[SalesAmount]) AS [Amount]
+
+		,dbo.GetPublicTradePOSStatus([PublicTrade].[Status]) AS [Status]
+
+
+
+
+
+	FROM [PublicTrade] WITH(NOLOCK) 
+
+		INNER JOIN PublicTradeCustomer ON PublicTrade.PTCustID =  PublicTradeCustomer.PTCustID
+
+		INNER JOIN publicpricelist ON PublicTradeCustomer.PLID = publicpricelist.PLID 
+
+		LEFT JOIN PublicTradeDetail ON PublicTradeDetail.TradeID = PublicTrade.TradeID
+
+		--WHERE TradeID = @TradeID
+
+	WHERE (@Status = '' OR [Status] = @Status)
+
+	AND (
+
+			@SearchString  = '' OR 
+
+			(FirstName LIKE '%'+@SearchString+'%' OR  LastName LIKE '%'+@SearchString+'%' ) Or
+
+			([PublicTrade].TradeID LIKE '%'+@SearchString+'%' )
+
+		)
+
+	AND (@DateLimit = '' OR [PublicTrade].[ReceiveDt] > @DateLimit)
+
+	GROUP BY
+
+		[PublicTrade].TradeID
+
+		,[PublicTrade].[PTCustID]
+
+		,[PublicTrade].[ReceiveDt]
+
+		,[PublicTradeCustomer].[FirstName]
+
+		,[PublicTradeCustomer].LastName 
+
+		,[PublicTrade].[Status]
+
+		,[PublicTradeCustomer].Company
+

@@ -1,0 +1,444 @@
+CREATE   PROCEDURE [dbo].[cw_GetPO] 
+
+	@PONo char(15),
+
+	@Source varchar(2) = ''
+
+AS
+
+
+
+
+
+
+
+-- 02/07/2005 (JW) - modified references to userdef to cietrade_sys.dbo.users
+
+--3/23/2005  BM  Added BankNotes,InterestNotes
+
+--08/03/2006 DSH Corrected Issue with multiple LC's causisng multiple Order results.
+
+--02/21/2007 JW: added fxrate
+
+--03/26/2007 JW: added ARTermQualifier, ARTermDesc
+
+--5/2/2007 BM: Added IsAgency
+
+--5/18/2007 JW: added WITH(NOLOCK)s
+
+--5/25/2007 JW: CHECK IF THERE ARE ANY TRANSACTIONS AGAINST THE ORDER TO DETERMINE IF CONTRACT RATE FIELD S/B LOCKED
+
+--07/09/2007 DSH: Added Column for Reserve Grouping
+
+--7/17/2007 BM: Added ExpirationDt Column
+
+--7/24/2007 JW: Added check for @Source is null when there is no LC tied to the PO
+
+--08/23/2007 BF: added dbaaltaddress
+
+--10/24/2007 JW: added DBAAddress.CoName
+
+--01/03/2008 DSH added columns for FXContract Module Support.
+
+--02/13/2008 JW: removed columns for contractref
+
+--06/05/2008 MCM: Added ScheduleDt to select
+
+--08/29/2008 BF: Added CertifiedWt
+
+--11/11/2008 DSH: Added Certified Type & RegNO and DeptDueTo
+
+--11/10/2009 BF: added LastEdit for concurrency
+
+--12/21/2009 RS: UserDefined1 added
+
+--11/22/2010 PG: added CreditCode
+
+--05/24/2011 RS: CertifiedTypeID replaced by CertificationType 
+
+--10/19/2011 DSH Added IsAdvanceOrder Field.
+
+--03/29/2012 RS: Added IssuingLC_ID,LC.LCNo
+
+--09/19/2014 MEC: Added column names for cieTrade.net (PODate and LastEdit)
+
+--10/01/2014 RS: DocSetTypeID added
+
+--05/22/2015 RS: Get Fax and phone from the InvAddress
+
+--12/12/18 MN: fetch doc list
+
+--09/17/19 Alex: Added PO.ScheduleDt
+
+--10/03/2019 MEC: Added Source restriction for cieTrade.net Show method
+
+--10/25/19 Alex: Added PFxRates,PFxExpDt,PfxRefNo,PfxValue1,PfxValue,POTrades
+
+--1/22/2020 Alex: Added  DocSetTypeID
+
+--07/28/2023 DN: as CPActive, InactiveLocation
+
+
+
+--cw_GetPO 'test1234', 'SO' 
+
+
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+DECLARE @xID as Int, @xLCNO as varchar(25)
+
+SELECT @xID = ID, @xLCNO = LCNO FROM LC WITH(NOLOCK) INNER JOIN PO WITH(NOLOCK) ON LC.POID = PO.POID 
+
+WHERE PO.PONUMBER = @PONo
+
+
+
+IF IsNull(@Source,'') = ''	SELECT @Source = Source FROM PO WITH(NOLOCK) WHERE	PONumber = @PONo
+
+
+
+	declare @BookingNo varchar(65)
+
+	Select top 1 @bookingno = bookingno from booksheet where ponumber = @PONO order by cutoffdate desc
+
+
+
+	-- ADDED for Contact Support *BEGIN*
+
+	DECLARE @BillTelephone varchar(30) = ''
+
+	DECLARE @Telephone varchar(30) = ''
+
+	SELECT Top 1 @BillTelephone = PhoneBusiness From Contact WITH(NOLOCK) 
+
+	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	INNER JOIN PO WITH (NOLOCK) ON PO.CpID = Contact.CpID
+
+	WHERE RoleNm In ('Billing', 'Primary') And PONumber = @PONo Order By RoleNm
+
+	SELECT Top 1 @Telephone = PhoneBusiness From Contact WITH(NOLOCK) 
+
+	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	INNER JOIN PO WITH (NOLOCK) ON PO.CpID = Contact.CpID
+
+	WHERE RoleNm In ('Collections', 'Primary') And PONumber = @PONo Order By RoleNm
+
+	-- ADDED for Contact Support *END*
+
+
+
+
+
+		declare @PfxContractNo varchar(70);
+
+		declare @POTrades int;
+
+
+
+
+
+		select @PfxContractNo=PfxContract.ContractNo 
+
+		From PO with(nolock) 
+
+	    LEFT JOIN FxContracts PfxContract ON PO.ContractNo = PFxContract.ContractNo
+
+	    WHERE PO.PONUMBER = @PONo 
+
+
+
+
+
+		SELECT @POTrades=count(*)
+
+        FROM WksDetail WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK)  ON WksDetail.BuySellNo = BuySell.BuySellNo  	
+
+        INNER JOIN CounterParty WITH(NOLOCK) ON BuySell.CustID = CounterParty.CpID
+
+        INNER JOIN Grade WITH(NOLOCK) ON WksDetail.GradeID = Grade.GradeID
+
+        WHERE wksDetail.PPO = @PONO 
+
+
+
+
+
+
+
+SELECT 
+
+	[Source], 
+
+	[Status], 
+
+	PONumber, 
+
+	PODate As [PODate], 
+
+	PO.CpID, 
+
+	AddrType, 
+
+	Attn, 
+
+	ShipTo, 
+
+	PriceBasis, 
+
+	PO.ShipVia, 
+
+	PO.Terms, 
+
+	ShippingMarks, 
+
+	PO.UserID, 
+
+	userdef.UserNm,
+
+	PO.Instructions, 
+
+	PO.COID, 
+
+	MinWeight, 
+
+	MinWeightUOM, 
+
+	@BillTelephone as VoiceNo, 
+
+	'' as FaxNo, -- field deprecated
+
+	Expenses, 
+
+	ExpensesCurCode, 
+
+	SchShipDate,  
+
+	BudgetUOM, 
+
+	ContractExchangeRate, 
+
+	ContractCurrency, 
+
+	BLConsignTo, 
+
+	ShipToType, 
+
+	PO.POID,
+
+	SaleNotes,
+
+	PurchaseNotes,
+
+	ExportWarehouseCpID, 
+
+	MonthlyContract, 
+
+	@xLCNO AS LCNO, 
+
+	PO.Notes, 
+
+	TradeType, 
+
+	PostingDate, 
+
+	POReference, 
+
+	DestCountry, 
+
+	ShipAddrID, 
+
+	ShipAddrType, 
+
+	@xID AS ID, 
+
+	MaxWeight, 
+
+	AllocPeriod,
+
+	@Telephone Telephone, 
+
+	--[Address].Fax,
+
+	PO.BankNotes,
+
+	PO.InterestNotes, 
+
+	[dbo].[cw_RemoveTrailingZeros](PO.FxRate,2) as FxRate, 
+
+	--dbo.RemoveTrailingZeros(PO.FxRate,2) as FxRate, 
+
+	ARTermQualifier, 
+
+	ARTermDesc, 
+
+	ISNULL(IsAgency,0) as IsAgency,
+
+	ReserveGroupBy, 
+
+	PO.ExpirationDt, 
+
+	dbaaltaddress, 
+
+	DBAAddress.CoName,
+
+	isnull(PO.ContractNo,'') as ContractNo,
+
+	BudgetContractCurrency,
+
+	BudgetContractExchangeRate,
+
+	BudgetContractNo,
+
+	ScheduleDt,
+
+	CertifiedWt,
+
+	CertifiedTypeID,
+
+	CertifiedRegNo,
+
+	COID_DueTo,
+
+	convert(int,LastEdit) As LastEdit,
+
+	PO.UserDefined1, 
+
+	PO.CreditCode,
+
+	PO.IsAdvanceOrder,
+
+	LC.LCNo,PO.IssuingLC_ID,
+
+	PO.DocSetTypeID,
+
+	PO.BLShipper,
+
+	PO.BLNotifyParty,
+
+	PO.BLNotes,
+
+	PO.BudgetNotes,
+
+	PO.Containers,
+
+	PO.SONumberLink,
+
+	PO.DocList,
+
+	scheduledtdesc,
+
+	PO.ScheduleDt,
+
+	[dbo].[cw_RemoveTrailingZeros](PfxContract.ExchRate,2) as PFxRates,
+
+	PfxContract.ExpirationDt PFxExpDt,
+
+	PfxContract.RefNo PfxRefNo,
+
+	PfxContract.ContractValue PfxValue1,
+
+	PO.ShippingLineRemarks,
+
+	Tolerance,
+
+	DepositRate,
+
+	(case when  @Source = 'SO' then
+
+      -- (PfxContract.ContractValue-((SELECT isnull(sum(FxAmount),0) From PODetail with(nolock) inner join PO on PO.PONumber = PODetail.PONumber WHERE PO.ContractNo=@PfxContractNo)+(select  IsNull(sum(SFxAmount),0) from WKSDetail inner join BuySell on Buy
+Sell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.SFxContractNo=@PfxContractNo))) 
+
+	  (PfxContract.ContractValue-((select  IsNull(sum(SFxAmount),0) from WKSDetail inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.SFxContractNo=@PfxContractNo))) 
+
+	else
+
+     -- (PfxContract.ContractValue-((SELECT isnull(sum(FxAmount),0) From PODetail with(nolock) inner join PO on PO.PONumber = PODetail.PONumber WHERE PO.ContractNo=@PfxContractNo)+ (select  IsNull(sum(PFxAmount),0) from WKSDetail inner join BuySell on Buy
+Sell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.PFxContractNo=@PfxContractNo)) )
+
+	  (PfxContract.ContractValue-((select  IsNull(sum(PFxAmount),0) from WKSDetail inner join BuySell on BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.PFxContractNo=@PfxContractNo)) )
+
+    end)as PfxValue,
+
+	@POTrades as POTrades,
+
+	isnull(PO.IsContract,0) as IsContract,
+
+	isnull(Po.DocSetTypeID,0) as DocSetTypeID,
+
+	@BookingNo BookingNo,
+
+	Certification.CertificationType,
+
+    (select top 1 Contact.ContactNm from Contact where  Contact.CpID = PO.CpID and IsPrimary=1) as PrimaryContactNm,
+
+	IsProvisional,
+
+	[Address].Country,
+
+	CounterParty.ActiveStatus as CPActive,
+
+	address.Inactive as LocationInactive
+
+FROM (PO WITH(NOLOCK) 
+
+left join Counterparty WITH(NOLOCK) ON PO.CpID = Counterparty.CpID
+
+--inner join address InvAddr WITH(NOLOCK) on counterparty.cpid = InvAddr.cpid and InvAddr.invoiceaddr = 'Y') 
+
+LEFT JOIN userdef WITH(NOLOCK) ON PO.UserID = userdef.UserID) 
+
+LEFT JOIN [Address] WITH(NOLOCK) ON [Address].CpID = PO.CpID AND [Address].[Type] = PO.AddrType
+
+LEFT JOIN DBAAddress WITH(NOLOCK) ON DBAAddress.CoAddrID = PO.DBAAltAddress
+
+LEFT JOIN LC WITH(NOLOCK) ON PO.IssuingLC_ID = LC.ID
+
+LEFT JOIN FxContracts PfxContract ON PO.ContractNo = PfxContract.ContractNo
+
+	left join Certification on   Certification.CertificationID=PO.CertifiedTypeID
+
+
+
+WHERE PONumber = @PONo AND [Source] = @Source
+
+
+
+
+
+--CHECK IF THERE ARE ANY TRANSACTIONS AGAINST THE ORDER TO DETERMINE IF CONTRACT RATE FIELD S/B LOCKED
+
+IF @Source = 'SO'
+
+	SELECT TOP 1 BuySellNo FROM WksDetail WITH(NOLOCK) WHERE wksDetail.SPO = @PONo
+
+ELSE
+
+	SELECT TOP 1 BuySellNo FROM WksDetail WITH(NOLOCK) WHERE wksDetail.PPO = @PONo
+
+
+
+
+
+
+
+--CHECK IF THERE ARE ANY BOOKINGS ATTACHED TO ORDER
+
+Select top 1 bookingno from POBooking 
+
+inner join po on po.poid = pobooking.poid
+
+inner join booksheet on booksheet.BookSheetID = POBooking.BookSheetID
+
+where po.PONumber = @PONo
+
+order by [id] desc
+
+
+

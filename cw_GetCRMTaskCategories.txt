@@ -1,0 +1,32 @@
+CREATE PROC [dbo].[cw_GetCRMTaskCategories] 
+
+As
+
+--5/10/17 MN: Create
+
+--02/22/2023 DN: udpated to use TaskCategory Table
+
+ 
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+		SELECT
+
+			recordid AS [TaskID],
+
+			TaskNm As [TaskNm]
+
+		FROM TaskCategory
+
+		where TaskType = 'TASK'
+
+
+
+
+
+
+

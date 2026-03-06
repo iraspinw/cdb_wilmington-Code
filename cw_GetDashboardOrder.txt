@@ -1,0 +1,41 @@
+CREATE PROC [dbo].[cw_GetDashboardOrder]
+
+@UserID char(10)
+
+AS
+
+
+
+--05/02/2015 MEC: Created
+
+
+
+	IF NOT EXISTS(Select * FROM DashboardOrder WHERE UserID = @UserID) AND @UserID <> ''	
+
+		INSERT INTO DashboardOrder VALUES('1','MarginTrendDiv', @UserID),('2', 'TonnageTrendDiv',@UserID),('3', 'SalesCostTrendDiv',@UserID),('4', 'AgingBalanceDiv',@UserID),('5', 'TopCustomersDiv',@UserID),('6', 'TopSuppliersDiv',@UserID),('7', 'TopOverdueAccs
+Div',@UserID),('8', 'OpenShipmentsDiv',@UserID),('9', 'PastDueInvoicesDiv',@UserID),('10', 'ShowNegExpDiv',@UserID)
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		Position, 
+
+		SettingName
+
+	FROM 
+
+		DashboardOrder WITH (NOLOCK)
+
+	WHERE UserID = @UserID
+
+	ORDER BY Position
+
+
+

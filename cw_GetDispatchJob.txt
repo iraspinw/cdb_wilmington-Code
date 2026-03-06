@@ -1,0 +1,180 @@
+CREATE   PROCEDURE [dbo].[cw_GetDispatchJob] @JobNo int AS 
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+-- 05/24/2019 MN: CREATED
+
+-- 7/17/2020 Alex: Driver added
+
+-- 08/17/2022 Nick: Added Carrier Contact Email
+
+-- 07/27/2023 DN: added CPActive,LocationInactive,RCPActive and RLocationInactive
+
+
+
+	SELECT 
+
+		ServiceID, 
+
+		CreatedDt,
+
+		DispatchDt,
+
+		DispatchTime,
+
+		DispatchJob.COID,
+
+		CompanyInfo.CompanyDesc AS [Dept],
+
+		DispatchJob.[Status],
+
+		AccountID,
+
+		DispatchJob.[Location],
+
+		DispatchJob.EquipmentType,
+
+		RTRIM(DispatchJob.EquipmentType) + (SELECT CASE WHEN SiteRef IS NULL OR SiteRef = '' THEN '' 
+
+		ELSE '  ['+SiteRef+']' END) AS [EquipmentNm],
+
+		ServiceID,
+
+		EquipNoOut,
+
+		EquipNoReturn,
+
+		Commodity,
+
+		GR.[Description],
+
+		ReceiverID,
+
+		IsBrokerage,
+
+		DispatchJob.JobType,
+
+		JT.JobTypeNm,
+
+		ScheduleTime,
+
+		ScheduleDt,
+
+		RefNo,
+
+		WhoRequestedName,
+
+		WhoRequestedEmail,
+
+		DispatchJob.BuySellNo,
+
+		CarrierID,
+
+		CAR.CompanyNm AS [CarrierNm],
+
+		TruckNo,
+
+		DispatchJob.UserID,
+
+		DispatchJob.CompletedDt,
+
+		CompletedTime,
+
+		DispatchJob.DispatchNotes,
+
+		QuestionsToAsk,
+
+		DispatchJob.Notes,
+
+		[Priority],
+
+		DispatchJob.ReceiverLocation,
+
+		DispatchJob.WarehouseID,
+
+		EquipmentIDOut,
+
+		EquipmentIDRtn,
+
+		EquipmentNoOut,
+
+		EquipmentNoReturn,
+
+		EmailNotification,
+
+		A.CpID As [AccountID],
+
+		A.CompanyNm As [AccountNm],
+
+		R.CompanyNm as [ReceiverNm],
+
+		dbo.xDoc_GetAddress(AccountID, DispatchJob.[Location],0,0) AS [AccountAddr],
+
+		(select CompanyPhone from CompanyInfo where COID = DispatchJob.COID) [Contact],
+
+		A.CurrCode AccountCurrCode,
+
+		isnull(CurrencyRate.FxRate,1) as AccountFxRate,
+
+		ISNULL(HWeight, 0) AS [HWeight],
+
+		ISNULL(HWeightUOM, '') AS [HWeightUOM],
+
+		(case when  isnull(rtrim(ltrim(DispatchJob.BuySellNo)),'')='' then ISNULL(DispatchJob.Driver, '') else (select driver from BuySell where BuySellNo = DispatchJob.BuySellNo) end) as Driver,
+
+		(select COUNT(*) from DispatchJob WITH(NOLOCK) inner join BillSheetDetail WITH(NOLOCK) on DispatchJob.JobNo = BillSheetDetail.JobNo where DispatchJob.JobNo = @JobNo) As BillsheetCount,
+
+		BuySell.CustID,
+
+		BuySell.VendorID,
+
+		JT.EqActionType,
+
+		Case when isnull(A.CommRate,1)=0 then 1  else isnull(A.CommRate,1) end CommRate,
+
+		A.CurrCode,
+
+		CarrierContact.Email as CarrierEmail,
+
+		a.ActiveStatus as CPActive,
+
+		isnull(AccountAdd.Inactive,0) as LocationInactive,
+
+		R.ActiveStatus as RCPActive,
+
+		isnull(ReceiverAdd.Inactive,0) as RLocationInactive
+
+	 FROM DispatchJob 
+
+		LEFT JOIN CounterParty A WITH(NOLOCK) ON A.CpID = DispatchJob.AccountID
+
+		LEFT JOIN CounterParty R WITH(NOLOCK) ON R.CpID = DispatchJob.ReceiverID
+
+		LEFT JOIN CounterParty CAR WITH(NOLOCK) ON CAR.CpID = DispatchJob.CarrierID
+
+		LEFT JOIN CompanyInfo WITH(NOLOCK) ON CompanyInfo.COID = DispatchJob.COID
+
+		LEFT JOIN JobType JT WITH(NOLOCK) ON JT.JobID = DispatchJob.JobType
+
+		LEFT JOIN Grade GR WITH(NOLOCK) ON GR.GradeID = DispatchJob.Commodity
+
+		LEFT JOIN ServiceRecord SR WITH(NOLOCK) ON SR.DispatchScheduleKey = DispatchJob.ServiceID
+
+		LEFT JOIN CurrencyRate ON CurrencyRate.CurCode = A.CurrCode and exchdate <= GETDATE()
+
+		LEFT JOIN BuySell ON BuySell.BuySellNo = DispatchJob.BuySellNo
+
+		LEFT JOIN Contact CarrierContact ON CarrierContact.CpID = CAR.CpID AND IsPrimary = 1
+
+		left join Address AccountAdd with(nolock) on DispatchJob.AccountID = AccountAdd.CpID and DispatchJob.Location = AccountAdd.Type
+
+		left join Address ReceiverAdd with(nolock) on DispatchJob.AccountID = ReceiverAdd.CpID and DispatchJob.Location = ReceiverAdd.Type
+
+	WHERE DispatchJob.JobNo = @JobNo
+
+
+

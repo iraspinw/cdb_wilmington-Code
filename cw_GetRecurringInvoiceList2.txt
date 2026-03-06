@@ -1,0 +1,114 @@
+
+
+-- 1/9/25
+
+-- EXEC [dbo].[cw_GetRecurringInvoiceList2]
+
+
+
+CREATE PROCEDURE [dbo].[cw_GetRecurringInvoiceList2] 
+
+	@RecID varchar(25) = 0
+
+	--@FromDt datetime, 
+
+	--@ToDt datetime,
+
+	--@Applicant char(12),
+
+	--@PONo varchar(25)
+
+
+
+AS
+
+--10/27/2016: MN CREATED
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT
+
+		--RecurringInvoiceID As [-Hidden-RecurringInvoiceID],
+
+		W.CompanyDesc As [Dept],
+
+		CP.CompanyNm As [Company Name],
+
+		BaseWksNo As [Base Wks No],
+
+		--CP.CpID As [-Hidden-CpID],
+
+		--W.COID As [-Hidden-COID],
+
+
+
+		--TradeType As [Trade Type],
+
+
+
+		StartDt As [Start Date],
+
+		FORMAT(StartDt, 'MM/yyyy') [Start Date Period],
+
+		--RecurringInvoice.BillingCycle As [-Hidden-BillingSymbol],
+
+		IIF(RecurringInvoice.BillingCycle = 'M', 'Monthly', 'Quarterly') as [Billing Cycle],
+
+		--[Increment] As Increment,
+
+		--[Repeat] AS [Repeats],
+
+		--EndsOnDt,
+
+		--CONVERT(DATE, EndsOnDt),
+
+		ISNULL(CONVERT(VARCHAR(14),CONVERT(DATE, EndsOnDt)), 'Unknown') As [Ends On Date],
+
+		PaymentTerms As [Payment Terms],
+
+		--SalesRep AS [-Hidden-SalesRepID],
+
+		--Referrer.Name AS [Sales Rep],
+
+		LastInvDt As [Last Invoice Date],
+
+		NextInvDt As [Next Invoice Date],
+
+		--NeverEnds AS [-Hidden-NeverEnds],
+
+		(SELECT PFreightChg from BuySell where BuySell.buysellno = BaseWksNo) FreightChg
+
+	FROM RecurringInvoice
+
+	LEFT JOIN CounterParty CP WITH(NOLOCK) On CP.CpID = RecurringInvoice.CustID
+
+	LEFT JOIN Referrer ON Referrer.ReferrerNo = RecurringInvoice.SalesRep
+
+	LEFT JOIN [CompanyInfo] W ON W.COID = RecurringInvoice.COID
+
+	where RecurringInvoice.BillingCycle = 'M'
+
+	and (@RecID = 0 or RecurringInvoiceID = @RecID)
+
+	ORDER BY 1, 2
+
+
+
+	--	AND (@LCNo = '' OR LCNo = @LCNo)
+
+	--	AND (@Applicant = '' OR ApplicantCPID = @Applicant)
+
+	--	AND (@PONo = '' OR PO.PONumber = @PONo)
+
+	
+
+-- SELECT * FROM buysell where buysellno = '23151'
+
+
+

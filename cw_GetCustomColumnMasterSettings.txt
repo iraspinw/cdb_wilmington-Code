@@ -1,0 +1,18 @@
+CREATE   PROCEDURE [dbo].[cw_GetCustomColumnMasterSettings] 
+
+As
+
+set nocount on
+
+
+
+--3/23/2023 MN
+
+
+
+select [UserID] ,[SettingName] ,[SettingValue] 
+
+from cwSettingsMaster ORDER BY SettingName
+
+
+

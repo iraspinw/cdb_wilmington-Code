@@ -1,0 +1,57 @@
+
+
+CREATE proc [dbo].[cw_GetCounterpartyAttachments] 
+
+	@CpID varchar(12),
+
+	@DbName varchar(50) = 'CIETRADEDOTNET'
+
+
+
+as
+
+
+
+SELECT 
+
+	DocID As [-Hidden-DocumentID], 
+
+	desc1 As [Description], 
+
+	--Docname, 
+
+	'IMG' As [-Hidden-Type], 
+
+	FileExt As [-Hidden-FileExt],
+
+	createddt as 'Created',
+
+	userdef.UserNm as 'User',
+
+	'' as '-Hidden-FormID',
+
+	'' as '-Hidden-DocFormID',
+
+	Desc1 as '-Hidden-DocTitle',
+
+	'' As '-Hidden-DefaultEmail'
+
+	
+
+from documentimage with (NOLOCK) 
+
+			left JOIN userdef ON DocumentImage.Createdby = userdef.UserID 
+
+where 
+
+	reftype='E' 
+
+	and refid=@CpID
+
+	--AND DBName = @DbName
+
+	And (ciePhoto is null Or isConfirmed = 1)
+
+	
+
+--cw_GetCounterpartyAttachments '14915'

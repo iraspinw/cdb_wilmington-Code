@@ -1,0 +1,191 @@
+CREATE   PROCEDURE [dbo].[cw_GetPettyCashReconciliation]  
+
+
+
+
+
+	@GLAcct 			     VARCHAR(20) = '', 
+
+	@PostingFromDt			 DATETIME = '', 
+
+	@IsHeaderDetailShow		 BIT=0,
+
+	@IsDocument				 BIT =0,
+
+	@LoggedInUser			 VARCHAR(75) = '',
+
+	@FinalBegApproved		 FLOAT = 0,
+
+	@Difference				 FLOAT = 0,
+
+	@ActualEndingAmount      FLOAT = 0,
+
+	@CalculatedCashOnHand    FLOAT = 0,
+
+	@COID CHAR(2) = '00'
+
+	AS
+
+
+
+
+
+--11/18/2020 Alex: Created for  Petty Cash Reconciliation Report
+
+--9/12/2022 ZT: Added @COID
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	IF @IsHeaderDetailShow = 1 BEGIN
+
+		-- Header Detail
+
+		SELECT
+
+			CompanyNm As Company, 
+
+			RTRIM(LTRIM(dbo.cw_GetCompanyAddress(COID, 0))) As CompanyAddr, 
+
+			CompanyNm As Customer, 
+
+			RTRIM(LTRIM([dbo].[xDoc_GetCompanyAddress](@COID))) As CustomerAddr,
+
+			LogoImage
+
+		 FROM CompanyInfo 
+
+		 WHERE COID = @COID
+
+	END
+
+	
+
+
+
+	CREATE TABLE #Report(
+
+		CDID                INT,
+
+		GLAcct              CHAR(30),
+
+		ACCOUNT             VARCHAR(65),
+
+		[{C} AMOUNT]        MONEY,
+
+		LOCATION            CHAR(45),
+
+		[CASHIER]           VARCHAR(100),
+
+		[TRAN-TYPE]			VARCHAR(30),
+
+		AMOUNT				MONEY
+
+	)
+
+
+
+	INSERT #Report
+
+	SELECT  
+
+		  CashDisbursements.[CDID],  
+
+		  GLAccount.Name as GLAcct,
+
+		  CASE WHEN PublicTradeCustomer.FileAs is null THEN Counterparty.CompanyNm ELSE PublicTradeCustomer.FileAs END ,
+
+		  Payables.FxAmount,
+
+		  BuySell.ShipToID,
+
+		  UserDef.UserNm,
+
+		  CASE WHEN PublicTradeCustomer.FileAs is null THEN 'Receiving' ELSE 'Public Trade'  END ,
+
+		  Payables.FxAmount
+
+	  FROM  CashDisbursements
+
+	  INNER JOIN CashDisbursementDetails ON CashDisbursementDetails.CDID  = CashDisbursements.CDID
+
+	  INNER JOIN Payables                ON Payables.PayableID = CashDisbursementDetails.PayableID OR Payables.Reversed_PayableID = CashDisbursementDetails.PayableID
+
+	  INNER JOIN BuySell                 ON Payables.BuySellNo = BuySell.BuySellNo
+
+	  LEFT  JOIN PublicTrade             ON PublicTrade.TradeID = BuySell.PublicTradeID
+
+	  LEFT  JOIN GLAccount               ON GLAccount.GLAcct = CashDisbursements.GLAcct
+
+	  LEFT  JOIN CounterParty            ON CounterParty.CPID = CashDisbursements.CPID
+
+	  LEFT  JOIN PublicTradeCustomer     ON CashDisbursements.PTCustID = PublicTradeCustomer.PTCustID
+
+	  LEFT  JOIN UserDef                 ON UserDef.UserID = CashDisbursementDetails.CashClerk
+
+	  WHERE 
+
+	        (@GLAcct=CashDisbursements.GLAcct)
+
+		   --((@CustID = '') OR (@CustID Like 'PT-%' AND REPLACE(@CustID, 'PT-', '') = CashDisbursements.PTCustID) OR (CashDisbursements.CPID = @CustID))
+
+	  AND (@COID = '' OR CashDisbursements.COID = @COID)
+
+		AND (@PostingFromDt = '' OR (PublicTradeCustomer.FileAs IS  NULL AND  BuySell.InvoiceDt = @PostingFromDt) OR (PublicTradeCustomer.FileAs IS NOT NULL AND PublicTrade.ReceiveDt = @PostingFromDt))
+
+	  --AND (@Warehouse = '' OR (PublicTradeCustomer.FileAs IS  NULL AND BuySell.ShipToID = @Warehouse) OR (PublicTradeCustomer.FileAs IS NOT NULL AND PublicTrade.WarehouseID = @Warehouse))		
+
+		AND Cat ='PETTY CASH'
+
+
+
+		
+
+	 SELECT 
+
+		 * ,
+
+		 @LoggedInUser            AS LoggedInUser ,
+
+		 @PostingFromDt           AS PostingFromDt,
+
+		 @FinalBegApproved        AS FinalBegApproved,
+
+		 @Difference              AS [Difference],
+
+	     @ActualEndingAmount      AS ActualEndingAmount,
+
+	     @CalculatedCashOnHand    AS CalculatedCashOnHand,
+
+		 (select 
+
+		  GLAccount.Name 
+
+		  from GLAccount
+
+		  where GLAcct = @GLAcct) AS GLAccount
+
+	 FROM #Report
+
+
+
+	 IF @IsDocument = 1 
+
+	 BEGIN
+
+		 SELECT 'Headers', 'Details' 
+
+	 END 
+
+
+
+	
+
+-- select PublicTrade.WarehouseID from CashDisbursements inner join CashDisbursementDetails on CashDisbursementDetails.CDID  = CashDisbursements.CDID  inner join Payables on CashDisbursementDetails.PayableID = Payables.PayableID inner join BuySell on Paya
+bles.BuySellNo = BuySell.BuySellNo inner join PublicTrade on PublicTrade.TradeID = BuySell.PublicTradeID where CDBatchNo = '102879'
+

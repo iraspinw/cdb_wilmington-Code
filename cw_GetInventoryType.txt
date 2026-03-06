@@ -1,0 +1,26 @@
+CREATE proc [dbo].[cw_GetInventoryType] @GradeID varchar(12) as
+
+set transaction isolation level read uncommitted
+
+
+
+if exists(select gradeid from grade where gradeid=@GradeID) begin
+
+	select isnull(rtrim(inventorytype),'SERIAL') from grade where gradeid=@GradeID
+
+end
+
+else begin
+
+	select 'SERIAL'
+
+end	
+
+
+
+
+
+
+
+
+

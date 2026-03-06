@@ -1,0 +1,150 @@
+CREATE   PROCEDURE [dbo].[cw_GetInventoryBarcodeSerial] 
+
+
+
+	@Barcode int = 0,
+
+	@SerialNo varchar(30) = '',
+
+	@ItemNo varchar(25) = ''
+
+
+
+	AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+	
+
+-- 01/30/2019 MEC: Created for Process Job Barcode and Serial Number lookup
+
+-- 05/19/2022 ZT: Added LastEdit
+
+-- cw_GetInventoryBarcodeSerial 0, ''
+
+	
+
+
+
+	SELECT  
+
+		Inventory.LotNo [Item No],
+
+		Grade.[Description] [Product/Grade], 
+
+		Inventory.SerialNo [Serial No],
+
+		Inventory.BarcodeNo [Barcode No],
+
+		dbo.formatweightuom(dbo.RemoveTrailingZeros(Inventory.QtyOnHand), inventory.weightUOM) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Quantity],
+
+		Inventory.QtyOnHand [-Hidden-QtyOnHand],
+
+		dbo.RemoveTrailingZeros(Inventory.[Weight]) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Original Qty],
+
+		Inventory.[Weight] [-Hidden-Weight],
+
+		Inventory.Units, 
+
+		isnull(dbo.CnvUnitName(Inventory.[UnitType]),'') + ' - ' + convert(varchar(20),inventory.units) [Packaging],
+
+		Inventory.Condition [Condition],
+
+		CONVERT(DECIMAL(10,2),round(InvValue / (CASE WHEN IsNull(Inventory.FxRate,0) = 0 THEN 1 ELSE Inventory.FxRate END),2)) as [Value],
+
+		Inventory.CurrencyCd [Currency],  
+
+		CONVERT(DECIMAL(10,2),ISNULL(InvValue, 0)) as [Extension],
+
+		RcvDt [Received],
+
+		RcvDt [Posted],
+
+		Inventory.BuySellNo [Rcv-No], 
+
+		Supplier.CompanyNm AS Supplier, 
+
+		WarehouseNm AS [Warehouse Name], 
+
+		Inventory.InvClass [Class], 
+
+		Dept.CompanyDesc [Dept Name],
+
+		ProductGroup.GroupID [Product Group],
+
+		ProductGroup.CategoryID [Product Category],
+
+		PONumber [PO Number], 
+
+		BuySell.RefEquipNo [Equipment No],
+
+		Referrer.Name [Buyer],  
+
+		Inventory.Comments, 
+
+		Datediff(day,InDate, getdate()) AS Aging,
+
+		dbo.RemoveTrailingZeros(Inventory.TareWt) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Tare Weight],
+
+		dbo.RemoveTrailingZeros(Inventory.TareWt) + ' ' + dbo.CnvUOM_Names(Inventory.WeightUOM) [Gross Weight],
+
+		dbo.ConvertToLBS(convert(int, Inventory.QtyOnHand), Inventory.WeightUOM) [-Hidden-WeightInLbs],
+
+		inventory.GradeID,
+
+		inventory.SpecString as Specification,
+
+		inventory.UnitType as [-Hidden-UnitType],
+
+		Inventory.WeightUOM as [-Hidden-WeightUOM],
+
+		convert(int,Inventory.lastedit) As [LastEdit]
+
+	FROM 
+
+		Inventory WITH(NOLOCK) 
+
+		INNER JOIN GRADE WITH(NOLOCK) ON Inventory.GradeID = Grade.GradeID		
+
+		LEFT JOIN Counterparty Supplier WITH(NOLOCK) ON Inventory.VendorID = Supplier.CpID
+
+		left JOIN BuySell WITH(NOLOCK) ON Inventory.BuySellNo = BuySell.BuySellNo 		
+
+		LEFT JOIN ProductGroup WITH(NOLOCK) ON ProductGroup.GroupID = Grade.ProductGroupID
+
+		LEFT JOIN Counterparty Customer  WITH(NOLOCK) ON Customer.CpID = Inventory.DesignatedCpID 
+
+		LEFT JOIN CompanyInfo Dept WITH (NOLOCK) ON Dept.COID = Inventory.COID
+
+		LEFT JOIN Referrer WITH(NOLOCK) ON Referrer.ReferrerNo = BuySell.ReferrerNo2
+
+		
+
+	WHERE inventory.QtyOnHand > 0
+
+		AND (
+
+			(@BarCode <> 0 And BarcodeNo = @BarCode) 
+
+			OR 
+
+			(@SerialNo <> '' And SerialNo = @SerialNo)
+
+			OR 
+
+			(@ItemNo <> '' And LotNo = @ItemNo)
+
+			)
+
+		and lotno not in(select lotno from containercontents)
+
+			
+
+	ORDER BY
+
+		Inventory.LotNo
+

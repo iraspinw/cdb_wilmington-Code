@@ -1,0 +1,74 @@
+CREATE Proc [dbo].[cw_GetPayables] @pBuySellNo char(12), @IncludeReversed bit As
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+--05/08/2009 MCM: Added WITH (NOLOCK) 
+
+--06/10/2014 MCM: Added IsCheck,CheckNo
+
+--02/19/2016 MN: Added '[-Hidden-Amount]'
+
+--08/23/2019 MEC: Added [-Hidden-ReverseBatchNo]
+
+Begin
+
+declare @SYSCURRENCY varchar(5)
+
+select @SYSCURRENCY = CurrCode from SystemInfo
+
+declare @SQLTXT nvarchar(4000)
+
+set @SQLTXT = 
+
+    'SELECT CompanyNm as Vendor,
+
+		CASE WHEN ItemIDSource = ''S'' THEN CASE WHEN IsNull(PettyCashGLAcct,'''') <> '''' THEN ''CASH'' ELSE ''Pur'' END 
+
+		 WHEN ItemIDSource = ''A'' THEN ''Adj''
+
+		ELSE ''Exp'' END AS [Type],
+
+	payables.GLAcct + ''-'' + GLAccount.Name as [Exp-Acct],
+
+	dbo.cw_RemoveTrailingZeros(FxAmount, 2) + '' ''  + CounterParty.CommCurrency as Amount, 
+
+	dbo.cw_RemoveTrailingZeros(Amount, 2) as [Amount ' + @SYSCURRENCY + '],
+
+	dbo.cw_RemoveTrailingZeros(Amount, 2) as [-Hidden-Amount],
+
+	payables.RcvDt as [Open-Date],InvoiceDt as [Posted-Date],InvoiceNo as Invoice#,
+
+	payables.APBatchNo as Batch#, payables.PayableID as [-Hidden-PayableID],
+
+	payables.ReverseBatchNo as [-Hidden-ReverseBatchNo]
+
+
+
+    from Payables WITH (NOLOCK) INNER JOIN CounterParty WITH (NOLOCK) ON Payables.CpID = CounterParty.CpID
+
+	inner join glaccount on glaccount.GLAcct = payables.GLAcct
+
+    
+
+    where BuySellNo = ''' + @pBuySellNo +'''
+
+    AND 
+
+    ((Reversed = 0 OR Reversed is null) OR ' + convert(varchar(1), @IncludeReversed) + '= 1 )
+
+    AND NOT (Payables.ItemIDSource = ''A'' AND Posted=0)
+
+    Order by Posted DESC, APBatchNo'
+
+
+
+	exec(@SQLTXT)
+
+	--convert(char(10),InvoiceDt,101) as [Posted-Date]
+
+End
+
+
+

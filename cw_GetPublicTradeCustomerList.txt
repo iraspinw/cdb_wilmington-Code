@@ -1,0 +1,18 @@
+CREATE   PROCEDURE [dbo].[cw_GetPublicTradeCustomerList]  AS 
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+-- 10/5/2020 MN: CREATED
+
+
+
+	SELECT PTCustID,FirstName,LastName,FileAS FROM PublicTradeCustomer
+
+	--WHERE PTCustID = @PTCustID
+
+	ORDER BY LastName
+

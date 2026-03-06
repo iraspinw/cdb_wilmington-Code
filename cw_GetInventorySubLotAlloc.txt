@@ -1,0 +1,122 @@
+CREATE PROC [dbo].[cw_GetInventorySubLotAlloc] @LotNo CHAR(15) AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--04/13/2012 DSH Created: For Source Distribution on Inventory Lot.
+
+--04/18/2012 DSH Corrected VendorNm Length
+
+--02/18/2016 MEC: Copied for cieTrade.net
+
+
+
+-- cw_GetInventorySubLotAlloc '230144-1'
+
+
+
+BEGIN
+
+
+
+	CREATE TABLE #_SubLots(
+
+		SeqNo INT,
+
+		ReferrerNm VARCHAR(25),
+
+		VendorNm VARCHAR(65),
+
+		Cost Money,
+
+		CostPrct Decimal(18,5),
+
+		Qty Decimal(18,5),
+
+		QtyPrct Decimal(18,5),
+
+		WeightUOM char(1)
+
+	)
+
+		
+
+	DECLARE @InvValue Money, @QtyOnHand Decimal(18,5)		
+
+	SELECT @InvValue = InvValue, @QtyOnHand=QtyOnHand FROM INVENTORY WHERE Lotno = @Lotno
+
+	
+
+	
+
+		
+
+	INSERT #_SubLots
+
+	SELECT 
+
+		row_number() OVER (Partition by InventorySubLots.Lotno order by InventorySubLots.Lotno), 						
+
+		Referrer.[Name],
+
+		Counterparty.CompanyNm,
+
+		Round(@InvValue*InvValuePrct,2),
+
+		InvValuePrct,
+
+		Round(@QtyOnHand*WeightPrct,2),
+
+		WeightPrct,
+
+		WeightUOM
+
+		FROM InventorySublots  
+
+			INNER JOIN Inventory ON Inventory.LotNo = InventorySubLots.LotNo
+
+			LEFT JOIN Referrer ON InventorySublots.RefID = Referrer.ReferrerNo
+
+			LEFT JOIN Counterparty ON InventorySublots.VendorID = Counterparty.CPID
+
+		WHERE InventorySubLots.LotNo = @LotNo
+
+
+
+	DECLARE @TotInvValue Money, @TotQtyOnHand Decimal(18,5)		
+
+	SELECT @TotInvValue = SUM(Cost), @TotQtyOnHand=SUM(Qty) FROM #_SubLots
+
+	
+
+	DECLARE @Var_InvValue Money, @Var_QtyOnHand Decimal(18,5)			
+
+	SET @Var_InvValue = @InvValue - @TotInvValue
+
+	SET @Var_QtyOnHand = @QtyOnHand - @TotQtyOnHand
+
+	
+
+	UPDATE #_SubLots SET	
+
+		Cost = Cost + @Var_InvValue,
+
+		Qty = Qty + @Var_QtyOnHand
+
+	WHERE SeqNo = 1
+
+	
+
+
+
+
+
+	--FINAL REPORT.
+
+	SELECT ReferrerNm, VendorNm, Cost, Round(CostPrct*100,2) CostPrct, Qty, round(QtyPrct*100,2) WeightPrct, WeightUOM FROM #_SubLots
+
+
+
+END
+

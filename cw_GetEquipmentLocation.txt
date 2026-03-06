@@ -1,0 +1,90 @@
+CREATE PROC [dbo].[cw_GetEquipmentLocation] 
+
+	@EquipmentID int
+
+ AS  
+
+--9/29/21 MN: CREATE
+
+	
+
+	SELECT 
+
+		E.EquipmentID,
+
+		EquipmentNo,
+
+		EqType,
+
+		TareWt,
+
+		[Status],
+
+		[Description],
+
+		Customer,
+
+		C.CompanyNm,
+
+		Location,
+
+		DefaultWarehouseID,
+
+		ReceiveDt,
+
+		TruckNo,
+
+		Driver,
+
+		StartDt,
+
+		EL.ReceiveDt,
+
+		VIN,
+
+		InspectionDt,
+
+		PickupDt,
+
+		ContainerImg,
+
+		ContainerImgSize,
+
+		WarehouseID,
+
+		EL.TruckNo,
+
+		EL.Driver,
+
+		EL.AssignmentType
+
+	FROM Equipment E
+
+	LEFT JOIN Equipment_Location EL ON E.EquipmentID = EL.EquipmentID AND E.CurrentLocationEventID = EL.LocationEventID
+
+	LEFT JOIN CounterParty C ON C.CpID = EL.Customer
+
+	WHERE E.EquipmentID = @EquipmentID
+
+	ORDER BY EL.LocationEventID DESC
+
+
+
+
+
+	SELECT
+
+		IIF(AssignmentType = 'HOME', 'WAREHOUSE', 'CUSTOMER') AS [Type] , 
+
+		ISNULL(ReceiveDt, '') AS [ReceiveDt],  
+
+		CompanyNm + ' ' + Location AS [Location],
+
+		LocationEventID
+
+	FROM Equipment_Location 
+
+	LEFT JOIN CounterParty C ON C.CpID = Customer
+
+	WHERE EquipmentID = @EquipmentID
+

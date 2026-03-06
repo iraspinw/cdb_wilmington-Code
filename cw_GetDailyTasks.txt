@@ -1,0 +1,34 @@
+CREATE proc [dbo].[cw_GetDailyTasks] @UserID varchar(10) as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+select Comment, TaskDate, crmtask.UserID, crmtask.CPID, counterparty.CompanyNm, 
+
+--IsNull((Select Email From Contact pContact Where pContact.CpID = counterparty.cpid and IsNull(IsPrimary,0) = 1),'') as email, 
+
+--IsNull((Select Top 1 ContactNm From Contact bContact Inner Join ContactRoleAssignment CRA On bContact.CT_ID = CRA.CT_ID Where bContact.CpID = counterparty.cpid and RoleNm in ('Billing', 'Primary') Order by RoleNm),'') APContact, 
+
+--IsNull((Select Top 1 PhoneBusiness From Contact bContact Inner Join ContactRoleAssignment CRA On bContact.CT_ID = CRA.CT_ID Where bContact.CpID = counterparty.cpid and RoleNm in ('Billing', 'Primary') Order by RoleNm),'') APVoiceNo, 
+
+contact.email,
+
+contact.ContactNm,
+
+UserNm, UserEmail
+
+from CRMTASK 
+
+inner join counterparty on counterparty.cpid = crmtask.cpid
+
+left join contact on contact.ct_id = crmtask.ct_id
+
+inner join userdef on userdef.userid = CRMTASK.UserID
+
+where dateadd(dd, datediff(dd, 0, taskdate),0) <= DATEADD(dd, DATEDIFF(dd, 0, getdate()), 0)
+
+and crmtask.userid=@userid
+
+and isnull(taskcomplete, 0) = 0
+

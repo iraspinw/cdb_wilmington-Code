@@ -1,0 +1,20 @@
+CREATE PROC [dbo].[cw_GetEmailListByContactID]
+
+	@CT_ID int = 0
+
+
+
+ AS
+
+ --3/19/2020 Alex:Created
+
+select * from EmaiList
+
+inner join  EmaiListAssignment on EmaiListAssignment.EmaiList = EmaiList.ID
+
+where CT_ID = @CT_ID
+
+
+
+ 
+

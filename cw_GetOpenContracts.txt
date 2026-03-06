@@ -1,0 +1,86 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetOpenContracts] @FromDate datetime,@ToDate datetime,@Source char(2),@COID char(2),
+
+	@PriceLetterOnly bit = 0  AS
+
+--3/9/2005  BM:  Added date range instead of looking at all open PO's
+
+--3/21/2005 BM:  Added Source and SalesRep filters
+
+--4/8/2005  BM:  Added department filter
+
+--1/25/2006 BM:  set NOCOUNT on
+
+--07/20/2009 DSH Added NOLOCK
+
+--04/19/2010 RS: AND Status <> 'CANCELED' added
+
+--04/29/2011 MCM: Added @PriceLetterOnly
+
+--10/24/2013 MCM: Added location email for new option
+
+--11/01/2013 MCM: Error with new email column
+
+--05/18/2015 RS: Get Primary Email from Address table instead of Counterparty
+
+--10/18/2015 MEC: Copied for cieTrade.net
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT PONumber AS PONo, 
+
+		IsNull((Select Top 1 Email From Contact WITH (NOLOCK) Where Contact.CpID = cp.CpID And IsNull(IsPrimary,0) = 0),'') as Email, 
+
+		IsNull((Select Top 1 Email From Contact WITH (NOLOCK) Where Contact.CpID = cp.CpID And Location = PO.AddrType),'') as LocationEmail, 
+
+		LocationEmailContract
+
+		INTO #Open
+
+		FROM PO	WITH (NOLOCK) 
+
+		INNER JOIN Counterparty cp WITH (NOLOCK) ON PO.CpID = cp.CpID
+
+		--INNER JOIN [Address] a ON a.CpID = PO.CpID AND a.[TYPE] = PO.AddrType
+
+		--INNER JOIN [Address] InvAddr WITH (NOLOCK) On PO.CpID = InvAddr.CpID AND ISNULL(InvAddr.InvoiceAddr,'N') = 'Y'
+
+		LEFT JOIN POSalesReps reps WITH (NOLOCK) ON reps.POID = PO.POID
+
+			WHERE MonthlyContract = 1 AND Status <> 'CLOSED' AND Status <> 'CANCELED'
+
+			AND PODate BETWEEN @FromDate and @ToDate 
+
+			AND (@Source = '' OR Source = @Source)
+
+			--AND (@SalesRep = '' OR reps.ReferrerNo = @SalesRep)
+
+			AND (@COID = '' OR PO.COID = @COID)
+
+			AND (@PriceLetterOnly = 0 OR cp.PrintPriceLetter = 1)			
+
+			ORDER BY PONumber
+
+
+
+	--SELECT PONo, Email, LocationEmail, LocationEmailContract FROM #Open
+
+
+
+	SELECT count(Distinct PONo) as TotalOpen FROM #Open
+
+
+
+
+
+
+

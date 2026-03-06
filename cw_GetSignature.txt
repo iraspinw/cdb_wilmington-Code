@@ -1,0 +1,32 @@
+
+
+
+
+CREATE PROC [dbo].[cw_GetSignature] @Source char(2) = ''
+
+AS
+
+
+
+SET NOCOUNT ON
+
+
+
+--10/14/2016 RS: Created
+
+
+
+	SELECT DigitalSignature 
+
+	FROM SystemInfo
+
+	WHERE (@Source = '' OR (@Source = 'SO' AND ISNULL(SignatureSO,0) = 1) OR (@Source = 'PO' AND ISNULL(SignaturePO,0) = 1) OR (@Source = 'CN' AND ISNULL(SignatureCont,0) = 1))
+
+
+
+
+
+-- SELECT * FROM SystemInfo
+
+-- cw_GetSignature 'PO'
+

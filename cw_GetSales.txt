@@ -1,0 +1,36 @@
+CREATE PROC [dbo].[cw_GetSales]
+
+
+
+AS
+
+
+
+--4/26/2016 MN: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		scaleID,
+
+		IP,
+
+		Port,
+
+		StartString,
+
+		EndString,
+
+		scaleName
+
+	FROM Scale With (NoLock)
+
+	ORDER BY scaleID
+

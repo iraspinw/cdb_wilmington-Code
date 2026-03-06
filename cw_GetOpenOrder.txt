@@ -1,0 +1,132 @@
+CREATE   PROCEDURE [dbo].[cw_GetOpenOrder] @CpID as char(12), @GradeID as char(15), @Source as char(2), @SO as char(15), @PONo as char(15), @COID as char(2) AS
+
+--2/28/2005: (dsh) Changed PO lookup to include all open POs.
+
+--4/3/2005:  BM	Added PriceBasis,PODesc
+
+--7/11/2006 JW: Added LengthUOM
+
+--11/15/2006 : BM  Added POReference
+
+--1/17/2007 : BF added shipaddrtype (for midland davis)
+
+--2/23/2007 : JW added ContractExchangeRate
+
+--6/4/2007: JW added PODetail.PO_ID
+
+--06/24/2007: DSH Added Department (for ciewarehouse)
+
+--04/02/2008: JJW Added parameter COID
+
+--07/01/2008 RS: FxRate added
+
+--11/03/2008 RS: PODetail.WoodThickness,WoodWidth,WoodSzUOM,WoodLength,WoodLengthUOM added
+
+--11/25/2008 DSH Returning FX Contract No.
+
+--02/26/2009 RS: Finish,Condition,WoodGrade,Species,Grain added
+
+--02/12/2010 MCM: NOLOCKs, bracket keywords
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+    Select DISTINCT PODetail.PONumber, 
+
+        convert(char(10),PO.POdate,101), 
+
+        Grade.[Description], 
+
+        [Weight], WeightUOM, 
+
+        Price, PriceUOM, CurrencyCD, 
+
+        PODetail.GradeID, 
+
+        Units, UnitType, 
+
+        Specifications,
+
+        BasisWt, BasisWtUOM, 
+
+        Diameter, DiameterUOM, 
+
+	    RollWd, RollWdUOM, 
+
+        CoreSize, 
+
+        Caliper, 
+
+        PODetail.LinearLen, 
+
+        SheetSize, SheetSizeUOM, SheetGrain, 
+
+        PODetail.MWeight, 
+
+	    NoSheets, 
+
+        IsMSF, 
+
+        MSFPrc, 
+
+        PO.CpID, 
+
+        CoreSizeUOM, 
+
+        Counterparty.CompanyNm, 
+
+        PO.POID, 
+
+        source,
+
+        PriceBasis, 
+
+        PODetail.PODesc, 
+
+        PO.AddrType, 
+
+        PODetail.LengthUOM, 
+
+        PO.POReference, 
+
+        PO.ShipAddrType, 
+
+        PO.ContractExchangeRate, 
+
+        PODetail.PO_ID, 
+
+        PO.COID AS Dept,
+
+		Comment,FxRate,
+
+		PODetail.WoodThickness,PODetail.WoodWidth,PODetail.WoodSzUOM,PODetail.WoodLength,PODetail.WoodLengthUOM,
+
+        ContractNo,
+
+		PODetail.Finish,PODetail.Condition,PODetail.WoodGrade,PODetail.WoodGrain,PODetail.SpeciesID
+
+    FROM ((PODetail WITH(NOLOCK) inner JOIN PO WITH(NOLOCK) ON PODetail.PoNumber = PO.PONumber)
+
+	INNER JOIN Grade WITH(NOLOCK) ON PODetail.GradeID = Grade.GradeID)
+
+	INNER JOIN Counterparty WITH(NOLOCK) ON Counterparty.CpID = PO.CpID
+
+    WHERE Status = 'OPEN' 
+
+    AND (@CpID = '' OR @CpID = PO.CpID) 
+
+    AND (@GradeID = '' OR @GradeID = Grade.GradeID)
+
+    AND Source = @Source 
+
+    AND (@SO = '' or @Source='PO' or (@SO = PODetail.SPo AND Source='SO'))
+
+    AND (@PONo = '' OR @PONo = PO.PONumber)
+
+	AND (@COID = '' OR @COID = PO.COID)
+
+    ORDER BY PODetail.PONumber
+

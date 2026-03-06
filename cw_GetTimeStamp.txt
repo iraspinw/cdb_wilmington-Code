@@ -1,0 +1,8 @@
+
+
+create  procedure [dbo].[cw_GetTimeStamp] @Buysellno char(12), @EditStamp int OUTPUT AS
+
+select @EditStamp = convert( int,lastedit) FROM BUYSELL WITH (NOLOCK) Where BuySellNo = @BuySellNo
+
+
+

@@ -1,0 +1,98 @@
+CREATE   PROCEDURE [dbo].[cw_GetBookInstrDocInfo] @BookingNo char(25), @PO char(15) = '', @CPID char(12) = '', @FromPO bit = 0
+
+ AS
+
+--12/02/2015 RS: Created
+
+--12/07/2015 RS: Changed dates to display '' if 1/1/1900
+
+--03/15/2016 RS: Change date format of CutOffDate and DocCutOffDate
+
+
+
+-- cw_GetBookInstrDocInfo '038HU087987'    'HJCU316513','90136','1127'
+
+-- select * from booksheet where bookingno = 'HJCU316513'
+
+-- select * from Address where CPID='1127'
+
+
+
+
+
+SELECT dbo.formatdate(GETDATE()) as [Date], SSLine.CompanyNm as Carrier, 
+
+	LoadPort, PortOfDischg, Booksheet.PlaceOfDeliv,Booksheet.ReceiptPlace,
+
+	Vessel, VoyageNo, BookSheet.BookingNo, 
+
+	(CASE WHEN ETA = '01/01/1900' THEN '' ELSE ISNULL(dbo.formatdate(ETA),'') END) as ETA, 
+
+	(CASE WHEN ETS = '01/01/1900' THEN '' ELSE ISNULL(dbo.formatdate(ETS),'') END) as ETS, 
+
+	(CASE WHEN EarliestReturnDt = '01/01/1900' THEN '' ELSE ISNULL(dbo.formatdate(EarliestReturnDt),'') END) as EarliestReturnDt, 
+
+	--dbo.xDoc_GetAddress(SO.CPID,SO.AddrType,0,0) as CustAddr,
+
+	--Trucker.CompanyNm as TruckerNm,CompanyInfo.CompanyNm as ShipperNm,
+
+	--dbo.xDoc_GetCompanyAddress(SO.COID) as ShipperAddr,
+
+	--bo.xDoc_GetAddress(BookSheet.FreightFwdr,'',0,0) as FwdAgent,
+
+	BookSheet.Comments,BookSheet.GradeDesc, BookSheet.PickupDeliv,
+
+	@PO as PONumber, 
+
+	(dbo.formatdate(CutOffDate) + FORMAT(CutOffDate, 'hh:mm tt')) as CutOffDate,
+
+	ISNULL(POReference,'') as POReference, 
+
+	dbo.FormatQty(Booksheet.MinWeight,TotalWeightUOM) as MinWeight, 
+
+	dbo.FormatQty(Booksheet.MaxWeight,TotalWeightUOM) as MaxWeight,
+
+	Case When @FromPO = 1 Then pobooking.ContainerQty Else BookSheet.ContainerQty End As ContainerQty,ContainerSize,
+
+	dbo.CnvUOM_Names(TotalWeightUOM) as TotalWeightUOM,
+
+	CASE WHEN @PO = '' THEN Supplier.Addr1 ELSE Vendor.Addr1 END AS VendorNm,
+
+	CASE WHEN @PO = '' THEN 
+
+		IsNull((Select Top 1 ContactNm From Contact WITH (NOLOCK) Where Contact.CpID = Supplier.CpID And IsNull(IsPrimary,0) = 1),'')
+
+	ELSE 
+
+		IsNull((Select Top 1 ContactNm From Contact WITH (NOLOCK) Where Contact.CpID = Vendor.CpID And Contact.Location = PO.AddrType),'') 
+
+	END AS Contact,
+
+	(dbo.formatdate(DocCutOffDate) + FORMAT(DocCutOffDate, 'hh:mm tt')) as DocCutOffDate
+
+ 	FROM BookSheet WITH(NOLOCK) 
+
+ 	LEFT JOIN Counterparty SSLine WITH(NOLOCK) ON BookSheet.Carrier = SSLine.CpID
+
+ 	--LEFT JOIN Counterparty Trucker WITH(NOLOCK) ON Booksheet.Trucker = Trucker.CpID
+
+ 	--LEFT JOIN CompanyInfo WITH (NOLOCK) ON SO.COID = CompanyInfo.COID
+
+	LEFT JOIN PO WITH(NOLOCK) on PO.PONumber = @PO
+
+	left join POBooking on POBooking.poid = po.POID and pobooking.BookSheetID = BookSheet.BookSheetID
+
+ 	LEFT JOIN Address Vendor WITH(NOLOCK) ON PO.CPID = Vendor.CpID AND Vendor.Type = PO.AddrType
+
+ 	--LEFT JOIN Contact VdrContact WITH (NOLOCK) ON VdrContact.CpID = Vendor.CpID And VdrContact.Location = PO.AddrType
+
+ 	LEFT JOIN Address Supplier WITH(NOLOCK) ON Supplier.CPID = @CPID and Supplier.InvoiceAddr = 'Y'
+
+ 	--LEFT JOIN Contact SupContact WITH (NOLOCK) ON SupContact.CpID = Supplier.CpID And IsNull(SupContact.IsPrimary,0) = 1
+
+ 	WHERE BookSheet.BookingNo = @BookingNo
+
+
+
+
+

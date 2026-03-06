@@ -1,0 +1,64 @@
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetOpenBookings] @StartDate datetime, @EndDate datetime, @SupplierID char(12), @SONo char(15), @COID varchar(2)  AS
+
+--4/2/2008 JW: added @COID
+
+--12/04/2009 MCM: Added ContainerQty for Generate Pending Container booking lookup
+
+--01/28/2011 MCM: Added code to ignore COID filter if there is no PO
+
+--12/07/2012 DSH Added POL Column
+
+--02/15/2013 RS: Added Column ReceiptPlace and EarliestReturnDt 
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT  
+
+		bookingno,
+
+		booksheet.PONumber,
+
+		CutOffDate,
+
+		LoadPort,
+
+		PortOfDischg,
+
+		ContainerQty,
+
+		ReceiptPlace,
+
+		EarliestReturnDt,
+
+		booksheetid
+
+	FROM Booksheet WITH(NOLOCK) 
+
+	LEFT JOIN PO WITH(NOLOCK) ON BookSheet.PONumber = PO.PONumber
+
+	WHERE (CutOffDate >= @StartDate)
+
+		AND (@SONo = '' OR @SONo = BookSheet.PONumber)
+
+		AND (@COID = '' OR @COID = PO.COID OR (@COID <> '' AND PO.PONumber IS NULL))
+
+		AND (@SupplierID = '' OR 
+
+			exists(select CpID FROM PO WITH(NOLOCK) inner join pobooking on po.poid = pobooking.poid 
+
+				where pobooking.booksheetid = booksheet.booksheetid and PO.CpID = @SupplierID))
+
+	Order By bookingNo
+
+	
+

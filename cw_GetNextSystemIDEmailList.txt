@@ -1,0 +1,10 @@
+CREATE   PROCEDURE [dbo].[cw_GetNextSystemIDEmailList] @ReturnID int OUTPUT as
+
+
+
+SELECT @ReturnID= IDENT_CURRENT ('EmaiList');
+
+
+
+RETURN @ReturnID
+

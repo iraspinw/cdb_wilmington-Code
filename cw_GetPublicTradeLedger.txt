@@ -1,0 +1,304 @@
+
+
+
+
+CREATE PROC [dbo].[cw_GetPublicTradeLedger] @CustID varchar(20), @COID char(2), @Status char(9), @WarehouseID char(45) AS
+
+--05/28/2013 MCM: Created for Public Trade Cashier Ledger
+
+--06/07/2013 MCM: Added Plant transactions for ScaleCheck Vendors
+
+--06/11/2013 MCM: Added status filters, PayableID, LastEdit and SourceID
+
+--07/02/2013 MCM: UNION changed to UNION ALL
+
+--10/31/2014 DSH Revised to handle char value cp ids
+
+--03/13/2015 RS: Added TradeType
+
+--08/14/2020 Alex: copied for cieTrade.net
+
+
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	CREATE TABLE #Report(
+
+	  BuySellNo char(12),
+
+		--TradeID INT,
+
+		ReceiveDt DATE,
+
+		GradeID CHAR(15),
+
+		GradeDescription VARCHAR(100),
+
+		Price MONEY,
+
+		PriceUOM CHAR(1),
+
+		NetWt DECIMAL(22,5),
+
+		PayableDt DATE,
+
+		SalesAmount MONEY,
+
+		--UserID CHAR(10),
+
+		Paid INT,
+
+		PTCustID CHAR(12),
+
+		--COID CHAR(2),
+
+		WarehouseID CHAR(45),
+
+		DetailID INT,
+
+		TransType CHAR(10),
+
+		SourceID char(12),
+
+		PayableID INT,
+
+		LastEdit INT,
+
+		[User] varchar(30),
+
+		CompanyNm nvarchar(65),
+
+		CurrencyCd CHAR(3)
+
+		--TradeType varchar(25)
+
+	)
+
+
+
+
+
+	DECLARE @iCustID INT
+
+	SET @iCustID = 0
+
+	IF ISNUMERIC(@CustID) = 1 BEGIN 
+
+		SELECT @iCustID =  CONVERT(INT,@CustID)
+
+	END
+
+
+
+
+
+
+
+	--INSERT #Report
+
+	--SELECT 
+
+	--	CONVERT(char(12),PublicTrade.TradeID), 
+
+	--	ReceiveDt, 
+
+	--	PublicTradeDetail.GradeID, 
+
+	--	[Description], 
+
+	--	Price, 
+
+	--	PriceUOM, 
+
+	--	NetWt, 
+
+	--	PayableDt, 
+
+	--	SalesAmount, 
+
+	--	UserID, 
+
+	--	ISNULL(Paid,0) AS Paid,
+
+	--	CONVERT(char(12),PTCustID), 
+
+	--	COID, 
+
+	--	WarehouseID, 
+
+	--	DetailID, 
+
+	--	'P' AS TransType, 
+
+	--	CONVERT(char(12),PublicTrade.TradeID) AS SourceID, 
+
+	--	0 AS PayableID, 
+
+	--	0 AS LastEdit,
+
+	--	PublicTrade.TradeType
+
+	--	FROM PublicTrade 
+
+	--		INNER JOIN PublicTradeDetail ON PublicTradeDetail.TradeID = PublicTrade.TradeID
+
+	--		INNER JOIN Grade ON Grade.GradeID = PublicTradeDetail.GradeID
+
+	--	WHERE (@iCustID  = 0 OR PublicTrade.PTCustID = @iCustID)
+
+	--	AND (@COID = '' OR PublicTrade.COID = @COID)
+
+	--	AND (
+
+	--			@Status = '' 
+
+	--			OR (@Status = 'OPEN' AND ISNULL(Paid,0) = 0) 
+
+	--			OR (@Status = 'PAYABLE' AND ISNULL(Paid,0) = 0 AND PayableDt <= GETDATE()) 
+
+	--			OR (@Status = 'PAID' AND ISNULL(Paid,0) = 1)
+
+	--		)
+
+	--	AND (@WarehouseID = '' OR PublicTrade.WarehouseID = @WarehouseID)
+
+	--	AND [Status] = 'COMPLETED'
+
+	
+
+	INSERT #Report
+
+	SELECT 
+
+		--CONVERT(char(12),Receiving.ScaleTicketNo), 
+
+		BuySell.BuySellNo,
+
+		BuySell.ShippingDt,
+
+		'' AS GradeID,
+
+		'' AS InvoiceDesc,
+
+		0 AS PPrice,
+
+		'' AS PUOM,
+
+		0 AS PWeight,
+
+		BuySell.ShippingDt,
+
+		Payables.Amount,
+
+		--Receiving.UserID,
+
+		ISNULL(Payables.Posted,0),
+
+		BuySell.VendorID,
+
+		--Receiving.COID,
+
+		[Address].WarehouseID,
+
+		0, 
+
+		'Receiving', 
+
+		BuySell.BuySellNo, 
+
+		PayableID, 
+
+		convert(int,Payables.lastedit) AS LastEdit,
+
+		userdef.UserNm,
+
+		Counterparty.CompanyNm,
+
+        BuySell.CurrencyCd
+
+		--Receiving.TradeType
+
+		FROM BuySell 
+
+			INNER JOIN Payables ON Payables.BuySellNo = BuySell.BuySellNo
+
+			INNER JOIN [Address] ON [Address].[TYPE] = BuySell.ShipToID AND [Address].CpID = '(INV)'
+
+			INNER JOIN Counterparty ON Counterparty.CpID = BuySell.VendorID
+
+			inner join userdef on BuySell.UserID = userdef.UserID
+
+			--inner JOIN Receiving ON Receiving.SingleStop_BuySellNo = BuySell.BuySellNo
+
+		WHERE 
+
+		--BuySell.CustID = '(PLANT)'
+
+		 (@iCustID = '' OR BuySell.VendorID = @CustID)
+
+		AND (@COID = '' OR BuySell.COID = @COID)
+
+		AND (@Status = '' OR (@Status = 'OPEN' AND ISNULL(Payables.Posted,0) = 0) OR (@Status = 'PAYABLE' AND ISNULL(Payables.Posted,0) = 0 AND BuySell.ShippingDt <= GETDATE()) OR (@Status = 'PAID' AND ISNULL(Payables.Posted,0) = 1))
+
+		--AND (@WarehouseID = '' OR [Address].WarehouseID = @WarehouseID)
+
+		AND (@WarehouseID = '' OR BuySell.ShipToID = @WarehouseID)
+
+		AND Counterparty.ScaleCheck = 1
+
+		AND BuySell.[Status] = 'I' 
+
+	
+
+
+
+	SELECT 
+
+
+
+		BuySellNo as [BuySell No],
+
+		ReceiveDt as [Receive Date],
+
+		GradeDescription as [Product],
+
+		CAST(Price AS varchar)+ '/'+ PriceUOM as Price,
+
+		NetWt as [Net Weight],
+
+		PayableDt as [Payable Date],
+
+		SalesAmount as [Amount],
+
+		TransType as [Source],
+
+		[User]  as [Scale-Clerk],
+
+		WarehouseID,
+
+		PTCustID as [-hidden-VendorID],
+
+		CompanyNm as Customer,
+
+		CurrencyCd as Currency,
+
+		PayableDt as [Paid-on]
+
+
+
+	 FROM #Report
+
+
+
+
+
+-- cw_GetPublicTradeLedger '84702','00','OPEN',''
+

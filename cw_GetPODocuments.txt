@@ -1,0 +1,122 @@
+CREATE proc [dbo].[cw_GetPODocuments] 
+
+	@OrderNo varchar(15), @DBName varchar(25) = '',
+
+	@Source char(1) = 'P'
+
+
+
+as
+
+		
+
+--04/07/2021 MEC: Added Timezone Assignment to EmailDt
+
+		
+
+	-- ADDED for Contact Support *BEGIN*
+
+	DECLARE @BillingEmail varchar(300) = ''
+
+	SELECT Top 1 @BillingEmail = Email From Contact WITH(NOLOCK) 
+
+	INNER JOIN ContactRoleAssignment WITH(NOLOCK) ON Contact.CT_ID = ContactRoleAssignment.CT_ID 
+
+	INNER JOIN PO WITH (NOLOCK) ON PO.CpID = Contact.CpID
+
+	WHERE RoleNm In ('Billing', 'Primary') And PONumber = @OrderNo Order By RoleNm
+
+	-- ADDED for Contact Support *END*
+
+		
+
+		SELECT		
+
+			'' as ' ',
+
+			DocID as '-Hidden-DocumentID', 	
+
+			Desc1 as 'Description',
+
+			Case When TimeZone.TimeZoneNm is null Then createddt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), createddt) End as 'Created',
+
+			userdef.UserNm as 'User',
+
+			FileExt as '-Hidden-FileExt',
+
+			'IMG' as '-Hidden-Type',
+
+			'' as '-Hidden-FormID',
+
+			'' as '-Hidden-DocFormID',
+
+			Desc1 as '-Hidden-DocTitle',
+
+			EmailAddr + '   ' + convert(nvarchar(500), Case When TimeZone.TimeZoneNm is null Then EmailDt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), EmailDt) End, 0) as 'Email Sent',
+
+			@BillingEmail As '-Hidden-DefaultEmail'
+
+		FROM DocumentImage 
+
+			left JOIN userdef ON DocumentImage.Createdby = UserDef.userid
+
+			left join PO on PO.PONumber = documentimage.refid
+
+			left join [address] on [address].cpid = PO.CpID and invoiceaddr='Y'
+
+			left join TimeZone on UserDef.TimeZoneNm = TimeZone.TimeZoneNm
+
+		WHERE 
+
+			RefID = @OrderNo
+
+			AND (RefType=@Source)
+
+		
+
+		UNION ALL
+
+		SELECT 
+
+			'' as ' ',
+
+			DocID, 
+
+			DocTitle, 					
+
+			convert(char(10),Case When TimeZone.TimeZoneNm is null Then createddt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), createddt) End,101) AS CreatedDt, 
+
+			userdef.usernm, 					
+
+			'.ctdoc', --IsNull(DocType,'.ctdoc'),
+
+			'DOC' as '-Hidden-Type',
+
+			xDocForm.FormID,
+
+			xdocform.docformid as '-Hidden-DocFormID',
+
+			xdocform.title as '-Hidden-DocTitle',
+
+			EmailAddr + '   ' + convert(nvarchar(500), Case When TimeZone.TimeZoneNm is null Then EmailDt Else DateAdd(HOUR, (IsNull(TimeZone.GMTOffsetVAL,0) + 5), EmailDt) End, 0) as 'Email Sent',
+
+			'' As '-Hidden-DefaultEmail'
+
+		FROM xDocHeader 
+
+		INNER JOIN xDocForm ON xDocHeader.DocFormID = xDocForm.DocFormID
+
+		INNER JOIN xDocMaster ON xDocForm.FormID = xDocMaster.FormID				
+
+		LEFT JOIN userdef ON xDocHeader.CreatedBy = userdef.UserID 
+
+		left join TimeZone on UserDef.TimeZoneNm = TimeZone.TimeZoneNm
+
+		WHERE  xDocForm.FormID <> 'DOCIMG'	
+
+		AND (FormSource = @Source or xdocform.FORMID='POBOOK')
+
+		AND (SourceID = @OrderNo)
+
+				
+

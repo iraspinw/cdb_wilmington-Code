@@ -1,0 +1,1208 @@
+
+
+-- [dbo].[cw_GetOrderProfitDetails2] 'T', '', '', '', '', '', '', '', 'S', '', 1, 1, '', ''
+
+
+
+CREATE PROCEDURE [dbo].[cw_GetOrderProfitDetails2] 
+
+	@PeriodType char(1), 
+
+	@FromDt datetime, @ToDt datetime, 
+
+	@COID char(2), 
+
+	@TradeType char(25), 
+
+	@CustID char(12), 
+
+	@OrderNo char(15), 
+
+	@ReferrerNo char(10), 
+
+	@UOM char(1) = 'L', 
+
+	@Status varchar(10),
+
+	@IncludeUnshipped tinyint = 0,  
+
+	@ReportByWorksheet tinyint = 0, 
+
+	@UDF1ExpAcct VARCHAR(12) = '',
+
+	@UDF2ExpAcct VARCHAR(12) = ''
+
+AS
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--09/26/2005 DSH Created for Gross Profit by Order (excludes GP records not against orders.)
+
+--10/24/2005 DSH Catogizes Purchase-Expenses as Supplier Purchases.
+
+--               Adjusted Gross Profit for IFP's VAT/GST Accounts.
+
+--02/09/2006 DSH Added TradeType Filter.
+
+--12/15/2006 DSH Corrected a problem with the department being referenced from buysell instead of order .
+
+--1/30/2007 BM: Fixed procedure by commenting out the "testing" code
+
+--1/10/2008 DSH: Correct Purchase Adjustment Allocation - being done off of sale packinglist weight instead of total inv purchase weight.
+
+--01/23/2008 DSH Added support for user defined quantity UOM - used to be set only to ST
+
+--04/25/2008 JJW: Added Periodtype, status parameter, redoing adjustments
+
+--04/28/2008 JJW: added sales adj
+
+--06/26/2008 RS: Modified to use new converting functions including Lumber UOM, UnitType added for filtering
+
+--07/07/2008 RS: Commission column added
+
+--07/16/2008 JW: fixed #REPORT.Dept size to varchar(50)
+
+--07/16/2008 JW: fixed bug with final wks purch adj missing
+
+--07/16/2008 JW: commented out ifp vat code
+
+--09/22/2008 JW: Modified code to get final wks sales wt instead of purch wt(buysell.totalweightlbs = purch wt on inventory sales where wtuom = 'EA' - done in code, not sure why, but want this report to use sales wt like soa and new order bdg analysis)
+
+--10/01/2008 JW: Modified PURCHASE|PURCH ADJ|EXPENSE columns so that suppliercost|purch adj|delivery expenses are displayed - instead PURCHASE showing all expenses with glaccount.cat = 'PURCHASES'
+
+--01/29/2009 MCM: Added filter to make sure WKS is in Invoiced status AND filter on BuySell ReferrerNo1/2
+
+--03/05/2009 RS: Sales Rep added
+
+--03/18/2009 MCM: Modified Sales Rep SELECT by adding TOP 1 because a PO can have more than 1 sales rep (which causes query to crash)
+
+--04/09/2009 DSH: Revised to include purchase adjustments on sales worksheet.
+
+--04/15/2009 RS: UnitType removed from #INVOICELIST (would stay on the final report)
+
+--09/10/2009 MCM: Fixed problem with updating Tonnage which was causing certain records to always return as LBS
+
+--10/30/2009 RS: Bug fixed due to adding Status column to the Buysell table
+
+--11/07/2010 MCM: Added UnitTypePpt to the report
+
+--02/24/2011 MCM: Added Discount to results, added commission to netprofit calculation
+
+--03/26/2014 RS:  GET (LOCAL) PURCHASE ADJUSTMENTS - added  "AND VendorID <> '(INV)'" 
+
+--01/04/2018 DSH: Added additional columsn for PO linked supplier, freight and comm exp breakout.
+
+--02/08/2018 DSH: Added support to include worksheets not assigned to a sales order (COPAP)
+
+--02/09/2018 DSH: Fixed Issue with dups on Wks/Trade Report
+
+--02/09/2018 DSH: Changed how Internal Interest is Reported (using IntInterest from Wks)
+
+--02/13/2018 DSH: Added Mateched PO Payment Terms. 
+
+--02/14/2018 DSH: Fixed calculation of Sales Discount
+
+--05/17/2019 RS:  Added BudgetAmt for CNSweden
+
+--05/20/2019 RS:  Added GlobalRegion,  @IncludeUnshipped  for CNSweden
+
+--10/05/2020 RS:  Added SOTerms per Copap
+
+--05/17/2021 RS:  Added SOFxAmount for CNSweden
+
+--05/25/2021 RS:  Changed SOFxAmount to SOAmount; added SOFxRate, SOCurr, SchShipDate  for CNSweden
+
+--06/11/2021 RS:  Added TradeType column per COPAP
+
+--08/19/2021 DSH  Added Worksheet Only Reporting Option.
+
+--05/06/2022 RS:  Added SOQty for TH Brunius
+
+--06/28/2022 DSH: Added UDF expene columns TH Brunius
+
+
+
+IF @FromDt = '' 
+
+   SET @FromDt = '07/01/2023'
+
+
+
+IF @ToDt = '' 
+
+   SET @ToDt = GetDATE()
+
+
+
+
+
+-- CREATE REPORT TABLE.
+
+CREATE TABLE #REPORT (
+
+	OrderNo char(15),
+
+	OrderDate DateTime,
+
+	OrderStatus Char(10),
+
+	Customer varchar(60),
+
+	Dept varchar(50),
+
+	Tonnage Decimal(18,4) DEFAULT 0,
+
+	UnitType char(1),
+
+	Sales Decimal(18,4) DEFAULT 0,
+
+	SalesAdj Decimal(18,4) DEFAULT 0,
+
+	Purchases Decimal(18,4) DEFAULT 0,
+
+	PurchaseAdj Decimal(18,4) DEFAULT 0,
+
+	Expenses  Decimal(18,4) DEFAULT 0,
+
+	FreightExp Decimal(18,4) DEFAULT 0,
+
+	CommExp Decimal(18,4) DEFAULT 0,
+
+	OtherExp Decimal(18,4) DEFAULT 0,
+
+	GrossProfit Decimal(18,4) DEFAULT 0,
+
+	IntInterest Decimal(18,4) DEFAULT 0,
+
+	NetProfit Decimal(18,4) DEFAULT 0, 
+
+	NetProfitST  Decimal(18,4) DEFAULT 0,
+
+	BudgetProfitST   Decimal(18,4) DEFAULT 0,
+
+	Commission Decimal(18,4) DEFAULT 0,
+
+	SalesRep varchar(30),
+
+	UnitTypePpt char(10),
+
+	Discount Decimal(18,5) DEFAULT 0,
+
+	SupplierNm VARCHAR(130),
+
+	POTerms VARCHAR(50),
+
+	BudgetAmt decimal(18,5),
+
+	GlobalRegion char(30),
+
+	SOTerms varchar(50),
+
+	SOAmount Decimal(18,4) DEFAULT 0,
+
+	SOCurr char(3), 
+
+	SOFxRate Decimal(22,12) DEFAULT 1, 
+
+	SchShipDate datetime,
+
+	TradeType char(25),
+
+	SOQty Decimal(18,4) DEFAULT 0,
+
+	UDFExp1 Decimal(18,4) DEFAULT 0,
+
+	UDFExp2 Decimal(18,4) DEFAULT 0
+
+)
+
+CREATE INDEX #X_REPORT ON #REPORT(OrderNo)
+
+
+
+CREATE TABLE #INVOICELIST (
+
+	OrderNo char(15), 
+
+	BuySellNo char(12), 
+
+	PODate datetime, 
+
+	CompanyNm varchar(65), 
+
+	[Status] varchar(10), 
+
+	CompanyDesc varchar(50), 
+
+	TotalWeightLbs decimal(18,4), 
+
+	PFreightChg money, 
+
+	SalesRep varchar(30), 
+
+	SupplierCPID CHAR(12), 
+
+	IntInterest MONEY 
+
+)
+
+
+
+    -- WORKSHEET (TRADE) REPORT
+
+	IF @PeriodType = 'T'
+
+		INSERT INTO #INVOICELIST
+
+		SELECT Distinct SPO OrderNo, BuySell.BuysellNo, PODate, Counterparty.CompanyNm, PO.Status, 
+
+		CompanyInfo.CompanyDesc, TotalWeightLbs, PFreightChg, --UnitType ,
+
+		ISNULL((SELECT TOP 1 Referrer.[Name] FROM Referrer INNER JOIN POSalesReps ON POSalesReps.ReferrerNo = Referrer.ReferrerNo WHERE POSalesReps.POID = PO.POID),'') as SalesRep,
+
+		BuySell.VendorID,
+
+
+
+		--IntInterest,
+
+		--11/20/23 I.R.
+
+		ISNULL(buysell.IntInterest, 0) 	IntInterest	
+
+
+
+
+
+		FROM WKSDETAIL 
+
+		WITH(NOLOCK)  INNER JOIN BuySell WITH(NOLOCK)  ON Buysell.Buysellno = WksDetail.BuySellNo
+
+		LEFT JOIN PO WITH(NOLOCK) ON WKSDETAIL.SPO = PO.PONUMBER
+
+		LEFT JOIN CompanyInfo ON BuySell.COID = CompanyInfo.COID
+
+		LEFT JOIN Counterparty ON PO.CPID = Counterparty.CpID
+
+		WHERE (@FromDt = '' OR (Buysell.InvoiceDt >=  @FromDt AND Buysell.InvoiceDt <= @ToDt AND BuySell.Status = 'I'))
+
+		AND CUSTID <> '(INV)' AND CUSTID <> '(PLANT)' AND CUSTID <> '{C}' 
+
+		--AND SPO <> ''
+
+		AND (@CustID = '' OR @CustID = BuySell.CustID)
+
+		AND (@COID = '' OR @COID = Buysell.COID)
+
+		AND (@TradeType = '' OR @TradeType = PO.TradeType)
+
+		AND (@OrderNo = '' OR @OrderNo = SPO)
+
+		AND (@Status = '' OR @Status = PO.Status)
+
+		AND (
+
+				@ReferrerNo = '' OR 
+
+				(
+
+					EXISTS(SELECT POID FROM POSalesReps WHERE POSalesReps.POID = PO.POID AND POSalesReps.ReferrerNo = @ReferrerNo ) OR
+
+					(BuySell.ReferrerNo1 = @ReferrerNo OR BuySell.ReferrerNo2 = @ReferrerNo)
+
+				)
+
+			)
+
+		ORDER BY SPO, BUYSELL.BUYSELLNO
+
+    
+
+	-- ORDER REPORT 
+
+	ELSE
+
+		INSERT INTO #INVOICELIST
+
+		SELECT DISTINCT PO.PONumber, BuySell.BuysellNo, PODate, Counterparty.CompanyNm, PO.Status,
+
+		CompanyInfo.CompanyDesc,TotalWeightLbs, PFreightChg, --UnitType ,
+
+		ISNULL((SELECT TOP 1 Referrer.[Name] FROM Referrer INNER JOIN POSalesReps ON POSalesReps.ReferrerNo = Referrer.ReferrerNo WHERE POSalesReps.POID = PO.POID),'') as SalesRep,
+
+		BuySell.VendorID,
+
+		IntInterest		
+
+		FROM PO WITH(NOLOCK) INNER JOIN wksDetail WITH(NOLOCK) ON PO.PONumber = wksDetail.SPo
+
+		INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = wksDetail.BuySellNo
+
+		INNER JOIN CompanyInfo WITH(NOLOCK) ON PO.COID = CompanyInfo.COID
+
+		INNER JOIN Counterparty WITH(NOLOCK) ON PO.CPID = Counterparty.CpID
+
+		WHERE (@FromDt = ''  OR (@FromDt <= PO.PODate AND PO.PODate <=@ToDt))
+
+		AND CUSTID <> '(INV)' AND CUSTID <> '(PLANT)' AND CUSTID <> '{C}'
+
+		AND (@CustID = '' OR @CustID = BuySell.CustID)
+
+		AND (@COID = '' OR @COID = Buysell.COID)
+
+		AND (@TradeType = '' OR @TradeType = PO.TradeType)
+
+		AND (@OrderNo = '' OR @OrderNo = SPO)
+
+		AND (@Status = '' OR @Status = PO.Status)
+
+		AND (
+
+				@ReferrerNo = '' OR 
+
+				(
+
+					EXISTS(SELECT POID FROM POSalesReps WHERE POSalesReps.POID = PO.POID AND POSalesReps.ReferrerNo = @ReferrerNo) OR
+
+					(BuySell.ReferrerNo1 = @ReferrerNo OR BuySell.ReferrerNo2 = @ReferrerNo)
+
+				)
+
+			)
+
+		ORDER BY PO.PONumber, BUYSELL.BUYSELLNO
+
+
+
+
+
+	-- FIX "ORDER" DATA WHEN REPORTING WORKSHEETS WITH NO ORDERS.
+
+	IF @PeriodType = 'T' AND @ReportByWorksheet = 0 BEGIN
+
+		UPDATE #INVOICELIST SET 
+
+			OrderNo		= '*'+#INVOICELIST.BuySellNo,
+
+			PODate		= InvoiceDt,
+
+			STATUS		= 'CLOSED',
+
+			CompanyNm	= Counterparty.CompanyNm
+
+		FROM #INVOICELIST 
+
+			INNER JOIN BUYSELL ON Buysell.Buysellno = #INVOICELIST.BuySellNo
+
+			INNER JOIN Counterparty ON BuySell.CustID = Counterparty.CpID
+
+		WHERE OrderNo = ''
+
+	END
+
+
+
+
+
+	IF @PeriodType = 'T' AND @ReportByWorksheet = 1 BEGIN
+
+		UPDATE #INVOICELIST SET 
+
+			OrderNo		= '*'+#INVOICELIST.BuySellNo,
+
+			PODate		= InvoiceDt,
+
+			STATUS		= 'CLOSED',
+
+			CompanyNm	= Counterparty.CompanyNm
+
+		FROM #INVOICELIST 
+
+			INNER JOIN BUYSELL ON Buysell.Buysellno = #INVOICELIST.BuySellNo
+
+			INNER JOIN Counterparty ON BuySell.CustID = Counterparty.CpID
+
+	END
+
+
+
+
+
+	
+
+	CREATE INDEX #X_INVLIST ON #INVOICELIST(BuySellNo)
+
+		
+
+	-- GET ORDER SHIPPED SALES WEIGHT.
+
+	SELECT wksDetail.BuySellNo, sum(dbo.CnvToBaseQtyUOM(SWeight, SWeightUOM)) AS TotSalesQty 
+
+	INTO #wksTotSalesQty
+
+	FROM wksDetail WITH(NOLOCK) INNER JOIN #INVOICELIST ON wksDetail.BuySellNo = #INVOICELIST.BuySellNo
+
+	GROUP BY wksDetail.BuySellNo
+
+	
+
+	UPDATE #INVOICELIST SET TotalWeightLbs = TotSalesQty FROM #wksTotSalesQty WHERE #wksTotSalesQty.BuySellNo = #INVOICELIST.BuySellNo
+
+
+
+    --B. WRITE ORDER LIST TO REPORT.
+
+    INSERT #REPORT (OrderNo,OrderDate,OrderStatus,Customer,Dept,Tonnage,IntInterest)
+
+    select OrderNo, PODate, Status, CompanyNm, CompanyDesc,SUM(TotalWeightLbs),SUM(IntInterest)
+
+    FROM #INVOICELIST
+
+    GROUP BY OrderNo, PODate, Status, CompanyNm, CompanyDesc
+
+    Order by OrderNo
+
+    
+
+    IF @IncludeUnshipped  = 1 BEGIN
+
+		INSERT #REPORT (OrderNo,OrderDate,OrderStatus,Customer,Dept,Tonnage)
+
+		select PO.PONumber, PODate, Status, Counterparty.CompanyNm, CompanyDesc,
+
+		SUM(dbo.CONVERT_TO_UOM(PODetail.Weight,PODetail.WeightUOM,'L'))
+
+		FROM PO 
+
+		INNER JOIN PODetail ON PO.PONumber = PODetail.PONumber
+
+		INNER JOIN Counterparty ON PO.CPID = Counterparty.CpID
+
+		INNER JOIN CompanyInfo WITH(NOLOCK) ON PO.COID = CompanyInfo.COID
+
+		WHERE  (@FromDt = '' OR (PO.PODate >=  @FromDt AND PO.PODate <= @ToDt))
+
+		AND (@CustID = '' OR @CustID = PO.CPID)
+
+		AND (@COID = '' OR @COID = PO.COID)
+
+		AND (@TradeType = '' OR @TradeType = PO.TradeType)
+
+		AND (@OrderNo = '' OR @OrderNo = PO.PONumber)
+
+		AND (@Status = '' OR @Status = PO.Status)
+
+		AND (
+
+				@ReferrerNo = '' OR 
+
+				(
+
+					EXISTS(SELECT POID FROM POSalesReps WHERE POSalesReps.POID = PO.POID AND POSalesReps.ReferrerNo = @ReferrerNo)
+
+				)
+
+			)
+
+		AND NOT EXISTS(SELECT OrderNo FROM #INVOICELIST WHERE #INVOICELIST.OrderNo = PO.PONumber)
+
+		GROUP BY PO.PONumber, PODate, Status, Counterparty.CompanyNm, CompanyDesc
+
+		Order by PO.PONumber
+
+    
+
+    END
+
+
+
+
+
+
+
+    --C. UPDATE SALES, PURCHASE, GROSS PROFIT AND NET PROFIT COLUMNS
+
+    SELECT 
+
+		OrderNo, 
+
+		SUM(SALE) AS XSALE, 
+
+		SUM(COST) AS XCOST, 
+
+		SUM(GROSSPROFIT) AS XGP, 		
+
+		SUM(Commission) as Comm
+
+    INTO #Temp1
+
+    FROM GPLedger WITH(NOLOCK)  inner join #INVOICELIST ON gpledger.buysellno = #INVOICELIST.BuySellno
+
+	WHERE Source <> 'A'
+
+	AND ((@PeriodType = 'T' AND (@FromDt = ''  OR (TradeDt >= @FromDt AND TradeDt <= @ToDt))) OR @PeriodType = 'O')
+
+    group By OrderNo
+
+
+
+
+
+    UPDATE #REPORT SET 
+
+		Sales = xSale, 
+
+		Purchases = xCOst, 
+
+		GrossProfit = XGP, 
+
+		NetProfit = XGP - #REPORT.IntInterest - Comm,  
+
+		Commission=Comm
+
+		--IntInterest = #TEMP1.IntInterest, 
+
+		--NetProfit = XGP - #TEMP1.IntInterest - Comm,Commission=Comm		
+
+    FROM #TEMP1 INNER JOIN #REPORT ON #Temp1.OrderNo = #REPORT.OrderNo
+
+    
+
+    UPDATE #REPORT SET Tonnage= dbo.CnvFromBaseQtyUOM(Tonnage,@UOM)
+
+
+
+	--SELECT * FROM #REPORT
+
+	--RETURN
+
+	
+
+	--D. BREAKOUT FREIGHT & COMMISSIONS EXPENSES
+
+	SELECT OrderNo, CAT, SUM(WksDelivery.Cost) AS XEXPENSE
+
+	INTO #Temp3
+
+	FROM WksDelivery WITH(NOLOCK)  inner join #INVOICELIST ON WKSDelivery.buysellno = #INVOICELIST.BuySellno
+
+		LEFT JOIN glaccount GL ON GL.GLAcct = WksDelivery.GLAcct
+
+	group By OrderNo, Cat
+
+		
+
+	UPDATE #REPORT SET FreightExp = XEXPENSE
+
+		FROM #TEMP3 INNER JOIN #REPORT ON #Temp3.OrderNo = #REPORT.OrderNo AND #Temp3.Cat = 'FREIGHT'
+
+	UPDATE #REPORT SET CommExp = XEXPENSE
+
+		FROM #TEMP3 INNER JOIN #REPORT ON #Temp3.OrderNo = #REPORT.OrderNo AND #Temp3.Cat = 'COMM EXPENSE'
+
+
+
+
+
+	--E. GET TOTAL EXPENSES
+
+	SELECT OrderNo, SUM(WksDelivery.Cost) AS XEXPENSE
+
+    INTO #Temp2
+
+    FROM WksDelivery WITH(NOLOCK)  inner join #INVOICELIST ON WKSDelivery.buysellno = #INVOICELIST.BuySellno
+
+    group By OrderNo
+
+
+
+    UPDATE #REPORT SET 
+
+		Expenses  = XEXPENSE,
+
+		Purchases = Purchases-XEXPENSE,
+
+		OtherExp  = XEXPENSE - (FreightExp + CommExp)		
+
+    FROM #TEMP2 INNER JOIN #REPORT ON #Temp2.OrderNo = #REPORT.OrderNo
+
+
+
+
+
+	--F. GET UDF Expenses (BRUNIUS)
+
+	IF @UDF1ExpAcct <> '' OR @UDF2ExpAcct <> '' BEGIN
+
+
+
+		SELECT OrderNo, WksDelivery.GLAcct, SUM(WksDelivery.Cost) AS XEXPENSE INTO #Temp4
+
+		FROM WksDelivery WITH(NOLOCK)  inner join #INVOICELIST ON WKSDelivery.buysellno = #INVOICELIST.BuySellno
+
+			LEFT JOIN glaccount GL ON GL.GLAcct = WksDelivery.GLAcct
+
+		WHERE WksDelivery.GLAcct=@UDF1ExpAcct OR WksDelivery.GLAcct=@UDF2ExpAcct 
+
+		GROUP BY OrderNo, WksDelivery.GLAcct
+
+
+
+		IF @UDF1ExpAcct <> '' 
+
+			UPDATE #REPORT 
+
+			SET UDFExp1 = XEXPENSE
+
+			FROM #TEMP4 INNER JOIN #REPORT ON #Temp4.OrderNo = #REPORT.OrderNo
+
+			WHERE GLAcct = @UDF1ExpAcct
+
+
+
+		IF @UDF2ExpAcct <> '' 				
+
+			UPDATE #REPORT 
+
+			SET UDFExp2 = XEXPENSE
+
+			FROM #TEMP4 INNER JOIN #REPORT ON #Temp4.OrderNo = #REPORT.OrderNo
+
+			WHERE GLAcct = @UDF2ExpAcct
+
+
+
+	END
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- GET (LOCAL) PURCHASE ADJUSTMENTS
+
+
+
+	--1. GET LIST OF SALES WORKSHEET ADJUSTMENTS IN PERIOD OR ORDER WORKSHEET
+
+	Select #INVOICELIST.OrderNo, SUM(GPLedger.Cost) as adj
+
+    INTO #PURCHADJLIST
+
+    FROM #INVOICELIST
+
+	INNER JOIN GPLedger WITH(NOLOCK) ON GPLedger.BuySellNo = #INVOICELIST.BuysellNo
+
+	INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = #INVOICELIST.BuySellNo
+
+    WHERE Source = 'A' AND ADJType = 'P' AND AdjPosted = 'Y'
+
+    AND ((@PeriodType = 'T' AND AdjPostDt >= @FromDt AND AdjPostDt <= @ToDt) OR @PeriodType = 'O')
+
+    AND VendorID <> '(INV)' 
+
+	GROUP BY  #INVOICELIST.OrderNo
+
+
+
+
+
+    --2. UPDATE REPORT TABLE WITH PURCHASE ADJUSTMENTS.    
+
+    UPDATE #report set 
+
+		#report.PurchaseAdj = #report.PurchaseAdj + adj, 
+
+		#report.GrossProfit = #report.GrossProfit - ADJ, 
+
+		#report.NetProfit = #report.NetProfit - ADJ
+
+    FROM #REPORT INNER JOIN #PURCHADJLIST ON #REPORT.OrderNo = #PURCHADJLIST.OrderNo
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+-- GET INVENTORY PURCHASE ADJUSTMENTS --
+
+
+
+    --1. GET LIST OF INVENTORY PURCHASE WORKSHEETS WITH ADJUSTMENTS IN PERIOD.
+
+    Select DISTINCT Inventory.BuySellNo, BuySell.TotalWeightLbs TotalWeight
+
+    INTO #PURCHASELIST
+
+    FROM WksInventory WITH(NOLOCK)  
+
+    INNER JOIN #INVOICELIST ON WksInventory.BuySellNo = #INVOICELIST.BuysellNo
+
+    INNER JOIN Inventory WITH(NOLOCK)  ON WksInventory.Lotno = Inventory.Lotno
+
+    INNER JOIN GPLEDGER WITH(NOLOCK)  ON Inventory.BuySellNo = GPLEdger.BuySellNo
+
+    INNER JOIN BuySell WITH (NOLOCK) ON Inventory.BuySellno = BuySell.BuySellno 
+
+    WHERE Source = 'A' AND ADJType = 'P' AND AdjPosted = 'Y'
+
+    AND ((@PeriodType = 'T' AND (@FromDt = ''  OR (AdjPostDt >= @FromDt AND AdjPostDt <= @ToDt))) OR @PeriodType = 'O')
+
+
+
+		
+
+	UNION
+
+	SELECT DISTINCT GPLedger.BuySellNo, BuySell.TotalWeightLbs TotalWeight
+
+	FROM GPLedger WITH(NOLOCK)
+
+	INNER JOIN #INVOICELIST WITH(NOLOCK) ON GPLedger.BuySellNo = #INVOICELIST.BuySellNo
+
+	INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = #INVOICELIST.BuySellNo
+
+	WHERE VendorID = '(INV)' 
+
+	AND Source = 'A' AND ADJType = 'P' AND AdjPosted = 'Y'
+
+    AND ((@PeriodType = 'T' AND (@FromDt = ''  OR (AdjPostDt >= @FromDt AND AdjPostDt <= @ToDt))) OR @PeriodType = 'O')
+
+
+
+	
+
+
+
+    --2. CREATE PURCHASE ADJUSTMENT ALLOCATION TABLE.
+
+    Select #INVOICELIST.OrderNo,     		
+
+    		SUM(GPLEDGER.COST * (dbo.CnvToBaseQtyUOM(WksInventory.Weight, WksInventory.UOM)/  #PURCHASELIST.TotalWeight )) as adj
+
+    INTO #PADJ
+
+    FROM WksInventory WITH(NOLOCK)  
+
+    INNER JOIN #INVOICELIST ON WksInventory.BuySellNo = #INVOICELIST.BuysellNo
+
+    INNER JOIN Inventory WITH(NOLOCK)  ON WksInventory.Lotno = Inventory.Lotno
+
+    INNER JOIN GPLEDGER WITH(NOLOCK)  ON Inventory.BuySellNo = GPLEdger.BuySellNo
+
+    INNER JOIN #PURCHASELIST ON GPLEDGER.BUYSELLNO = #PURCHASELIST.BuySellNo
+
+    WHERE Source = 'A' AND ADJType = 'P' AND AdjPosted = 'Y'
+
+    AND ((@PeriodType = 'T' AND (@FromDt = ''  OR (AdjPostDt >= @FromDt AND AdjPostDt <= @ToDt))) OR @PeriodType = 'O')
+
+    AND #PURCHASELIST.TotalWeight <> 0 
+
+	GROUP BY #INVOICELIST.OrderNo
+
+	UNION
+
+	SELECT #INVOICELIST.OrderNo, SUM(GPLedger.Cost) as adj
+
+	FROM #INVOICELIST	
+
+	INNER JOIN GPLedger WITH(NOLOCK) ON GPLedger.BuySellNo = #INVOICELIST.BuySellNo
+
+	INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = #INVOICELIST.BuySellNo
+
+	WHERE VendorID = '(INV)' 
+
+	AND Source = 'A' AND ADJType = 'P' AND AdjPosted = 'Y'
+
+    AND ((@PeriodType = 'T' AND (@FromDt = ''  OR (AdjPostDt >= @FromDt AND AdjPostDt <= @ToDt))) OR @PeriodType = 'O')
+
+	GROUP BY #INVOICELIST.OrderNo
+
+
+
+    --3. UPDATE REPORT TABLE WITH PURCHASE ADJUSTMENTS.    
+
+    UPDATE #report set #report.PurchaseAdj = #report.PurchaseAdj + adj, #report.GrossProfit = #report.GrossProfit - ADJ, #report.NetProfit = #report.NetProfit - ADJ
+
+    FROM #REPORT INNER JOIN #PADJ ON #REPORT.OrderNo = #PADJ.OrderNo
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- GET SALES ADJUSTMENT
+
+	
+
+	
+
+	--1. GET LIST OF SALES WORKSHEET ADJUSTMENTS IN PERIOD OR ORDER WORKSHEET
+
+	Select #INVOICELIST.OrderNo, SUM(GPLedger.Sale) as adj
+
+    INTO #SALESADJLIST
+
+    FROM #INVOICELIST
+
+	INNER JOIN GPLedger WITH(NOLOCK) ON GPLedger.BuySellNo = #INVOICELIST.BuysellNo
+
+    WHERE Source = 'A' AND ADJType = 'S' AND AdjPosted = 'Y'
+
+    AND ((@PeriodType = 'T' AND (@FromDt = ''  OR (AdjPostDt >= @FromDt AND AdjPostDt <= @ToDt))) OR @PeriodType = 'O')
+
+	GROUP BY  #INVOICELIST.OrderNo
+
+
+
+	--2. UPDATE REPORT TABLE WITH PURCHASE ADJUSTMENTS.    
+
+    UPDATE #report set 
+
+		#report.SalesAdj = #report.SalesAdj + #SALESADJLIST.Adj, 
+
+		#report.GrossProfit = #report.GrossProfit + #SALESADJLIST.Adj, 
+
+		#report.NetProfit = #report.NetProfit + #SALESADJLIST.Adj
+
+    FROM #REPORT INNER JOIN #SALESADJLIST ON #REPORT.OrderNo = #SALESADJLIST.OrderNo
+
+
+
+
+
+
+
+	-- GET SALES DISCOUNT
+
+	Select #INVOICELIST.OrderNo, SUM(DiscountAmt*-1) SalesDisc  
+
+		INTO #SALESDISC
+
+		FROM #INVOICELIST
+
+		INNER JOIN Receipt WITH(NOLOCK) ON Receipt.BuySellNo = #INVOICELIST.BuysellNo
+
+		GROUP BY #INVOICELIST.OrderNo
+
+
+
+    UPDATE #report SET #REPORT.Discount = SalesDisc
+
+	FROM #REPORT INNER JOIN #SALESDISC ON #REPORT.OrderNo = #SALESDISC.OrderNo
+
+
+
+
+
+	--(Old code)
+
+	--UPDATE #REPORT SET #REPORT.Discount = ISNULL((SELECT SUM(DiscountAmt) FROM Receipt INNER JOIN WksDetail WITH(NOLOCK) ON WksDetail.BuySellNo = Receipt.BuySellNo
+
+	--	WHERE WksDetail.SPO = #REPORT.OrderNo),0)
+
+
+
+
+
+
+
+
+
+	--E. ASSIGN GROSS NET /ST
+
+    UPDATE #REPORT SET NetProfitST = NetProfit/Tonnage WHERE Tonnage <> 0
+
+
+
+
+
+	--F. GET BUDGETED GP
+
+    SELECT Budget.PoNumber, isnull(sum(Amount),0) AS BudgetAmount
+
+    INTO #BGP
+
+    FROM Budget INNER JOIN #REPORT ON Budget.PONumber = #REPORT.OrderNo
+
+    AND (ItemType = '[CONTRIBUTION]')
+
+    AND EXISTS(SELECT PONumber FROM Budget A WHERE Amount > 0 AND ItemType = '[PURCHASE]' AND A.PONumber = Budget.PONumber)
+
+    GROUP BY Budget.PONUMBER
+
+
+
+    --G. GET BUDGETED WEIGHT    
+
+    SELECT PODetail.PONumber, sum(dbo.CnvToBaseQtyUOM(Weight, WeightUOM)) AS BudgetWtLbs, SUM(ISNULL(Amount,0)) as Amount
+
+    INTO #BWT
+
+    FROM PODETAIL WITH(NOLOCK) INNER JOIN #REPORT ON PODetail.PONumber = #REPORT.OrderNo 
+
+    Group By PODetail.PONumber
+
+    
+
+	--05/06/2022 RS: Added for TH Brunius	
+
+    UPDATE #REPORT SET SOQty = dbo.CnvFromBaseQtyUOM(BudgetWtLbs,@UOM)
+
+ FROM #REPORT INNER JOIN #BWT ON #BWT.PONumber = #REPORT.ORDERNo 
+
+
+
+    --H. CALC BUDGET GP PER UOM.    
+
+    UPDATE #REPORT SET BudgetProfitST = BudgetAmount/dbo.CnvFromBaseQtyUOM(BudgetWtLbs,@UOM),
+
+    BudgetAmt = BudgetAmount
+
+    FROM #REPORT INNER JOIN #BGP ON #BGP.PONumber = #REPORT.ORDERNo 
+
+    INNER JOIN #BWT ON #BGP.PONumber = #BWT.PONumber     
+
+    WHERE dbo.CnvFromBaseQtyUOM(BudgetWtLbs,@UOM) <> 0
+
+
+
+	Update #REPORT SET #REPORT.UnitType = ''
+
+	Update #REPORT SET #REPORT.UnitType = (SELECT TOP 1 WksDetail.UnitType FROM WksDetail WHERE  #REPORT.OrderNo=WksDetail.SPo ORDER BY WksDetail.UnitType DESC)
+
+	Update #REPORT SET #REPORT.UnitType = (SELECT TOP 1 WksDetail.UnitType FROM WksDetail WHERE  REPLACE(#REPORT.OrderNo,'*','')=WksDetail.BuySellNo ORDER BY WksDetail.UnitType DESC)
+
+		WHERE #REPORT.UnitType = '' 
+
+	
+
+
+
+
+
+
+
+	Update #REPORT SET #REPORT.UnitTypePpt = (SELECT PropertySet FROM UnitType WHERE TypeID = #REPORT.UnitType)
+
+	Update #REPORT SET #REPORT.SalesRep = (SELECT TOP 1 #InvoiceList.SalesRep FROM #InvoiceList WHERE  #REPORT.OrderNo=#InvoiceList.OrderNo)
+
+
+
+
+
+
+
+	-- GET SUPPLIERS LINKED TO SALES ORDERS
+
+	SELECT OrderNo, Counterparty.CompanyNm, PO.Terms, Row_Number() OVER(PARTITION BY OrderNo ORDER BY OrderNo ASC) AS SeqNo  
+
+		INTO #SupplierNm
+
+		FROM #REPORT inner join PODetail ON #REPORT.OrderNo = PODetail.SPO INNER JOIN PO ON PODetail.PONumber = PO.PONumber
+
+			INNER JOIN Counterparty ON PO.CPID = Counterparty.CPID
+
+		WHERE SUBSTRING(OrderNo,1,1) <> '*'
+
+	
+
+	
+
+	CREATE INDEX #IE_SupplierNm ON #SupplierNm(OrderNo,SeqNo)
+
+
+
+
+
+	UPDATE #REPORT SET 
+
+		SupplierNm = #SupplierNm.CompanyNm, 
+
+		POterms = Terms
+
+		FROM #REPORT INNER JOIN #SupplierNm ON #REPORT.OrderNo = #SupplierNm.OrderNo AND SeqNo = 1
+
+		
+
+		
+
+	UPDATE #REPORT SET #REPORT.GlobalRegion = Country.GlobalRegion
+
+	FROM #REPORT 
+
+	INNER JOIN PO ON #REPORT.OrderNo = PO.PONumber
+
+	INNER JOIN Address ON Address.CPID = PO.ShipAddrID and Address.Type = ShipAddrType
+
+	INNER JOIN Country On Address.Country = Country.CountryID
+
+
+
+
+
+
+
+	--06/11/2021 RS: Added TradeType for COPAP
+
+	--05/25/2021 RS: Added SchShipDate, SOFxRate and SOCurr for CNSweden
+
+	--10/05/2020 RS: Added SOTerms per Copap
+
+	UPDATE #REPORT 
+
+		SET 
+
+			SOTerms = Terms, 
+
+			SOCurr = PO.ContractCurrency, 
+
+			SOFxRate = PO.FxRate,	
+
+			#REPORT.SchShipDate = PO.SchShipDate, 
+
+			#REPORT.TradeType = PO.TradeType 
+
+	FROM #REPORT INNER JOIN PO ON #REPORT.OrderNo = PO.PONumber 
+
+
+
+
+
+	
+
+	--05/25/2021 RS: Changed FxAmount to Amount  --05/17/2021 RS: Added per CNSweden
+
+	UPDATE #REPORT SET SOAmount = Amount FROM #REPORT INNER JOIN #BWT ON #REPORT.OrderNo  = #BWT.PONumber
+
+
+
+
+
+	--FINAL REPORT--
+
+ --   ----------------------------------------
+
+	--SELECT * FROM #REPORT ORDER BY OrderDate 
+
+	------------------------------------------
+
+
+
+    SELECT 
+
+		OrderDate AS [Order Date],
+
+		OrderNo AS [Order No], 
+
+		OrderStatus As [Status], 
+
+		Customer,
+
+		Dept,
+
+		CAST(Tonnage AS Decimal(12,3)) AS [Qty Shipped],
+
+		UnitType AS [-hidden-UnitType],
+
+		CAST(Sales AS Decimal(12,2)) AS [Sales],
+
+		CAST(SalesAdj AS Decimal(12,2)) AS [Sales Adj],
+
+		CAST(Purchases AS Decimal(12,2)) AS [Purchase],
+
+		CAST(PurchaseAdj AS Decimal(12,2)) AS [Purchase Adj],
+
+		CAST(FreightExp AS Decimal(12,2)) AS [Freight],
+
+		CAST(CommExp AS Decimal(12,2)) AS [Comm-Exp],
+
+		CAST(OtherExp AS Decimal(12,2)) AS [Other-Exp],
+
+		CAST(Expenses AS Decimal(12,2)) As Expenses,
+
+		CAST(GrossProfit AS Decimal(12,2)) AS [Gross Profit],
+
+		CAST(Commission AS Decimal(12,2)) AS [Comm],
+
+		CAST(IntInterest AS Decimal(12,2))  AS [Int Interest],
+
+		CAST(NetProfit AS Decimal(12,2)) AS [Net Profit],
+
+		CAST(NetProfitST AS Decimal(12,2)) AS [Net/Unit],
+
+		IIF(GrossProfit = 0, '', IIF(Sales = 0, '', CAST(CAST(GrossProfit/Sales AS Decimal(12,2)) AS varchar(12)) + '%')) AS [Gross Profit %],
+
+		CAST(BudgetProfitSt AS Decimal(12,2)) AS [Budget Net/Unit],
+
+		--'' AS [Budget Variance],
+
+ 		SalesRep AS [Sales Rep],
+
+		CAST(Discount AS Decimal(12,2)) AS [Sales Discount],
+
+		--'' AS [Net Profit %],
+
+		SupplierNm AS [Supplier],
+
+		POTerms AS [Supplier-Terms],
+
+		BudgetAmt AS [Budgeted Profit],
+
+		GlobalRegion AS [Global Region],
+
+		SOTerms AS [Customer-Terms],
+
+		CAST(SOAmount AS Decimal(12,2)) AS [SO Amt],
+
+		SOCurr AS [Fx Curr],
+
+		CAST(SOFxRate AS Decimal(12,2)) AS [Fx Rate],
+
+		SchShipDate AS [Sched Date],
+
+		TradeType AS [Trade Type],
+
+		CAST(SOQty AS Decimal(12,3)) AS [SO Qty],
+
+		CAST(UDFExp1 AS Decimal(12,2)) AS [UDF-Exp1],
+
+		CAST(UDFExp2 AS Decimal(12,2)) AS [UDF-Exp2]
+
+	FROM #REPORT ORDER BY OrderDate
+
+
+
+
+
+	--FROM #REPORT ORDER BY OrderDate 
+
+
+

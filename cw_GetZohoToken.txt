@@ -1,0 +1,9 @@
+CREATE proc [dbo].[cw_GetZohoToken] @COID char(2) = '00' as
+
+set nocount on 
+
+set transaction isolation level read uncommitted
+
+
+
+select AcctToken as AccessToken, AcctSecret as RefreshToken, AcctTokenDt as ExpirationUTC, AcctCompany as OrganizationID, Domain from AccountingCompany where coid=@COID

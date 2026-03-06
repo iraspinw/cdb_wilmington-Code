@@ -1,0 +1,12 @@
+CREATE   PROCEDURE [dbo].[cw_GetBillingCycles] AS
+
+	
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+Select * from BillingCycleName with(nolock) order by CycleName
+

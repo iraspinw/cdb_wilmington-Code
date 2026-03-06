@@ -1,0 +1,9 @@
+create proc [dbo].[cw_GetMultiDeptAccounting] @Value bit as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+SELECT MultiDeptAccounting FROM SystemInfo

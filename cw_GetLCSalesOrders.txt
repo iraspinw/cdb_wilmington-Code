@@ -1,0 +1,34 @@
+CREATE   PROCEDURE [dbo].[cw_GetLCSalesOrders] 
+
+	@LCNo varchar(25)
+
+
+
+AS
+
+--10/28/2016: MN CREATED
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+SET NOCOUNT ON
+
+
+
+	SELECT
+
+		PO.PONumber As [OrderNo],
+
+		PO.PODate As [OrderDate]
+
+	FROM LC
+
+	INNER JOIN PO WITH(NOLOCK) ON PO.IssuingLC_ID = LC.ID
+
+	WHERE LC.LCNo = @LCNo
+
+	ORDER BY PO.PONumber
+
+
+

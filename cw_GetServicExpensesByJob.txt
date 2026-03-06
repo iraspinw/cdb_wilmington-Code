@@ -1,0 +1,32 @@
+CREATE   PROCEDURE [dbo].[cw_GetServicExpensesByJob] @JobNo int AS
+
+--7/30/2019 MN:CREATED
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	SELECT DSE_ID, SRE.DispatchScheduleKey, CP.CurrCode, SRE.VendorID, SRE.InvoiceDesc, SRE.GLAcct, SRE.Price, SRE.PriceUOM, SRE.PriceCust, SRE.PriceCustUOM, SRE.IsRecurring, SRE.IsTaxable, 
+
+		SRE.InclFuelSurcharge, SRE.AdvBilling, SRE. Benchmark, SRE.BenchmarkPer, SRE. ForOnCallService, SRE.FxCostAmount, DJ.TruckNo
+
+	FROM ServiceRecordExpense SRE WITH(NOLOCK)
+
+	LEFT JOIN ServiceRecord SR WITH(NOLOCK) ON SR.DispatchScheduleKey = SRE.DispatchScheduleKey
+
+	LEFT JOIN DispatchJob DJ WITH(NOLOCK) ON DJ.AccountID = SR.Account AND  DJ.Location = SR.Location And DJ.EquipmentType = SR.EquipmentType
+
+	LEFT JOIN CounterParty CP WITH(NOLOCK) ON CP.CpID = SRE.VendorID
+
+	WHERE DJ.JobNo = @JobNo
+
+	ORDER BY DispatchScheduleKey
+
+
+

@@ -1,0 +1,227 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCertDocInfo] @BookingNo char(25), @CertTitle varchar(50) = '', @BuySellNo varchar(12) = '' AS
+
+
+
+--11/10/2016 RS: Created
+
+
+
+-- cw_GetCertDocInfo 'MAEU253534636','Certificate of Origin', '501266'
+
+-- SELECT * FROM LCCertificates WHERE Title = 'Certificate of Origins (Sample)'
+
+
+
+DECLARE @LCNo varchar(25)
+
+DECLARE @LCID int
+
+DECLARE @PONo char(15)
+
+DECLARE @ConsigneeCPID char(12)
+
+DECLARE @ConsigneeAddr varchar(255)
+
+DECLARE @Certification varchar(1200)
+
+DECLARE @BeneficiaryCOID char(2)
+
+DECLARE @BLNo varchar(25) 
+
+DECLARE @InvAmount money
+
+DECLARE @InvNo varchar(100)
+
+DECLARE @InvDate datetime
+
+DECLARE @Customer nvarchar(65)
+
+SET @Customer = ''
+
+SET @BeneficiaryCOID = ''
+
+SET @ConsigneeAddr = ''
+
+SET @LCNo = ''
+
+SET @BLNo = ''
+
+SET @InvAmount = 0
+
+SET @InvNo = ''
+
+
+
+	SELECT 
+
+		@InvAmount = SUM(WksDetail.SFxAmount)
+
+	FROM BuySell WITH(NOLOCK)
+
+	INNER JOIN WksDetail ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+	WHERE BuySell.BookingNo = @BookingNo
+
+
+
+	SELECT Top 1 @BLNo = BLNo, @InvDate = InvoiceDt From BuySell With(NoLock) Where BookingNo = @BookingNo AND (@BuySellNo = '' OR BuySell.BuySellNo = @BuySellNo)
+
+
+
+	SELECT @InvNo = IsNull(ContainerRef,'') From BookSheet With(NoLock) Where BookingNo = @BookingNo
+
+	
+
+	SELECT @Certification = Certification FROM LCCertificates With(NoLock) WHERE Title = @CertTitle
+
+	
+
+	SELECT Top 1 @Customer = IsNull(CompanyNm,'') From BookSheet With(NoLock) INNER JOIN PO With(NoLock) On BookSheet.PONumber = PO.PONumber INNER JOIN CounterParty With(NoLock) ON PO.CpID = CounterParty.CpID And PO.[Source] = 'SO' Where BookingNo = @Booking
+No
+
+	
+
+	SET @Certification = Replace(@Certification, '%BookingNo%', IsNull(@BookingNo,''))
+
+	SET @Certification = Replace(@Certification, '%Customer%', IsNull(@Customer,''))
+
+	SET @Certification = Replace(@Certification, '%BillOfLading%', IsNull(@BLNo,''))
+
+	SET @Certification = Replace(@Certification, '%InvoiceNo%', IsNull(@InvNo,''))
+
+	SET @Certification = Replace(@Certification, '%InvAmount%', IsNull(@InvAmount,''))
+
+	SET @Certification = Replace(@Certification, '%InvDate%', convert(varchar(10), IsNull(@InvDate,''), 101))
+
+	SET @Certification = Replace(@Certification, '%IssueDate%', convert(varchar(10), IsNull(@InvDate,''), 101))
+
+
+
+	SELECT @PONo = PONumber	FROM BookSheet WITH(NOLOCK)	WHERE BookSheet.BookingNo = @BookingNo
+
+	IF ISNULL(@PONo,'')<>'' BEGIN
+
+		SELECT @LCID = IssuingLC_ID	FROM PO WITH(NOLOCK) WHERE PONumber = @PONo
+
+		
+
+		SELECT @LCNo = LCNo, @ConsigneeAddr = ConsigneeAddr,@ConsigneeCPID = ConsigneeCPID,
+
+		@BeneficiaryCOID = LC.COID
+
+		FROM LC WITH(NOLOCK) 
+
+		WHERE LC.ID = @LCID
+
+	END
+
+	
+
+	
+
+	-- DISPLAY IN QTY UOM
+
+	DECLARE @SWTUOM char(1)
+
+	SET @SWTUOM = ISNULL((SELECT TOP 1 TotalWeightUOM FROM Booksheet WITH(NOLOCK) WHERE BookingNo = @BookingNo),'L')
+
+
+
+	SELECT 
+
+	dbo.FormatQty(SUM(dbo.CONVERT_TO_UOM(WksDetail.SWeight,SWeightUOM,@SWTUOM)),@SWTUOM) as WT,
+
+	dbo.CnvUOM_Names(@SWTUOM) as WtUOM,
+
+	Sum(WksDetail.Units) as Units,
+
+	dbo.CnvUnitName((Select Top 1 Unittype From wksdetail with (nolock) INNER JOIN Buysell with (nolock) ON WksDetail.BuysellNo = BuySell.BuySellNo WHERE BookingNo = @BookingNo and UnitType<>'')) As UnitType
+
+	INTO #Totals
+
+	FROM BuySell WITH(NOLOCK)
+
+	INNER JOIN WksDetail ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+	WHERE BuySell.BookingNo = @BookingNo
+
+		AND (@BuySellNo = '' OR BuySell.BuySellNo = @BuySellNo)
+
+	GROUP BY BuySell.BookingNo
+
+	
+
+	DECLARE @TotalUnits varchar(30)
+
+	DECLARE @TotalQty varchar(30)
+
+	
+
+	SELECT @TotalQty = RTRIM(dbo.FormatQty(WT,@SWTUOM)) + ' ' + RTRIM(WtUOM),
+
+	@TotalUnits = RTRIM(CAST(Units as varchar(7))) + ' ' + RTRIM(UnitType)
+
+	FROM #Totals
+
+
+
+	SELECT 
+
+		SSLine.CompanyNm as Carrier,LoadPort, PortOfDischg, Booksheet.PlaceOfDeliv,
+
+		Booksheet.ReceiptPlace,	Vessel, VoyageNo, BookSheet.PONumber,
+
+		BookSheet.BookingNo, ETA, ETS,BookSheet.Comments,PO.POReference,
+
+		dbo.xDoc_GetAddress(PO.CPID,PO.AddrType,0,0) as CustAddr,
+
+		Cust.CompanyNm as CustNm,PO.COID, 
+
+		CAST(BookSheet.GradeDesc AS CHAR(1000)) as GradeDesc,
+
+		@CertTitle as CertTitle,
+
+		ISNULL(@Certification,'') as Certification,
+
+		ISNULL(@TotalUnits,'') as TotalUnits,ISNULL(@TotalQty,'') as TotalQty
+
+		INTO #REPORT
+
+ 		FROM BookSheet WITH(NOLOCK) 
+
+ 		LEFT JOIN Counterparty SSLine WITH(NOLOCK) ON BookSheet.Carrier = SSLine.CpID
+
+		LEFT JOIN PO WITH(NOLOCK) on Booksheet.PONumber = PO.PONumber
+
+ 		LEFT JOIN Counterparty Cust WITH(NOLOCK) ON PO.CpID = Cust.CpID
+
+ 		WHERE BookSheet.BookingNo = @BookingNo
+
+ 	
+
+ 	
+
+ 	IF IsNull(@ConsigneeAddr,'')<>''
+
+ 		UPDATE #REPORT SET CustAddr = @ConsigneeAddr
+
+		
+
+ 	IF IsNull(@BeneficiaryCOID,'')<>''
+
+ 		UPDATE #REPORT SET COID = @BeneficiaryCOID
+
+
+
+
+
+
+
+ 	SELECT * FROM #REPORT
+
+
+
+
+

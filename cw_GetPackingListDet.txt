@@ -1,0 +1,104 @@
+
+
+
+
+
+
+CREATE   PROCEDURE [dbo].[cw_GetPackingListDet] @BuySellNo char(12) 
+
+AS
+
+SET NOCOUNT ON
+
+--06/15/2016 RS: Created 
+
+--06/30/2016 RS: Changed @ShowUOM
+
+--07/01/2016 RS: Use Inventory.SpecString as Specification
+
+
+
+-- cw_GetPackingListDet '230750'
+
+
+
+-- select RefGradeID, * from buysell where buysellno = '230604'
+
+-- select * from WksDetail where buysellno = '230604'
+
+
+
+	Declare @ShowInUomRnd int
+
+	Declare @ShowUOM char(4)
+
+
+
+	
+
+	-- SET REPORT UNIT OF MEASURE CODE Lbs/Kgs.
+
+	--SET @ShowUOM = dbo.GetWksInvoiceQtyUOM(@BuySellNo)
+
+	SELECT TOP 1 @ShowUOM = SWeightUOM FROM WksDetail WITH(NOLOCK) WHERE BuySellNo = @BuySellNo
+
+
+
+	
+
+	SET @ShowInUomRnd = 3
+
+	IF @ShowUOM = 'L' OR @ShowUOM = 'K'
+
+		SET @ShowInUomRnd = 0
+
+
+
+
+
+	SELECT 
+
+		WksInventory.LotNo,
+
+		WksInventory.Units, 
+
+		ISNULL(dbo.CnvUnitName(Inventory.UnitType),'') as UnitType, 
+
+		dbo.FormatQty(dbo.CONVERT_TO_UOM(WksInventory.Weight, WksInventory.UOM, @ShowUOM), @ShowUOM) AS WtInShowUOM,
+
+		dbo.CnvUOM_Names(@ShowUOM) AS WtShowUOM,
+
+		Grade.Description as Product,
+
+		Inventory.SpecString as Specification
+
+		--dbo.WriteSpecification(UnitType,Inventory.BasisWt,Inventory.BasisWtUOM,Inventory.Diameter,Inventory.DiameterUOM,Inventory.RollWd,
+
+		--Inventory.RollWdUOM,Inventory.CoreSize,Inventory.CoreSizeUOM,Inventory.Caliper,Inventory.SheetSize,Inventory.SheetSizeUOM,
+
+		--Inventory.MWeight,Inventory.NoSheets,Inventory.SheetGrain,Inventory.SpeciesID,Inventory.Condition,Inventory.WoodThickness,
+
+		--Inventory.WoodWidth,Inventory.WoodSzUOM,Inventory.WoodLength,Inventory.WoodLengthUOM,Inventory.WoodGrain) as Specification
+
+	FROM wksInventory WITH (NOLOCK) 
+
+	INNER JOIN Inventory WITH (NOLOCK) ON wksInventory.LotNo = Inventory.LotNo
+
+	INNER JOIN Grade WITH (NOLOCK) ON Inventory.GradeID = Grade.GradeID
+
+	WHERE wksInventory.BuySellNo = @BuySellNo
+
+	ORDER BY LotNo		
+
+			
+
+
+
+
+
+
+
+
+
+
+

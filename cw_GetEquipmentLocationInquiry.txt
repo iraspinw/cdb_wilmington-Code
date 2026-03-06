@@ -1,0 +1,86 @@
+CREATE PROC [dbo].[cw_GetEquipmentLocationInquiry]
+
+	@CustID varchar(12) = '', 
+
+	@ShipToID varchar(65) = '', 
+
+	@ContainerType char(30) = '',
+
+	@Status char(10) = '',
+
+	@LocWhseID char(45) = '',
+
+	@WhseID char(45) = ''
+
+AS
+
+--03/12/2011 MCM: Created for Public Trading
+
+--03/28/2011 MCM: Added ReceiveDt
+
+--05/23/2013 MCM: Added PublicTrade.Status, PublicTradeDetail.[Paid],PublicTradeDetail.[PaidDt],PublicTradeDetail.[PaidUser] and PublicTradeDetail.[BuySellNo]
+
+--					Removed PublicTrade.BuySellNo and PublicTrade.Paid
+
+--07/26/2017 MCM: ATMAdjustment
+
+--09/08/2017 DSH Renamed AND added fields for Public Trade POS
+
+--11/20/2017 DSH Added Customer Inactive Flag
+
+--01/15/2018 DSH Added Cash Paid column to help identify ATM payments in code.
+
+--07/12/2019 DSH Added Void status
+
+SET NOCOUNT ON
+
+	
+
+	SELECT 
+
+	
+
+		CAST(Equipment.EquipmentID AS varchar(10)) AS [-Hidden-ID],
+
+		EquipmentNo AS [Equipment-No],
+
+		EqType AS [Type],
+
+		IIF(EL.AssignmentType = 'CUST', C.CompanyNm, EL.WarehouseID) As [Current Customer],
+
+		Location As [Current Location],
+
+		DefaultWarehouseID AS [Home-Warehouse/Yard],
+
+		IIF(TareWt = 0, '', CAST(TareWt AS varchar(16)))   As [Tare Weight],
+
+		[Status]
+
+	FROM Equipment
+
+	LEFT JOIN Equipment_Location EL ON EL.EquipmentID = Equipment.EquipmentID AND EL.LocationEventID = (SELECT TOP 1 LocationEventID FROM Equipment_Location WHERE EquipmentID = EL.EquipmentID ORDER BY LocationEventID DESC)
+
+	LEFT JOIN Counterparty C ON C.CpID = EL.Customer
+
+	WHERE 
+
+		(@Status = '' OR Equipment.[Status] = @Status)
+
+		--AND ((@DeliveryToDt= '' and @DeliveryFromDt = '') OR( Equipment.StartDt >= @DeliveryFromDt AND Equipment.StartDt <= @DeliveryToDt))
+
+		--AND ((@PickupFromDt = '' and @PickupToDt = '') OR( Equipment.InspectionDt >= @PickupFromDt AND Equipment.InspectionDt <= @PickupToDt))
+
+		AND (@CustID = '' OR EL.Customer = @CustID)
+
+		AND (@ShipToID = '' or EL.Location = @ShipToID)
+
+		AND (@LocWhseID = '' or (EL.WarehouseID = @LocWhseID AND AssignmentType = 'HOME'))
+
+		AND (@ContainerType = '' or (Equipment.[EqType] = @ContainerType))
+
+		AND (@Status = '' or Equipment.[Status] = @Status)
+
+		AND (@WhseID = '' or DefaultWarehouseID = @WhseID)
+
+
+

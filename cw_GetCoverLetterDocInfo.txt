@@ -1,0 +1,170 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCoverLetterDocInfo] @BuySellNo char(12), @DocDesc varchar(50) = '' AS
+
+
+
+--12/10/2016 MEC: Created
+
+
+
+-- cw_GetCoverLetterDocInfo '501395', 'CUSTOMER COVER LETTER'
+
+
+
+DECLARE @LCNo varchar(25)
+
+DECLARE @LCID int
+
+DECLARE @ConsigneeCPID char(12)
+
+DECLARE @ConsigneeAddr varchar(255)
+
+DECLARE @Contents varchar(1200)
+
+DECLARE @BeneficiaryCOID char(2)
+
+DECLARE @BLNo varchar(25) 
+
+DECLARE @InvAmount money
+
+DECLARE @InvNo varchar(100)
+
+DECLARE @InvDate datetime
+
+SET @BeneficiaryCOID = ''
+
+SET @ConsigneeAddr = ''
+
+SET @LCNo = ''
+
+SET @BLNo = ''
+
+SET @InvAmount = 0
+
+SET @InvNo = ''
+
+DECLARE @SWTUOM char(1)
+
+
+
+	SELECT 
+
+		@InvAmount = IsNull(SUM(WksDetail.SFxAmount),0)
+
+	FROM BuySell WITH(NOLOCK)
+
+	INNER JOIN WksDetail ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+	WHERE BuySell.BuySellNo = @BuySellNo
+
+
+
+	SELECT Top 1 @BLNo = BLNo, @InvDate = InvoiceDt, @InvNo = BuySellNo From BuySell Where BuySellNo = @BuySellNo
+
+		
+
+	SELECT @Contents = Contents FROM CoverLetters WHERE Title = @DocDesc
+
+
+
+	SET @Contents = Replace(@Contents, '%BillOfLading%', RTRIM(IsNull(@BLNo,'')))
+
+	SET @Contents = Replace(@Contents, '%InvoiceNo%', RTRIM(IsNull(@InvNo,'')))
+
+	SET @Contents = Replace(@Contents, '%InvAmount%', RTRIM(IsNull(@InvAmount,'')))
+
+	SET @Contents = Replace(@Contents, '%InvDate%', convert(varchar(10), IsNull(@InvDate,''), 101))
+
+	SET @Contents = Replace(@Contents, '%IssueDate%', convert(varchar(10), IsNull(@InvDate,''), 101))
+
+	
+
+	
+
+	-- DISPLAY IN QTY UOM
+
+	SET @SWTUOM = ISNULL((SELECT TOP 1 SWeightUOM FROM WksDetail WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.BuySellNo = @BuySellNo),'L')
+
+
+
+	SELECT 
+
+	dbo.FormatQty(SUM(dbo.CONVERT_TO_UOM(WksDetail.SWeight,SWeightUOM,@SWTUOM)),@SWTUOM) as WT,
+
+	dbo.CnvUOM_Names(@SWTUOM) as WtUOM,
+
+	Sum(WksDetail.Units) as Units,
+
+	dbo.CnvUnitName((Select Top 1 Unittype From WksDetail WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK) ON BuySell.BuySellNo = WKSDetail.BuySellNo WHERE BuySell.BuySellNo = @BuySellNo and UnitType<>'')) As UnitType
+
+	INTO #Totals
+
+	FROM BuySell WITH(NOLOCK)
+
+	INNER JOIN WksDetail ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+	WHERE BuySell.BuySellNo = @BuySellNo
+
+	GROUP BY BuySell.BookingNo
+
+	
+
+	DECLARE @TotalUnits varchar(30)
+
+	DECLARE @TotalQty varchar(30)
+
+	
+
+	SELECT @TotalQty = RTRIM(dbo.FormatQty(WT,@SWTUOM)) + ' ' + RTRIM(WtUOM),
+
+	@TotalUnits = RTRIM(CAST(Units as varchar(7))) + ' ' + RTRIM(UnitType)
+
+	FROM #Totals
+
+
+
+	SELECT 
+
+		BuySellNo As Buysellno,
+
+		convert(varchar(10), GETDATE(), 101) As txtDate,
+
+		dbo.xDoc_GetAddress(BuySell.CustID,BuySell.ShipToID,0,0) as CustAddr,
+
+		Cust.CompanyNm as CustNm
+
+		,BuySell.COID, 
+
+		@DocDesc as DocTitle,
+
+		Replace(@Contents, '%Customer%', RTRIM(ISNULL(Cust.CompanyNm,''))) as CoverLetterContents,
+
+		ISNULL(@TotalUnits,'') as TotalUnits,ISNULL(@TotalQty,'') as TotalQty,
+
+		PO.DocList As [SODocs],
+
+		'' As [Signature]
+
+		INTO #REPORT
+
+ 		FROM BuySell WITH(NOLOCK) 
+
+ 		LEFT JOIN Counterparty Cust WITH(NOLOCK) ON BuySell.CustID = Cust.CpID
+
+		LEFT JOIN PO WITH (NOLOCK) ON PO.PONumber = RefSONo
+
+ 		WHERE BuySellNo = @BuySellNo
+
+ 	
+
+
+
+
+
+ 	SELECT * FROM #REPORT
+
+
+
+
+

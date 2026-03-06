@@ -1,0 +1,82 @@
+CREATE   PROCEDURE [dbo].[cw_GetWarehouseList] @IncludeAll bit = 0
+
+	--@IncludeWarehouseGroup BIT = 0 
+
+AS
+
+SET NOCOUNT ON
+
+--04/24/2008 DSH Created for AP LEdger
+
+--11/30/2011 DSH Added support for WarehouseGroup
+
+--01/26/2016 MEC: Altered for cieTrade.net
+
+
+
+	--CREATE TABLE #WarehouseList (
+
+	--	CompanyNm char(65),
+
+	--	WarehouseID char(12),
+
+	--	ActiveStatus char(1)
+
+	--)
+
+
+
+	--INSERT #WarehouseList 
+
+
+
+	if @IncludeAll = 1 begin
+
+		SELECT 'ALL WAREHOUSES' as CompanyNm, '', 0 
+
+		UNION ALL
+
+		SELECT [Type] CompanyNm, WarehouseID, [Address].InActive
+
+			FROM [Address] WITH (NOLOCK) 
+
+			--INNER JOIN COUNTERPARTY WITH (NOLOCK) ON WarehouseID = Counterparty.CPID  
+
+			WHERE [Address].CpID = '(INV)' AND [Address].[Type] <> '(CONTAINER)'
+
+	
+
+	end
+
+	else begin
+
+		SELECT [Type] CompanyNm, WarehouseID, [Address].InActive
+
+			FROM [Address] WITH (NOLOCK) 
+
+			--INNER JOIN COUNTERPARTY WITH (NOLOCK) ON WarehouseID = Counterparty.CPID  
+
+			WHERE [Address].CpID = '(INV)' AND [Address].[Type] <> '(CONTAINER)' Order By [Type] 
+
+	
+
+	end	
+
+	
+
+	--IF @IncludeWarehouseGroup = 1 BEGIN
+
+	--	INSERT #WarehouseList 		
+
+	--		SELECT '[' + rtrim(GroupNm) + ']', '~*GROUP','A' FROM WarehouseGroup
+
+	
+
+	--END
+
+
+
+	--SELECT * FROM #WarehouseList ORDER BY CompanyNm
+
+
+

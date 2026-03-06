@@ -1,0 +1,56 @@
+CREATE proc [dbo].[cw_GetBulkInventory] @GradeID varchar(15), @Warehouse varchar(65), @Class varchar(65) = '', @Location varchar(150) ='', @Supplier varchar(65) = '' as
+
+
+
+declare @TrackBySupplier bit 
+
+	select @TrackBySupplier = isnull(optionvalue,0) from options where optionname='TrackBySupplier'
+
+
+
+if @TrackBySupplier = 0 
+
+	set @Supplier = ''
+
+
+
+--select sum(quantity), sum(value), case when sum(value) <> 0 then sum(quantity) / sum(value) else 0 end
+
+--from InventoryBalance 
+
+--where warehousenm = @Warehouse and gradeid = @gradeid and isnull(invclass,'') = @Class and isnull(location, '') = @Location and (@Supplier = '' OR isnull(supplier, '') = @Supplier)
+
+----and value <> 0
+
+
+
+
+
+declare @BalQuantity decimal(22,5) = 0
+
+declare @BalValue money = 0
+
+declare @BalUnitCost decimal(22,5) = 0
+
+
+
+	exec cw_GetBulkQuantityValue @Warehouse, @GradeID, @Class, @Location, @Supplier, @BalQuantity output, @BalValue output
+
+	if @BalValue > 0 begin
+
+		set @BalUnitCost = @BalQuantity / @BalValue
+
+	end
+
+	else begin
+
+		set @BalUnitCost = 0
+
+	end
+
+
+
+	
+
+	select @BalQuantity,@BalValue, @balunitcost
+

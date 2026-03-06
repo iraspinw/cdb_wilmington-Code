@@ -1,0 +1,282 @@
+CREATE   PROCEDURE [dbo].[cw_GetBookSheet] @BookSheetID int, @BookingNo varchar(25) AS
+
+
+
+-- 02/07/2005 (JW) - changed join to userdef to cieTrade_sys.dbo.users
+
+-- 07/19/2005  BM: Added Booking_Expense recordset
+
+-- 09/30/2005 (JW): Fixed where clause 
+
+-- 3/29/2006 BM: Added MaxWeight to recordset
+
+-- 6/25/2007 BF: added booking dept/status
+
+-- 06/25/2008 MCM: Added FeederVessel
+
+-- 10/08/2008 RS: DocCutOffDate added
+
+--02/26/2010 BF: added/removed fields for udom changes
+
+--07/27/2010 MCM: Added LastEdit
+
+--08/20/2010 RS: WITH(NOLOCK) added
+
+--05/09/2012 RS: ContainerRef added
+
+--01/22/2013 DSH Added Earliest Return Dt
+
+--01/25/2013 MCM: Added Reserved Container Qty
+
+--09/02/2013 DSH Added TimeZone
+
+--03/20/2015 RS: Added @CargoCode and @TerminalCode
+
+--03/24/2015 MCM: LloydsNo
+
+--11/14/2018 MN: Added VGM Cutoff Date
+
+--05/19/2020 Alex: Added  UserDefined1,ShippingLineRemarks
+
+--07/31/2023 DN: added PrimaryStatus, InitialStatus,ForwardStatus
+
+
+
+--cw_GetBookSheet 114, ''
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SET NOCOUNT ON;
+
+
+
+
+
+DECLARE @PRRefslistStr VARCHAR(MAX)
+
+SELECT @PRRefslistStr = COALESCE(@PRRefslistStr+', ' ,'') +  Rtrim(BuySell.BuySellNo)
+
+from BuySell where BuySell.BookingNo=(select BookSheet.BookingNo from BookSheet where BookSheetID = @BookSheetID)
+
+
+
+
+
+
+
+	SELECT 
+
+	BookSheetID, 
+
+	BookingNo, 
+
+	DATEADD(dd, DATEDIFF(dd, 0, BookDate),0) As BookingDt, 
+
+	ShipperRef, 
+
+	ReceiptPlace, 
+
+	LoadPort, 
+
+	PortOfDischg, 
+
+	Carrier, 
+
+	CounterParty.CompanyNm  As CarrierName,
+
+	Vessel, 
+
+	VoyageNo,  
+
+	CutOffDate, 
+
+	DATEADD(dd, DATEDIFF(dd, 0, ETS),0) As ETS, 
+
+	DATEADD(dd, DATEDIFF(dd, 0, ETA),0) As ETA, 
+
+	BookedWith, 
+
+	Rate, 
+
+	PickupDeliv, 
+
+	ContainerQty, 
+
+	ContainerSize, 
+
+	Comments, 
+
+	BookSheet.PONumber,
+
+	PO.CPId as [POCPID],
+
+	FreightFwdr, 
+
+	ForwarderCP.CompanyNm As FreightFwdrNm,
+
+	UserDef.UserNm, 
+
+	RolledFrom_Booking, 
+
+	BuySellNoRef, 
+
+	Trucker, 
+
+	TruckerCP.CompanyNm As TruckerName,
+
+	GradeDesc, 
+
+	ParentBookNo, 
+
+	TotalWeight, 
+
+	TotalWeightUOM, 
+
+	PlaceOfDeliv, 
+
+	Booksheet.UserNotes, 
+
+	BookingDept, 
+
+	BookingDeptStatus, 
+
+	FeederVessel,
+
+	ISNULL(DocCutOffDate,'') AS [DocCutOffDate], 
+
+	ISNULL(VGMCutoffDate,'') As VGMCutoffDate,
+
+	isBreakBulk, 
+
+	isnull(BookSheet.FreightRateUom,'(') as FreightRateUom,  --the '(' means no selection
+
+	BookSheet.MaxWeight,
+
+	BookSheet.MinWeight,
+
+	QuoteRef,
+
+	RcvdConfirmDt,
+
+	convert(int,BookSheet.LastEdit) As LastEdit,
+
+	ContainerRef,
+
+	EarliestReturnDt,
+
+	TimeZone,
+
+	(SELECT SUM(ContainerQty) FROM POBooking WHERE BooksheetID = Booksheet.BooksheetID) AS ReservedCntQty,
+
+	CargoCode,
+
+	TerminalCode,
+
+	TerminalNm,
+
+	LloydsNo,
+
+	LC.LCNo,
+
+	(SELECT SUM(WksDetail.SFxAmount)
+
+		
+
+		FROM BookSheet WITH(NOLOCK)
+
+		INNER JOIN BuySell WITH(NOLOCK) ON Booksheet.BookingNo = BuySell.BookingNo 
+
+		INNER JOIN WksDetail ON WksDetail.BuysellNo = BuySell.BuySellNo
+
+
+
+	WHERE BookSheetID = @BookSheetID) As InvoiceAmt,
+
+	isnull(FreightRateID,0) as FreightRateID,
+
+	IsNull(LoadPort,'') + ' ' + IsNull(cod.Name,'') PortOfLoading,
+
+	IsNull(PortOfDischg,'') + ' ' + IsNull(cor.Name,'') PortOfDischarge,
+
+	isnull(BookSheet.UserDefined1,'') as UserDefined1,
+
+	isnull(BookSheet.ShippingLineRemarks,'') as ShippingLineRemarks,
+
+	IsNull(PO.POReference,'') as SORefNo,
+
+	@PRRefslistStr as PRRefslistStr,
+
+	CounterParty.ActiveStatus as PrimaryStatus,
+
+	TruckerCP.ActiveStatus as InitialStatus,
+
+	ForwarderCP.ActiveStatus as ForwardStatus
+
+	FROM BookSheet WITH(NOLOCK) 
+
+	left join [ports] pod on pod.PortNm = LoadPort
+
+	left join [ports] por on por.PortNm = PortOfDischg
+
+	left join country cod on cod.CountryID = pod.CountryID
+
+	left join country cor on cor.CountryID = por.CountryID
+
+	LEFT JOIN CounterParty WITH(NOLOCK) ON CounterParty.CpID = Carrier 
+
+	LEFT JOIN CounterParty ForwarderCP WITH(NOLOCK) ON ForwarderCP.CpID = FreightFwdr 
+
+	LEFT JOIN CounterParty TruckerCP WITH(NOLOCK) ON TruckerCP.CpID = Trucker 
+
+	LEFT JOIN UserDef WITH(NOLOCK) ON BookSheet.UserID = UserDef.UserID 
+
+	Left Join Terminal WITH(NOLOCK) ON Terminal.TerminalID = TerminalCode
+
+	left Join PO WITH(NOLOCK) ON PO.PONumber = BookSheet.PONumber
+
+	LEFT JOIN LC WITH(NOLOCK) ON LC.ID = PO.IssuingLC_ID
+
+	WHERE (@BookSheetID <> 0 AND @BookSheetID = BookSheetID)
+
+	OR (@BookingNo <> '' AND @BookingNo = BookingNo)
+
+
+
+
+
+  --  --GET BOOKING EXPENSES
+
+  --  SELECT 
+
+		--VendorID, 
+
+		--c.CompanyNm As ExpenseCompanyNm, 
+
+		--GL.GLAcct, 
+
+		--GL.Name, 
+
+		--e.[Description], 
+
+		--isnull(Charge,0) as Charge, 
+
+		--CurrencyCd, 
+
+		--UOM
+
+  --  FROM Booking_Expense e WITH(NOLOCK)
+
+  --  INNER JOIN Booksheet b WITH(NOLOCK) ON e.BookingNo = b.BookingNo
+
+  --  INNER JOIN Counterparty c WITH(NOLOCK) ON e.VendorID = c.CpID
+
+  --  INNER JOIN GLAccount GL WITH(NOLOCK) ON e.GLAcct = GL.GLAcct
+
+  --  WHERE (@BookSheetID <> 0 AND @BookSheetID = b.BookSheetID)
+
+  --  OR (@BookingNo <> '' AND @BookingNo = b.BookingNo)
+
+
+

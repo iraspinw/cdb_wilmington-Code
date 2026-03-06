@@ -1,0 +1,22 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetCurrenciesList] AS
+
+--10/28/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT CurCode [-Hidden- Code], CurCode + '- ' + Name AS Name, Symbol, 
+
+		--FORMAT((SELECT TOP 1 FxRate FROM CurrencyRate cr WHERE cr.CurCode = c.CurCode ORDER BY ExchDate DESC), 'N5', 'en-us') AS [Exchange Rate],
+
+		[dbo].[cw_RemoveTrailingZeros](FORMAT((SELECT TOP 1 FxRate FROM CurrencyRate cr WHERE cr.CurCode = c.CurCode ORDER BY ExchDate DESC), 'N14', 'en-us'),2) AS [Exchange Rate],
+
+        (SELECT TOP 1 ExchDate FROM CurrencyRate cr WHERE cr.CurCode = c.CurCode ORDER BY ExchDate DESC) AS [As Of Date]
+
+		FROM Currency c ORDER BY CurCode
+

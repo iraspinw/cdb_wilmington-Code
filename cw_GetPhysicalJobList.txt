@@ -1,0 +1,22 @@
+CREATE   PROCEDURE [dbo].[cw_GetPhysicalJobList] 
+
+	@Status char(10) = 'OPEN', 
+
+	@WarehouseCPID char(45) = '',
+
+	@JobID int = 0
+
+	
+
+AS
+
+
+
+--8/22/2022
+
+
+
+SELECT JobID, Date, WarehouseLocation, WarehouseCPID FROM Inventory_PhysicalJob WITH (NOLOCK) WHERE (@Status = '' OR [Status] = @Status) AND (@WarehouseCPID = '' or  WarehouseCPID = @WarehouseCPID) AND (@JobID = 0 OR JobID = @JobID)
+
+
+

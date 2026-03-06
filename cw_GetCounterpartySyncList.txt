@@ -1,0 +1,52 @@
+CREATE   PROCEDURE [dbo].[cw_GetCounterpartySyncList] AS
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT RTRIM(c.CpID) AS CpID,c.CompanyNm AS ShortNm,ISNULL(Addr1,'') AS CorpTitle,[Role],ISNULL(Terms,'') Terms,ActiveStatus,ISNULL(Website,'') Website,
+
+			ISNULL(AcctingIDCust,0) AcctingIDCust, ISNULL(AcctingIDVendor,0) AcctingIDVendor,
+
+			ISNULL(Addr2,'') AS Addr1,ISNULL(Addr3,'') AS Addr2,ISNULL(City,'') City,ISNULL(Region,'') Region,ISNULL(PostalCd,'') PostalCd,
+
+			ISNULL(Country,'') Country, 
+
+			'' Contact, 
+
+			'' Telephone, 
+
+			'' Fax, 
+
+			'' Email, 
+
+			ISNULL(CurrCode,'') CurrencyCd, 
+
+			'00' COID
+
+    FROM CounterParty c
+
+	INNER JOIN [Address] a ON a.CpID = c.CpID AND a.InvoiceAddr = 'Y'
+
+	--INNER JOIN companyinfo on 1=1
+
+	--LEFT JOIN Contact ON c.CpID = Contact.CpID AND a.[Type] = Contact.Location
+
+
+
+	WHERE (ActiveStatus = 'A' or ActiveStatus = 'I')
+
+	AND RTRIM(c.CpID) NOT IN ('(INV)','(OTHER)','(PLANT)','{C}')
+
+	and isnull(autosync, 0)  = 0
+
+	and a.[Type]= 'INVOICE'
+
+	ORDER BY c.CompanyNm
+
+	
+
+
+

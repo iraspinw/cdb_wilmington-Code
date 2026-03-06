@@ -1,0 +1,32 @@
+CREATE   PROCEDURE [dbo].[cw_GetBanksInquiry] AS
+
+--4/2/2019 MN: CREATED
+
+set nocount ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT 
+
+		BankID As [-Hidden-BankID],
+
+		IIF(DATALENGTH(RTRIM(BankName)) > 50, left(RTRIM(BankName), 50) + '...', BankName) AS [Bank Name],
+
+		IIF(DATALENGTH(RTRIM(BankAddress)) > 100, left(RTRIM(BankAddress), 100) + '...', BankAddress) AS [Bank Address], 
+
+		IsNull(Country.Name,'') AS [Country Name]
+
+		
+
+		FROM LCBank 
+
+		LEFT JOIN Country ON Country.CountryID = LCBank.CountryID
+
+		ORDER BY BankName
+
+
+
+
+

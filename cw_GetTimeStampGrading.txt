@@ -1,0 +1,8 @@
+
+
+Create  procedure [dbo].[cw_GetTimeStampGrading] @GradingID int, @EditStamp int OUTPUT AS
+
+select @EditStamp = convert( int,lastedit) FROM Grading WITH (NOLOCK) Where GradingID = @GradingID
+
+
+

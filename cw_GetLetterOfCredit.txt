@@ -1,0 +1,124 @@
+CREATE   PROCEDURE [dbo].[cw_GetLetterOfCredit] @LCNo varchar(25)
+
+
+
+-- 10/27/16 MN: Created
+
+-- 08/01/2023 DN: add AppActive, AppAddInactive,ConsignActive,ConsignAddInactive
+
+As
+
+
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SET NOCOUNT ON;
+
+
+
+
+
+	SELECT
+
+		ID,
+
+		[LCNo],
+
+		[CurAmt],
+
+		[CurCode],
+
+		[IssueDt],
+
+		[ExpirationDt],
+
+		[AmendedDt],
+
+		[LCType],
+
+		CI.CompanyDesc As [Dept],
+
+		LC.[COID],
+
+		[Beneficiary],
+
+		AC.CompanyNm As [Applicant],
+
+		[ApplicantCPID],
+
+		[ApplicantAddrType],
+
+		[ApplicantAddr],
+
+		CC.CompanyNm As [Consignee],
+
+		[ConsigneeCPID],
+
+		[ConsigneeAddrType],
+
+		[ConsigneeAddr],
+
+		[CommodityDesc],
+
+
+
+		[LastShipDt],
+
+		[RequestDt],
+
+
+
+		[POID],
+
+		[ContractNo],
+
+		[IssuingBank],
+
+		[AdvisingBank],
+
+		[AdvisingBankRefNo],
+
+		[AdditionalConditions],
+
+		[DocumentsRequired],
+
+		LC.[BankAddress],
+
+		IB.BankName AS [IssuingBankNm],
+
+		AB.BankName AS [AdvisingBankNm],
+
+		isnull(app.ActiveStatus,'') as AppActive,
+
+		isnull(appAdd.inactive,0) as AppAddInactive,
+
+		isnull(consign.ActiveStatus,'') as ConsignActive,
+
+		isnull(ConsignAdd.inactive,0) as ConsignAddInactive
+
+
+
+	FROM LC
+
+	LEFT JOIN CounterParty AC WITH(NOLOCK) On AC.CpID = ApplicantCPID
+
+	LEFT JOIN CounterParty CC WITH(NOLOCK) On CC.CpID = ConsigneeCPID
+
+	LEFT JOIN CompanyInfo CI WITH(NOLOCK) ON CI.COID = LC.COID
+
+	LEFT JOIN LCBank IB WITH(NOLOCK) ON IB.BankID = LC.IssuingBank
+
+	LEFT JOIN LCBank AB WITH(NOLOCK) ON AB.BankID = LC.AdvisingBank
+
+	left join CounterParty app with(nolock) on lc.ApplicantCPID = app.CpID
+
+	left join Address appAdd with(nolock) on lc.ApplicantCPID = appAdd.CpID and lc.ApplicantAddrType = appAdd.Type
+
+	left join CounterParty Consign with(nolock) on lc.ConsigneeCPID = Consign.CpID
+
+	left join Address ConsignAdd with(nolock) on lc.ConsigneeCPID = ConsignAdd.CpID and lc.ConsigneeAddrType = ConsignAdd.Type
+
+	WHERE (@LCNo <> '' AND @LCNo = LCNo)	
+
+
+

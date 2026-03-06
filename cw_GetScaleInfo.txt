@@ -1,0 +1,52 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetScaleInfo] @ScaleID int
+
+AS
+
+BEGIN
+
+
+
+-- 10/02/2015 MEC: Created for cieTrade.net 
+
+--11/9/2018 Alex: add ChromeAppID
+
+--12/17/2018 Alex: add Selected
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT
+
+		IP,
+
+		Port,
+
+		StartString,
+
+		EndString,
+
+		ScaleName,
+
+		Warehouse
+
+		--ChromeAppID
+
+	FROM
+
+		Scale With (NoLock)
+
+	WHERE
+
+		ScaleID = @ScaleID
+
+END
+
+
+

@@ -1,0 +1,36 @@
+CREATE proc [dbo].[cw_GetEmailLogLog] @FromDt datetime = '', @ToDt datetime = '', @User varchar(30) = '', @Object varchar(30) = '', @ObjectID varchar(30) = '' as
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SET NOCOUNT ON;
+
+--02/16/17 MN: CREATED
+
+
+
+
+
+	SELECT Datestamp AS [Date], RTRIM([Object]) AS [Object], ObjectID AS [ID], UserNm AS [User Name], Comment
+
+		FROM systemlog s
+
+		inner join userdef on userdef.userid= s.userid
+
+		WHERE (s.UserID = @User OR @User = '')
+
+		AND (Datestamp >= @FromDt OR @FromDt = '')
+
+		AND (Datestamp <= @ToDt OR @ToDt = '')
+
+		AND (ObjectID = @ObjectID OR @ObjectID = '')
+
+		AND ([Object] = @Object OR @Object = '')
+
+		order by datestamp desc
+
+
+
+
+
+
+

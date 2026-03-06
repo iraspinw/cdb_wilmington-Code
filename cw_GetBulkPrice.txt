@@ -1,0 +1,62 @@
+CREATE proc [dbo].[cw_GetBulkPrice] @GradeID varchar(12), @Warehouse varchar(65), @InvClass varchar(10) = '', @Location varchar(25) = '', @Supplier varchar(12) = '', @AsOfDate datetime='' as
+
+--select unitcost from InventoryBalance where gradeid=@GradeID and WarehouseNm= @Warehouse and InvClass=@InvClass and Location=@Location and Supplier=@Supplier
+
+
+
+
+
+	if @AsOfDate = '' begin
+
+		set @AsOfDate= (select dateadd(d,-1,dateadd(M, 1, openmonth)) from systeminfo)
+
+	end
+
+declare @BalQuantity decimal(22,8) = 0
+
+declare @BalValue money = 0
+
+declare @BalUnitCost decimal(22,8) = 0
+
+
+
+	exec cw_GetBulkQuantityValue @Warehouse, @GradeID, @InvClass, @Location, @Supplier, @BalQuantity output, @BalValue output, @AsOfDate
+
+	if @BalValue > 0 begin
+
+		set @BalUnitCost = @BalValue / @BalQuantity 
+
+	end
+
+	else begin
+
+		set @BalUnitCost = 0
+
+	end
+
+
+
+	
+
+	select @balunitcost
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

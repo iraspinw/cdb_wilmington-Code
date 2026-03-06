@@ -1,0 +1,48 @@
+
+
+CREATE  PROCEDURE [dbo].[cw_GetSetsEvents] @setTypeID int
+
+	AS
+
+	
+
+--1/17/2020 alex: Created
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+
+
+	select 
+
+	CONVERT(varchar, DocSetEvents.SeqOrder)  as 'Seq Order',
+
+	EventDescription as 'Event Name',
+
+	CAST(DocSetEvents.EventTypeID AS varchar) as EventTypeID
+
+	from DocSetEvents  with(nolock)
+
+	inner join DocSetType on DocSetEvents.SetTypeID=DocSetType.SetTypeID 
+
+	inner join DocEventType on DocEventType.EventTypeID=DocSetEvents.EventTypeID
+
+	where DocSetEvents.SetTypeID=@setTypeID
+
+	order by SeqOrder
+
+
+
+
+
+
+
+
+
+	
+

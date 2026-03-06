@@ -1,0 +1,47 @@
+CREATE PROC [dbo].[cw_GetCounterparty_Services] @CpID char(12), @Location varchar(45) AS
+
+
+
+--01/31/2023 Nick: CREATED
+
+
+
+SET NOCOUNT ON;
+
+
+
+	SELECT
+
+		DispatchScheduleKey,
+
+		Location,
+
+		EquipmentType as [Equipment Type],
+
+		EquipNo AS [Equipment #],
+
+		SiteRef AS [Site Ref],
+
+		dbo.CnvServiceSchdNm(ServiceRecord.SchdOccurs) As [Schedule],
+
+		ServiceRecord.[Description],
+
+		Case When SchdStartDt = '01/01/1900' Then NULL Else SchdStartDt End AS [Start Date],
+
+		Case When SchdExpirationDt = '01/01/1900' Then NULL Else SchdExpirationDt End AS [End Date],
+
+		HAULER.CompanyNm As [Service Provider]
+
+	FROM ServiceRecord WITH(NOLOCK)
+
+	INNER JOIN Counterparty WITH (NOLOCK) ON ServiceRecord.Account = CounterParty.CpID
+
+	LEFT JOIN Counterparty HAULER WITH(NOLOCK) ON HAULER.CpID = ServiceRecord.FrtCarrierID
+
+
+
+	WHERE
+
+	ServiceRecord.Account = @CpID
+
+	AND (@Location= '' OR ServiceRecord.Location = @Location)

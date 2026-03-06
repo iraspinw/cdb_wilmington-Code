@@ -1,0 +1,26 @@
+
+
+CREATE   PROCEDURE [dbo].[cw_GetExchangeRate] @ID int AS
+
+--10/29/2015 MCM: Created
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT ExRate_ID [-Hidden- ID], CurCode [-Hidden- Code], ExchDate AS [As Of Date],[dbo].[cw_RemoveTrailingZeros](FORMAT(FxRate, 'N14', 'en-us'),2)  AS [Exchange Rate] --  FORMAT(FxRate, 'N5', 'en-us') AS [Exchange Rate]
+
+		FROM CurrencyRate c 
+
+		WHERE ExRate_ID = @ID
+
+		ORDER BY ExchDate DESC
+
+
+
+
+
+		--[dbo].[cw_RemoveTrailingZeros](FORMAT(FxRate, 'N10', 'en-us'),2)  AS [Exchange Rate] 
+

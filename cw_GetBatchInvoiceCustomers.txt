@@ -1,0 +1,62 @@
+CREATE PROC [dbo].[cw_GetBatchInvoiceCustomers] 
+
+	@BatchNo Int,
+
+	@DistMode char(1) = ''
+
+
+
+AS
+
+
+
+--2/28/2022 MEC: Created
+
+
+
+--cw_GetBatchInvoiceCustomers 1809, 'E'
+
+
+
+SET NOCOUNT ON;
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+	
+
+	select Distinct 
+
+		case when isnull(BatchInvoiceGroup,0)=0 then BuySell.BuySellNo else BuySell.StatementNo end BuySellNo,
+
+		(case when isnull(BillSheet.BillSheetID,'')<>''  then 1 else 0 end ) as isBillSheet
+
+		, (case when isnull(C.BatchInvoiceGroup,0)=0  then 0 else 1 end ) AS isGrouped,
+
+		InvoiceBatch.CpID, C.DistributionMode,C.CompanyNm, InvoiceBatch.EmailSent,
+
+		isnull(Contact.Email,'') as Email,
+
+		ISNULL(TestEmail,'') as TestEmail
+
+	FROM  BuySell WITH (nolock) 
+
+	INNER JOIN InvoiceBatch WITH (nolock) on InvoiceBatch.BuySellNo = BuySell.BuySellNo
+
+	INNER JOIN CounterParty C on C.CpID = InvoiceBatch.CpID
+
+	LEFT JOIN Contact  on C.CpID = Contact.CpID AND IsNull(Contact.IsPrimary,0) = 1
+
+	LEFT JOIN BillSheet on  BillSheet.BillSheetID = BuySell.BuySellNo
+
+
+
+	where 
+
+		InvoiceBatch.BatchNo = @BatchNo
+
+		AND (@DistMode = '' OR C.DistributionMode = @DistMode OR (@DistMode = 'E' and C.DistributionMode in ('E', 'B')))
+
+		AND IsNull(InvoiceBatch.EmailSent, 0) = 0
+
+
+

@@ -1,0 +1,25 @@
+
+Create  Procedure [dbo].[cw_GetBookingPickupReturns]  AS 
+
+
+
+-- MEC: 5/6/2015 
+
+
+
+SET NOCOUNT ON
+
+    
+
+    
+
+SELECT 
+
+	noteTitle As PickupReturnID,
+
+	noteDescription as PickupReturn
+
+FROM BookSheetInstructions WITH(NOLOCK)
+
+Order By noteTitle
+

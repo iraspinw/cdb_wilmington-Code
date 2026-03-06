@@ -1,0 +1,18 @@
+
+
+
+
+CREATE PROC [dbo].[cw_GetMeltIndex] as
+
+--06/03/2016 MN: Created for cieTrade.net
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	SELECT rtrim(MeltIndex) As MeltIndex FROM MeltIndex
+
+
+

@@ -1,0 +1,48 @@
+
+
+CREATE proc [dbo].[cw_GetConvertingAttachments] 
+
+	@JobNo varchar(12)
+
+
+
+as
+
+
+
+SELECT 
+
+	DocID As [-Hidden-DocumentID], 
+
+	desc1 As [Description], 
+
+	--Docname, 
+
+	'IMG' As [-Hidden-Type], 
+
+	FileExt As [-Hidden-FileExt],
+
+	createddt as 'Created',
+
+	userdef.UserNm as 'User'
+
+from documentimage with (NOLOCK) 
+
+			left JOIN userdef ON DocumentImage.Createdby = userdef.UserID 
+
+where 
+
+	reftype='C' 
+
+	and refid=@JobNo
+
+	
+
+--cw_GetAllocationAttachments '1'
+
+
+
+
+
+
+

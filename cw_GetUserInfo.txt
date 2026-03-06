@@ -1,0 +1,140 @@
+CREATE PROCEDURE [dbo].[cw_GetUserInfo] @UserID varchar(50)
+
+AS
+
+BEGIN
+
+--08/26/2014 MEC: Copied from q_GetUserInfo for cieTrade.net
+
+--07/24/2015 MCM: Modified to work with master user table
+
+--17/04/2019 Alex: returned UserDef.FirstName,UserDef.LastName,UserDef.PhoneNo
+
+--08/04/2019 Alex: returned SignatureImage, SignatureSz
+
+--08/04/2019 Alex: returned SignatureSO, SignaturePO,SignatureCont,SignatureDeliveryNote,SignatureSalesContact,SignaturePriceconfirmationPO,SignaturePriceconfirmationSO,SignatureBillOfExchamge,SignatureProforma,SignatureForm9
+
+
+
+	SET NOCOUNT ON;
+
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+	--Select UserID,UserNm,[Password],Active,EmailAddress
+
+	--	From cieTrade_Sys.dbo.Users
+
+ --           Where UserID = @UserID
+
+
+
+	SELECT
+
+		u.UserID,
+
+		u.UserName,
+
+		db.DBUserID,
+
+		u.UserPassword,
+
+		u.UserEmail,
+
+		u.LastDB,
+
+		--s.ServerNm,
+
+		d.DBNm,
+
+		u.cieTradeUserID,
+
+		d.[DBID],
+
+		ud.AllowLogin AS Active,
+
+		LoginID,
+
+		ud.RoleID,
+
+		ud.DefaultDept,
+
+		ud.DefaultWarehouse,
+
+		SendAlerts,
+
+		TaskSummary,
+
+		ud.DefaultUOM,
+
+		TimeZoneNm,
+
+		LockDept,
+
+		InttraUser.FirstName,
+
+		InttraUser.LastName,
+
+		InttraUser.PhoneNo,
+
+		ud.SignatureImage,
+
+		ud.SignatureSz,
+
+
+
+		ud.SignatureSO,
+
+		ud.SignaturePO,
+
+		ud.SignatureCont,
+
+		ud.SignatureDeliveryNote,
+
+		ud.SignatureSalesContact,
+
+		ud.SignaturePriceconfirmationPO,
+
+		ud.SignaturePriceconfirmationSO,
+
+		ud.SignatureBillOfExchamge,
+
+		ud.SignatureProforma,
+
+		ud.SignatureForm9,
+
+		u.IsLocked,
+
+		isnull(ud.Theme,'Light') as Theme
+
+	FROM
+
+		[CIE-SQLPROD01].[cieXChange].[dbo].[Database] d
+
+		INNER JOIN [CIE-SQLPROD01].[cieXChange].[dbo].DBUser db ON d.[DBID] = db.[DBID] 
+
+		--INNER JOIN [CIE-SQLPROD01].[cieXChange].[dbo].[Server] s ON d.ServerID = s.ServerID
+
+		INNER JOIN [CIE-SQLPROD01].[cieXChange].[dbo].[User] u ON db.UserID = u.UserID
+
+		INNER JOIN [CIE-SQLPROD01].[cieXChange].[dbo].UserApp ua ON db.UserID = ua.UserID
+
+		INNER JOIN UserDef ud ON ud.UserID = u.cieTradeUserID
+
+		left join InttraUser on InttraUser.Fk_UserDefID =ud.UserID
+
+	WHERE
+
+		u.UserID = @UserID
+
+END
+
+
+
+
+
+
+
+
+
