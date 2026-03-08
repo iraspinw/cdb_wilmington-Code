@@ -80,7 +80,9 @@ INSERT INTO @Data ([FileName])
 
 	INNER JOIN sys.objects o ON m.object_id=o.object_id
 
-	where left(name,6) in ('cw_sal','rptPur', 'update', 'export', 'cw_get')
+	where 
+
+	o.type = 'P' and left(name,6) in ('cw_sal','rptPur', 'update', 'export', 'cw_get')
 
 	order by [name];
 
@@ -198,3 +200,8 @@ END
 
 
 
+-- select top(10) * from sys.sql_modules
+
+
+
+-- select top(10) * from sys.objects
