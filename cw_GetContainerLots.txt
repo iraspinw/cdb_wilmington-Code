@@ -1,0 +1,3 @@
+create proc [dbo].[cw_GetContainerLots] @ContainerID int as
+
+select lotno from ContainerContents where containerid = @ContainerID
