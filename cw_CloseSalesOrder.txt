@@ -1,0 +1,38 @@
+
+
+
+
+Create PROC [dbo].[cw_CloseSalesOrder] 
+
+
+
+	@PONumber char(15), 
+
+	@UserID char(10)
+
+
+
+AS
+
+
+
+SET NOCOUNT ON 
+
+
+
+--03/31/2011 DSH Created for "Close Linked Order" feature on PO.
+
+--04/11/2011 MCM: Added event log
+
+--09/26/2011 RS: @PONumber char(15) from char(12)
+
+--09/17/2015 MEC: copied for cieTrade.net
+
+
+
+	UPDATE PO SET Status = 'CLOSED' WHERE PONumber = @PONumber 
+
+
+
+	EXEC cw_LogEvent @UserID, 'PO', @PONumber, 'EDIT', 'Sales Order', 'CLOSED'
+

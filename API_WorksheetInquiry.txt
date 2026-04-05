@@ -1,0 +1,201 @@
+
+
+-- [dbo].[API_WorksheetInquiry] '3/1/2025', 'I', ''
+
+
+
+CREATE proc [dbo].[API_WorksheetInquiry]
+
+	@ShippingDT varchar(50) = '',
+
+	@Status varchar(10) = '',
+
+	@TradeType varchar(10) = ''
+
+as 
+
+begin
+
+set nocount on
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+create table #Worksheet 
+
+( 
+
+	BuysellNo varchar(25),
+
+	TradeType varchar(30),
+
+	ShippingDate Datetime,
+
+	[Status] char,
+
+	PostDate datetime,
+
+	Customer varchar(100),
+
+	ShipToLocation varchar(128),
+
+	Supplier varchar(128),
+
+	ShipFromLocation varchar(128),
+
+	FreightCarrier varchar(128),
+
+	FreightRate varchar(20),
+
+	ReleaseNumber varchar(100),
+
+	PickupNumber varchar(100),
+
+	---financial informaiton, function values need to collect these values in a table and sum them all
+
+	Sales money,
+
+	Chargebacks money,
+
+	TotalSale money,
+
+	Purchases money,
+
+	Expenses money,
+
+	TotalCosts money,
+
+	SalesAdj money,
+
+	PurchaseAdj money,
+
+	GrossProfit money,
+
+	SalesTaxAmnt money,
+
+
+
+	--can grab these from the buysell or GPLedger
+
+	SalesCurrency varchar(5), --there might be a better value for these.
+
+	ExchangeRate varchar(25), --there is definetly a better datatype for these.
+
+	PurchaseFxRate  varchar(25),
+
+	FxInvoiceAmount money,
+
+	FxSalesTaxAmt money,
+
+	PurchaseCurrency varchar(5)
+
+
+
+)
+
+
+
+
+
+insert into #Worksheet
+
+select BUYSELL.BuySellNo,
+
+	buysell.TradeType,
+
+	BuySell.ShippingDt,
+
+	BuySell.[status],
+
+	buysell.InvoiceDt,
+
+	cust.CompanyNm as Customer,
+
+	BuySell.ShipToID,
+
+	vendor.CompanyNm as Supplier,
+
+	BuySell.ShipFromID,
+
+	freight.CompanyNm as freightCarrier,
+
+	buysell.PFreightChg as freightRate,
+
+	buysell.RelNo as ReleaseNumber,
+
+	buysell.PickupNo as PickupNumber,
+
+	--sales
+
+	buysell.SalesAmt  as Sales,
+
+	buysell.SFreightChg as Chargebacks,	
+
+	buysell.SalesAmt + buysell.SFreightChg as TotalSale, 
+
+	buysell.PSupplierCost as Purchases,
+
+	buysell.PFreightChg as Expenses,	
+
+	buysell.PSupplierCost + buysell.PFreightChg as TotalCosts,	
+
+	buysell.SAdjustment as SalesAdj,
+
+	buysell.PAdjustment as PurchaseAdj,
+
+	(select sum(grossprofit) from GPLedger where GPLedger.BuySellNo = BuySell.BuySellNo) as GrossProfit,
+
+	buysell.SalesTaxAmt as SalesTaxAmnt, 
+
+
+
+	-- currency and FX info
+
+	buysell.CurrencyCd as SalesCurrency,
+
+	buysell.FXRate as ExchangeRate,
+
+	buysell.PFxRate as [Purchase FxRate],
+
+	buysell.FxInvoiceAmt as FxInvoice,
+
+	buysell.FXSalesTaxAmt as [FxTaxAmt],
+
+	buysell.PCurrencyCd as purchaseCurrency
+
+
+
+FROM BuySell 
+
+left join CounterParty freight on buysell.RefFreightCarrier = freight.CpID
+
+left join CounterParty Cust on buysell.CustID = cust.CpID
+
+left join CounterParty vendor on buysell.VendorID = vendor.CpID
+
+WHERE
+
+		(BUYSELL.ShippingDt >= @ShippingDT)
+
+		AND (@Status = '' OR buysell.[status] = @Status)
+
+		and (@TradeType = '' OR buysell.TradeType = @TradeType)
+
+
+
+select * from #Worksheet 
+
+
+
+-- select * from #Worksheet where buysellno = '102433'
+
+
+
+end
+
+
+
+
+
+-- select sum(grossprofit) from GPLedger where GPLedger.BuySellNo = '102433'

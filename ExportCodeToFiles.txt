@@ -82,7 +82,15 @@ INSERT INTO @Data ([FileName])
 
 	where 
 
-	o.type = 'P' and left(name,6) in ('cw_sal','rptPur', 'update', 'export', 'cw_get')
+    o.type = 'P' and 
+
+
+
+    --(left(name,6) in ('rptPur', 'update', 'export') or left(name,3) in ('cw_'))
+
+    --4/5/26
+
+	o.type = 'P' and left(name,6) in ('cw_sal','rptPur', 'update', 'export', 'cw_get', 'cw_clo','api_tr', 'api_wo')
 
 	order by [name];
 

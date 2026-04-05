@@ -1,0 +1,2714 @@
+CREATE PROC [dbo].[cw_ClosingAdjLedger_Default_test] @dt1 as datetime, @dt2 as datetime, @CoID as char(2),  @UsePostingDt BIT, @DoColumnDefOnly bit, @DetailReportTag VARCHAR(100) = '' AS  
+
+SET NOCOUNT ON
+
+SET ANSI_WARNINGS OFF
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--11/30/2010 DSH Created
+
+--01/30/2012 DSH Revised.
+
+--09/14/2012 DSH Added Group By Expenses Support & Sales Totals
+
+--09/19/2012 DSH Added UsePostingDt filter.
+
+--09/21/2012 DSH Added AR db/cr subtotals.
+
+--09/24/2012 DSH Handling of missing tax codes.
+
+--11/20/2012 DSH Corrected rounding issue when report by product expense account.
+
+--01/11/2013 DSH Updated to support transaction line item "drill down" feature.
+
+--03/21/2013 EMR: Fixed Divided By Zero Error in *PERFORM ALLOCATION** section
+
+--05/06/2013 DSH Revised to shopw negative sales as a credit item.
+
+--11/06/2013 DSH corrected break out of sales tax accounts on adjustments.
+
+--12/03/2013 DSH Correct error inlinking to sales tax table for adjustment sales taxes.
+
+--04/03/2014 DSH Corrected Sales section to correctly handle nit using grade distribution.
+
+--05/22/2014 DSH For Inventory: Swap Debit & Credit columns for negative values. 
+
+--11/25/2014 DSH Updated to assign expense offsets to an OFFSET account.
+
+--01/05/2015 DSH Minor fix to avoid chargebacks on flipped worksheets from being classified as OFFSETS
+
+--01/21/2015 RS: SET GLAccount.Name = "Unassigned" instead of blank when @DoExpensesByProduct = 1
+
+--03/05/2015 DSH: Added support to create Plant Inventory accrual by Dept.  Commented out logic to get values from change in Plant Buckets.
+
+--10/13/2015 BF: removed reference to payables.glacct... pulling from grade table instead
+
+--01/25/2016 DSH Corrected for AR Accrual Account
+
+--02/09/2016 DSH Bug including unposted Ap Adj and corrected num sign on sales totals
+
+--06/29/2016 DSH Fixed Sales Chargeback GL account
+
+--10/25/2016 DSH Fixed error with Inventory GL Offset line.
+
+--05/01/2017 DSH Corrected DetailTag for Inventory
+
+--06/16/2017 DSH Corrected reporting for Expense Allocations & Converting
+
+--07/24/2017 DSH Fixed issues with inventory accrual reporting incorrectly.
+
+--07/27/2017 DSH Added column on drill-down report for transaction type.
+
+--09/19/2017 DSH Made corrections to include adjustments on Converting JObs & Expense Allocations
+
+--10/03/2018 DSH Corrected Reporting of A/R Account for "accrual" vs "Accounts Receivable"
+
+--10/13/2018 DSH Corrected NULL value return setting for AR Module
+
+--04/15/2021 DSH Added back preposted sales adjustments section.
+
+--05/03/2021 DSH Corrected problem with reporting sales taxes on sales adjustments
+
+--05/26/2021 DSH Added corection for Alert 1 for converting jobs.
+
+--01/27/2022 DSH Added support in A/P Tax Payable for taxes paid wuing zero tax rate codes (Price & Pierce)
+
+--02/25/2022 DSH Fixed Inventory Accrual Section.
+
+--03/09/2022 DSH Updated Inventory Accrual SALES section to get data from worksheet.
+
+--07/29/2022 DSH: Adsded Inventory Adjustments (WRITE-OFFS)
+
+--08/29/2022 DSH: Added support for Expense Allocatiosn on CLosing Adjustments
+
+--10/21/2022 DSH: Correction to includ ebank fees from unapplied cash
+
+--11/29/2022 DN: Added Customer and Supplier to report
+
+
+
+    CREATE TABLE #PayableTrueUp(
+
+		PayableID int,
+
+		BuySellNo char(12),
+
+		ActualAmt Money,
+
+		CalcAmt Money,
+
+		Variance Money				
+
+	)        
+
+	
+
+	   CREATE TABLE #PayablesToAlloc(
+
+        BuySellNo char(15),
+
+        PayableID int,
+
+        TradeType char(20),
+
+        PayableAmt money              
+
+    )
+
+    CREATE INDEX #IE1_PayablesToAlloc ON #PayablesToAlloc(BuySellNo)
+
+
+
+    CREATE TABLE #PayableProducts(
+
+        ItemID int identity(1000,1),
+
+        PayableID int,        
+
+        BuySellNo char(12),        
+
+        Seq INT,
+
+        TradeType char(20),
+
+        GradeID char(15),
+
+        GLAccountNm char(30),
+
+        GLAcct char(12),
+
+        Cost DECIMAL(22,12),
+
+        WksCost Money,
+
+        PayableAmt Money,
+
+        RptCost Money        
+
+    ) 
+
+    
+
+        CREATE TABLE #PayableWksCost(
+
+		PayableID int,
+
+		BuySellNo char(12),
+
+		WksCost Money
+
+	)    
+
+	
+
+		CREATE TABLE #ICTrades(
+
+			ICType CHAR(30),
+
+			GLAccountNm CHAR(30),
+
+			GLAcctNo CHAR(12),
+
+			Amount MONEY
+
+		)
+
+	
+
+
+
+    -- GET FUNCTIONAL CURRENCY
+
+  Declare @SysCurrency char(3)
+
+    SELECT @SysCurrency = CurrCode from systeminfo
+
+
+
+
+
+    
+
+    -- GET ACCOUNTING SYSTEM.
+
+    Declare @AccountingSystem varchar(30)
+
+    SELECT TOP 1 @AccountingSystem = AccountingSystem from AccountingCompany WHERE AccountingSystem IS NOT NULL AND AccountingSystem <> '(NONE)'
+
+
+
+	/* DEFINE REPORT COLUMNS SECTION. */
+
+	IF @DoColumnDefOnly = 1 BEGIN
+
+		CREATE TABLE #ReportDef(
+
+			ColName char(25),
+
+			ColAlign char(1),
+
+			ColWidth int,
+
+			ColDataType char(10),
+
+			ColNumFormat char(15)
+
+		)
+
+		
+
+		IF @DetailReportTag = '' BEGIN
+
+			INSERT #ReportDef SELECT 'Class','L',1350,'TEXT',''
+
+			INSERT #ReportDef SELECT 'Group','L',1350,'TEXT',''
+
+			INSERT #ReportDef SELECT 'Account Name','L',4100,'TEXT',''
+
+			INSERT #ReportDef SELECT 'GL Acct','L',1100,'TEXT',''
+
+			INSERT #ReportDef SELECT 'Segment','L',1100,'TEXT',''
+
+			INSERT #ReportDef SELECT 'Debit','R',1500,'NUM','#,###,##0.00'
+
+			INSERT #ReportDef SELECT 'Credit','R',1500,'NUM','#,###,##0.00'
+
+			
+
+			SELECT ColName, ColAlign, ColWidth, ColDataType, ColNumFormat FROM #ReportDef
+
+			RETURN
+
+		END		
+
+		
+
+		
+
+		--Default Drill Down Report. 
+
+		IF @DetailReportTag <> '' BEGIN
+
+			INSERT #ReportDef SELECT 'Worksheet No.','L',1500,'TEXT',''
+
+			INSERT #ReportDef SELECT 'Posting Date','L',1500,'TEXT',''
+
+			INSERT #ReportDef SELECT 'Description','L',3200,'TEXT',''
+
+			INSERT #ReportDef SELECT 'Acct No.','L',1100,'TEXT',''									
+
+			INSERT #ReportDef SELECT 'Amount','R',1500,'NUM','#0.00'			
+
+			
+
+			SELECT ColName, ColAlign, ColWidth, ColDataType, ColNumFormat FROM #ReportDef
+
+			RETURN
+
+		END		
+
+	END	
+
+		
+
+/*
+
+CLOSING PROCEDURES
+
+q_Closing_1a
+
+q_Closing_2
+
+q_Closing_3
+
+q_Closing_PrePosted
+
+q_Closing_PrePostedBankFees
+
+q_Closing_PrePostedInterestChg
+
+q_ExpenseDistributionReport
+
+q_Closing_InterCompany
+
+q_TaxDistributionReport
+
+q_InventoryAccrualReport
+
+q_Closing_FxAdjDetails
+
+*/
+
+
+
+
+
+	DECLARE @SalesAcct char(12)
+
+	DECLARE @SalesDiscAcct char(12)
+
+	DECLARE @ARAcct char(12)
+
+	DECLARE @ARAccrualAC char(12)
+
+	DECLARE @APAcct char(12)
+
+	DECLARE @PurchAcct char(12)
+
+	DECLARE @Inventory char(12)
+
+	DECLARE @InventoryPurchase char(12)
+
+	DECLARE @BankFeeAc char(12)
+
+	DECLARE @InterestFeeAc char(12)
+
+	DECLARE @UnappledCashAc char(12)
+
+	DECLARE @APAccrualAC char(12)
+
+	DECLARE @CommExpAcct char(12)	
+
+	DECLARE @OffsetAcct  char(12)	
+
+	
+
+	
+
+	SELECT TOP 1 @SalesAcct = GLAcct from glaccount where cat = 'SALES'
+
+	SELECT TOP 1 @SalesDiscAcct = GLAcct from glaccount where cat = 'SALES DISCOUNT'
+
+	SELECT TOP 1 @ARAcct = GLAcct from glaccount where cat = 'A/R'
+
+	SELECT TOP 1 @APAcct = GLAcct from glaccount where cat = 'A/P'
+
+	SELECT TOP 1 @PurchAcct = GLAcct from glaccount where cat = 'PURCHASES'
+
+	SELECT TOP 1 @CommExpAcct = GLAcct from glaccount where cat = 'COMM EXPENSE'
+
+	SELECT TOP 1 @Inventory = GLAcct from glaccount where cat = 'INVENTORY'
+
+	SELECT TOP 1 @InventoryPurchase = GLAcct from glaccount where cat = 'INVENTORY TRADE'
+
+	SELECT TOP 1 @BankFeeAc = GLAcct from glaccount where cat = 'BANK FEES'
+
+	SELECT TOP 1 @InterestFeeAc = GLAcct from glaccount where cat = 'INTEREST CHARGE'
+
+	SELECT TOP 1 @UnappledCashAc= GLAcct from glaccount where cat = 'UNAPPLIED CASH'	
+
+	SELECT TOP 1 @APAccrualAC= GLAcct from glaccount where cat = 'A/P ACCRUAL'	
+
+	SELECT TOP 1 @ARAccrualAC= GLAcct from glaccount where cat = 'A/R ACCRUAL'		
+
+	SELECT TOP 1 @OffsetAcct = GLAcct from glaccount where cat = 'OFFSET'	 
+
+	IF @OffsetAcct = '' SET @OffsetAcct = '*OFFSET'
+
+	
+
+
+
+	--CHECK FOR A/R MODULE
+
+	DECLARE @IsARModule BIT
+
+	DECLARE @AROffsetAc CHAR(12)
+
+	DECLARE @AROffsetAcNm CHAR(45)
+
+	SET @IsARModule = 0
+
+	SELECT @IsARModule = ISNULL(EnableCieTradeAR,0) FROM systeminfo WHERE ID = '00'
+
+	IF @IsARModule = 0 BEGIN
+
+		SET @AROffsetAc = @ARAccrualAC
+
+		SET @AROffsetAcNm = 'Accrued Sales'
+
+	END
+
+	ELSE BEGIN
+
+		SET @AROffsetAc = @ARAcct
+
+		SET @AROffsetAcNm = 'Accounts Receivable'
+
+	END
+
+
+
+
+
+
+
+		
+
+
+
+
+
+
+
+	
+
+	IF @InventoryPurchase IS NULL SET @InventoryPurchase=@PurchAcct
+
+	
+
+		
+
+		
+
+ 
+
+
+
+
+
+    CREATE TABLE #LedgerDetail(
+
+		SectionSeq int,
+
+		AcctClass Char(15),
+
+		AcctGrp Char(15),
+
+		AcctGrpOrd int, 								
+
+		TradeType varchar(25),
+
+		AcctNo varchar(20), 
+
+		AcctNm varchar(65),		
+
+		AltAcctNm varchar(65),
+
+		TranNo varchar(20),
+
+		TranDt datetime,		
+
+		DbCr char(2),
+
+		DebitAmt Money,
+
+		CreditAmt Money,
+
+		HCAmount Money,
+
+		Reference varchar(20),
+
+		IsTotalLn BIT,
+
+		ActionTag VARCHAR(130),
+
+		IsOffsetTx SMALLINT DEFAULT 0,
+
+		ExpItemID INT,
+
+		TranFormType CHAR(10),
+
+		CustID varchar(10),
+
+		SuppID varchar(10)
+
+	)
+
+
+
+	--CREATE INDEX #IE_LedgerDetail ON #LedgerDetail(CurCode, AcctGrp, AcctNm, AcctNo, Dept)
+
+
+
+    CREATE TABLE #LedgerDrillDown(		
+
+		TransNo varchar(20),
+
+		TranType CHAR(20),
+
+		TransDt datetime,
+
+		AcctNm varchar(45),
+
+		AcctNo varchar(20), 		
+
+		HCAmount Money,
+
+		TranFormType CHAR(10),
+
+		CustID varchar(10),
+
+		suppID varchar(10)
+
+	)
+
+
+
+
+
+
+
+
+
+
+
+	/* A/R SECTION [q_Closing_1a] */  
+
+	----------------------------------------------------------------------------------------=    
+
+	
+
+	
+
+	----Accounts Receivable.	
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag,CustID,SuppID) 
+
+    SELECT 
+
+		1,'AR','SALES',1,			
+
+		COALESCE(BuySell.TradeType,''),			
+
+		@AROffsetAc,			--@ARAccrualAC, --@ARAcct, 
+
+		@AROffsetAcNm,			--'Accrued Sales', 
+
+		SUM(round(SalesAmt+SFreightChg+COALESCE(SalesTaxAmt,0),2)),'TOTAL',buysell.CustID,buysell.VendorID 		
+
+	FROM BuySell WITH(NOLOCK) 
+
+    WHERE InvoiceDt >= @dt1 and InvoiceDt <= @dt2 
+
+		AND (CustID <> '(INV)'  AND CustID <> '{C}' AND CustID <> '(PLANT)') 
+
+		AND Status = 'I'  and (IsAgency IS NUlL OR IsAgency <> 1)
+
+		AND (  (@CoID = '')  OR (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00')) )
+
+	Group By  BuySell.TradeType, buysell.CustID,buysell.VendorID
+
+	order by TradeType	
+
+	
+
+	
+
+	--Product Sales.
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,TranFormType,CustID,SuppID) 
+
+	SELECT 
+
+		1,'AR','SALES',2,			
+
+		COALESCE(BuySell.TradeType,''),			
+
+		COALESCE(GLAccount.GLAcct,@SalesAcct),   
+
+		COALESCE(GLAccount.Name,'Sales (Default)'), 
+
+		BuySell.BuySellNo,
+
+		BuySell.InvoiceDt,
+
+		Round(SAmount*-1,2),
+
+		CASE WHEN BuySell.VendorID = '(INV)' THEN 'WKI' ELSE 'WKS' END,
+
+		buysell.CustID,buysell.VendorID
+
+	FROM BuySell WITH(NOLOCK) 
+
+		INNER JOIN wksDetail WITH(NOLOCK) ON BuySell.BuySellNo = wksDetail.BuySellNo		
+
+		INNER JOIN Grade WITH(NOLOCK) ON Grade.GradeID = wksDetail.GradeID 
+
+		LEFT JOIN GLAccount WITH(NOLOCK) ON GLAccount.GLAcct = Grade.GLAcct
+
+	WHERE BuySell.InvoiceDt >= @dt1 and BuySell.InvoiceDt <= @dt2 and (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}'  AND CustID <> '(PLANT)')
+
+		And Status = 'I'  and (IsAgency IS NUlL OR IsAgency <> 1)
+
+		AND (  (@CoID = '')  OR (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00')) )
+
+
+
+	
+
+
+
+	
+
+	--Sales Chargebacks.
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,AltAcctNm,HCAmount,IsOffsetTx,ExpItemID,TranFormType,CustID,SuppID) 
+
+    SELECT 
+
+		1,'AR','SALES',2,  --3	
+
+		COALESCE(BuySell.TradeType,''),	
+
+		WksDelivery.SalesGLAcct,
+
+		ISNULL('Sales-' + SalesGL.Name,'(SALES-CHGBACK)'),		
+
+		BuySell.BuySellNo,
+
+		BuySell.InvoiceDt,
+
+		SalesGL.Name,		
+
+		round(ChgToCustAmt*-1,2),
+
+		CASE WHEN UPPER(BuySell.VendorID) <> '(OTHER)' THEN 0 ELSE  -1 END IsOffsetTx,
+
+		WksDelivery.ItemID,
+
+		CASE WHEN BuySell.VendorID = '(INV)' THEN 'WKI' ELSE 'WKS' END,
+
+		buysell.CustID,buysell.VendorID
+
+    FROM WksDelivery WITH(NOLOCK) 
+
+		INNER JOIN BuySell WITH(NOLOCK) On WKSDelivery.BuySellNo = BuySell.BuySellNo        
+
+        LEFT JOIN GLAccount SalesGL WITH(NOLOCK) ON WKSDelivery.Salesglacct = SalesGL.glacct
+
+    WHERE InvoiceDt >= @dt1 and InvoiceDt <= @dt2 
+
+        AND (CustID <> '(INV)'  AND CustID <> '{C}'  AND CustID <> '(PLANT)')  
+
+        AND Status = 'I'  
+
+		and (IsAgency IS NUlL OR IsAgency <> 1)
+
+        AND ChgToCustAmt <> 0
+
+        AND ((@CoID = '')  OR (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00')))
+
+
+
+
+
+	UPDATE #LedgerDetail SET AcctNm = AltAcctNm WHERE AltAcctNm IS NOT NULL 
+
+
+
+
+
+
+
+
+
+
+
+	----(Sales Taxes)
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,TranFormType,CustID,SuppID) 
+
+	SELECT 
+
+		1,'AR','SALES',2,	--4	
+
+        COALESCE(BuySell.TradeType,''),	
+
+		SalesTax.SalesTaxAcct,								
+
+		'Sales-Tax '+SalesTax.TaxDescription,   
+
+		BuySell.BuySellNo,
+
+		BuySell.InvoiceDt,		            
+
+        (COALESCE(TaxAmount,0)*-1),
+
+		CASE WHEN BuySell.VendorID = '(INV)' THEN 'WKI' ELSE 'WKS' END,
+
+		buysell.CustID,buysell.VendorID
+
+    FROM BuySell WITH(NOLOCK)
+
+    LEFT JOIN wksSalesTax WITH(NOLOCK)  ON wksSalesTax.BuySellNo = BuySell.BuySellNo
+
+    LEFT JOIN SalesTax WITH(NOLOCK) ON SalesTax.SalesTaxID = wksSalesTax.SalesTaxID		    
+
+    WHERE 
+
+    BuySell.InvoiceDt >= @dt1 and BuySell.InvoiceDt <= @dt2 
+
+    and (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}'  AND CustID <> '(PLANT)')
+
+    AND wksSalesTax.Source = 'B'
+
+    And Status = 'I' 
+
+    and COALESCE(IsAgency,0) <> 1
+
+    AND SalesTaxAmt <> 0 
+
+    AND (  (@CoID = '')  OR (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00')) )
+
+
+
+
+
+
+
+	
+
+	-- TAG SALES-CHARGEBACK ITEMS THAT ARE AP OFFSETS
+
+	------------------------------------------------------
+
+	UPDATE #LedgerDetail SET AcctNo = @OffsetAcct, AcctNm = 'Offset', #LedgerDetail.IsOffsetTx=1
+
+	FROM #LedgerDetail INNER JOIN Payables ON #LedgerDetail.ExpItemID = Payables.ItemID 
+
+	WHERE #LedgerDetail.IsOffsetTx = -1 AND ItemIDSource = 'D' AND COALESCE(ChgBackWks,'') <> ''
+
+	------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+	--/* NET SALES TOTALS */
+
+	------------------------------------------------------------------------------------------=    
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ISTotalLn,ActionTag) 
+
+    SELECT 1,'AR','SALES-TOTALS',5,'','',' ',SUM((HcAmount*-1)),1,'TOTAL'
+
+	    FROM #LedgerDetail WHERE AcctCLass = 'AR' AND (AcctNo <> @AROffsetAc) AND Coalesce(ISTotalLn,0) <> 1 
+
+	    
+
+
+
+
+
+
+
+
+
+
+
+	--/* SALES CREDIT MEMOS */
+
+	------------------------------------------------------------------------------------------=    
+
+	--Sales Memo.
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,TranFormType,CustID,SuppID) 
+
+    SELECT 
+
+		2,'AR','AR-ADJ-CR',1,		
+
+		BuySell.TradeType,
+
+		GPLedger.GLAcct, 
+
+		dbo.TitleCase(GLAccount.[Name]),		
+
+		GPLedger.BuySellNo,
+
+		GPLedger.TradeDt,
+
+    	GrossProfit*-1,
+
+		CASE WHEN BuySell.VendorID = '(INV)' THEN 'WKI' ELSE 'WKS' END,
+
+		buysell.CustID,buysell.VendorID
+
+	FROM GPLedger WITH(NOLOCK) 
+
+	INNER JOIN Buysell WITH(NOLOCK) ON GpLedger.BuySellno = BuySell.BuySellNo 
+
+	INNER JOIN GLAccount WITH(NOLOCK) ON GpLedger.glacct = GLaccount.GLacct  
+
+	WHERE AdjType = 'S' 
+
+		And GrossProfit < 0 
+
+		and TradeDt >= @dt1 and TradeDt <= @dt2 
+
+		AND (Source <> 'D' AND Source <> 'F' AND Source <> 'N') 
+
+		AND AdjPosted = 'Y' 
+
+	    AND (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00') OR @COID = '')
+
+
+
+
+
+	---- Tax Adjustment
+
+   INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,TranFormType,CustID,SuppID) 
+
+   SELECT 
+
+	    2,'AR','AR-ADJ-CR',2,	
+
+	    BuySell.TradeType,	
+
+	    Coalesce(SalesTaxAcct,''),
+
+	    'Sales-Tax '+COALESCE(SalesTax.TaxDescription,''),
+
+		GPLedger.BuySellNo,
+
+		GPLedger.TradeDt,	
+
+		(COALESCE(TaxAmount,0)*-1),                      
+
+	    CASE WHEN BuySell.VendorID = '(INV)' THEN 'WKI' ELSE 'WKS' END,
+
+		buysell.CustID,buysell.VendorID
+
+		FROM GPLedger WITH(NOLOCK) INNER JOIN Buysell WITH(NOLOCK) ON GpLedger.BuySellno = BuySell.BuySellNo 
+
+		LEFT JOIN wksSalesTax WITH(NOLOCK)  ON wksSalesTax.LedgerID = GPLedger.LedgerID		
+
+		LEFT JOIN SalesTax WITH(NOLOCK) ON SalesTax.SalesTaxID = wksSalesTax.SalesTaxID		    
+
+	WHERE AdjType = 'S' and TradeDt >= @dt1 and TradeDt <= @dt2 And AdjSalesTaxAmt < 0 
+
+	AND (GPLedger.[Source] <> 'D' AND GPLedger.[Source] <> 'F' AND GPLedger.[Source] <> 'N') 
+
+	AND AdjPosted = 'Y' 
+
+    AND (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00') OR @COID = '')
+
+    AND AdjSalesTaxAmt <> 0 
+
+
+
+
+
+	----(A/R Offset Transaction)
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+	    SELECT 2,'AR',AcctGrp,3,TradeType,@AROffsetAc,@AROffsetAcNm,SUM(HcAmount)*-1,'TOTAL'
+
+	FROM #LedgerDetail WHERE AcctGrp = 'AR-ADJ-CR'
+
+	    GROUP BY AcctGrp, TradeType
+
+
+
+	----Total Sales Credits	
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ISTotalLn,ActionTag) 
+
+        SELECT 2,'AR','AR-ADJ-CR',4,'','','Totals ',SUM(HcAmount),1,'TOTAL'
+
+	 FROM #LedgerDetail WHERE AcctGrp = 'AR-ADJ-CR' AND (AcctNo <> @AROffsetAc)
+
+
+
+
+
+
+
+
+
+
+
+	--/* SALES DEBIT MEMOS */
+
+	------------------------------------------------------------------------------------------=    
+
+	----Sales Adjustment.
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,TranFormType,CustID,SuppID) 
+
+    SELECT 
+
+	    3,'AR','AR-ADJ-DB',2,	
+
+		BuySell.TradeType,		    
+
+	    GPLedger.GLAcct,
+
+	    dbo.TitleCase(GLAccount.[Name]),	
+
+		GPLedger.BuySellNo,
+
+		GPLedger.TradeDt,	    		
+
+		GrossProfit*-1,
+
+		CASE WHEN BuySell.VendorID = '(INV)' THEN 'WKI' ELSE 'WKS' END,
+
+		buysell.CustID,buysell.VendorID
+
+		FROM GPLedger WITH(NOLOCK) INNER JOIN Buysell WITH(NOLOCK) ON GpLedger.BuySellno = BuySell.BuySellNo 
+
+		INNER JOIN COUNTERPARTY WITH(NOLOCK) ON Buysell.CustID = Counterparty.CPID
+
+		INNER JOIN CompanyInfo Dept WITH(NOLOCK) ON Buysell.COID = Dept.COID
+
+		INNER JOIN GLAccount WITH(NOLOCK) ON GpLedger.glacct = GLaccount.GLacct  
+
+		WHERE AdjType = 'S' and TradeDt >= @dt1 and TradeDt <= @dt2 And GrossProfit > 0 
+
+		AND (Source <> 'D' AND Source <> 'F' AND Source <> 'N') 
+
+		AND AdjPosted = 'Y' 
+
+	    AND (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00') OR @COID = '')
+
+	
+
+	---- Tax Adjustment
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,TranFormType,CustID,SuppID) 
+
+    SELECT 
+
+		3,'AR','AR-ADJ-DB',3,	
+
+		BuySell.TradeType,	
+
+	  Coalesce(SalesTaxAcct,''),
+
+	    'Sales-Tax '+COALESCE(SalesTax.TaxDescription,''),	
+
+		GPLedger.BuySellNo,
+
+		GPLedger.TradeDt,	   
+
+		(COALESCE(TaxAmount,0)*-1),
+
+		CASE WHEN BuySell.VendorID = '(INV)' THEN 'WKI' ELSE 'WKS' END,
+
+		buysell.CustID,buysell.VendorID
+
+		FROM GPLedger WITH(NOLOCK) INNER JOIN Buysell WITH(NOLOCK) ON GpLedger.BuySellno = BuySell.BuySellNo 
+
+		LEFT JOIN wksSalesTax WITH(NOLOCK)  ON wksSalesTax.LedgerID = GPLedger.LedgerID
+
+		LEFT JOIN SalesTax WITH(NOLOCK) ON SalesTax.SalesTaxID = wksSalesTax.SalesTaxID				    
+
+		WHERE AdjType = 'S' and TradeDt >= @dt1 and TradeDt <= @dt2 And AdjSalesTaxAmt > 0 
+
+		AND (GPLedger.[Source] <> 'D' AND GPLedger.[Source] <> 'F' AND GPLedger.[Source] <> 'N') 
+
+		AND AdjPosted = 'Y' 
+
+	    AND (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00') OR @COID = '')
+
+	    AND AdjSalesTaxAmt <> 0 
+
+
+
+
+
+
+
+
+
+	----A/R Offset Transaction.
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+        SELECT 3,'AR',AcctGrp,1,TradeType,@AROffsetAc,@AROffsetAcNm,SUM(HcAmount)*-1,'TOTAL'
+
+	    FROM #LedgerDetail WHERE AcctGrp = 'AR-ADJ-DB'
+
+	    GROUP BY AcctGrp, TradeType
+
+
+
+	----Total Sales Debits	
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ISTotalLn,ActionTag) 
+
+        SELECT 3,'AR','AR-ADJ-DB',4,'','','Totals ',SUM(HcAmount),1,'TOTAL'
+
+	    FROM #LedgerDetail WHERE AcctGrp = 'AR-ADJ-DB' AND (AcctNo <> @AROffsetAc)
+
+
+
+
+
+	--/* NET AR TOTALS */
+
+	------------------------------------------------------------------------------------------=    
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,IsTotalLn,ActionTag) 
+
+        SELECT 4,'AR','AR-TOTALS',1,'','',' ',SUM((HcAmount*-1)),1,'TOTAL'
+
+	    FROM #LedgerDetail WHERE AcctCLass = 'AR' AND AcctGrp <> 'SALES-TOTALS' AND  (AcctNo <> @AROffsetAc) AND COALESCE(IsTotalLN,0) <> 1
+
+
+
+
+
+
+
+
+
+	 
+
+	
+
+
+
+
+
+	--/* PrePosted Sales Adjustments */
+
+	------------------------------------------------------------------------------------------=    
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,CustID,SuppID) 
+
+    SELECT 
+
+		4,'POSTED-SALESADJ','',1,	
+
+		BuySell.TradeType,					
+
+		GlAcct,
+
+		AdjReason,
+
+		GPLedger.BuySellNo,
+
+		GPLedger.TradeDt,		
+
+		(GrossProfit*-1),
+
+		buysell.CustID,buysell.VendorID
+
+	FROM GPLedger WITH(NOLOCK) INNER JOIN Buysell WITH(NOLOCK) ON GpLedger.BuySellno = BuySell.BuySellNo
+
+	WHERE AdjType = 'S' and TradeDt >= @dt1 and TradeDt <= @dt2 
+
+		AND (Source = 'D' OR Source = 'F' OR Source = 'N') 
+
+		AND AdjPosted = 'Y' 	
+
+    AND (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00') OR @COID = '')
+
+        
+
+	----AR Offset.
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+        SELECT 4,'POSTED-SALESADJ', '',2,'',@ARAccrualAC, Case When @IsARModule = 0 Then 'Accrued Sales' Else 'Accounts Receivable' End,SUM(HcAmount)*-1,'TOTAL'
+
+	    FROM #LedgerDetail WHERE AcctClass = 'POSTED-SALESADJ'
+
+	    GROUP BY AcctGrp
+
+
+
+	UPDATE #LedgerDetail SET AcctNo=@BankFeeAc Where AcctNm='BANK FEE' AND AcctClass='POSTED-SALESADJ'
+
+	UPDATE #LedgerDetail SET AcctNo=@InterestFeeAc Where AcctNm='INTEREST CHG' AND AcctClass='POSTED-SALESADJ'
+
+	UPDATE #LedgerDetail SET AcctNo=@SalesDiscAcct Where AcctNm='SALES DISCOUNT' AND AcctClass='POSTED-SALESADJ'
+
+
+
+
+
+
+
+--/*
+
+--DSH: Reenabled thsi section APRIL 2021
+
+
+
+	--/* PrePosted Bank Fees (From Unapplied Cash) */
+
+	------------------------------------------------------------------------------------------=    
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount) 
+
+    SELECT 
+
+		5,'POSTED-BANKFEES','',1,	
+
+		Coalesce(GPLedger.MiscTradeType,''),					
+
+		@BankFeeAc,  --GPLedger.GLAcct,
+
+		'Bank Fees', --GLAccount.[Name],
+
+		GPLedger.BuySellNo,
+
+		GPLedger.TradeDt,		
+
+		Round(GrossProfit*-1,2) 
+
+	from GPLedger WITH(NOLOCK) left join GLAccount on GLAccount.GLAcct = GPLedger.GLAcct
+
+	WHERE AdjType = 'B' AND (Source = 'F') 
+
+    AND TradeDt >= @dt1 and TradeDt <= @dt2 AND (@CoID = '' OR GPLEdger.MiscCOID = @CoID) 
+
+    --GROUP BY Coalesce(GPLedger.MiscTradeType,'')
+
+
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount) 
+
+        SELECT 5,'POSTED-BANKFEES','',2,'',@UnappledCashAc,'Unapplied Caah',SUM(HcAmount*-1)
+
+	    FROM #LedgerDetail WHERE AcctClass  = 'POSTED-BANKFEES'
+
+	    GROUP BY AcctGrp, TradeType
+
+
+
+
+
+--	--/* PrePosted Interest Charges (From GP Adj Ledger) */
+
+--	------------------------------------------------------------------------------------------=    
+
+--	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount) 
+
+--    SELECT 
+
+--		6,'POSTED-INTEREST','',2,	
+
+--		Coalesce(GPLedger.MiscTradeType,''),					
+
+--		GPLedger.GLAcct,
+
+--		GLAccount.[Name],
+
+--		GPLedger.BuySellNo,
+
+--		GPLedger.TradeDt,		
+
+--		Round(GrossProfit,2)
+
+--	from GPLedger WITH(NOLOCK) left join GLAccount on GLAccount.GLAcct = GPLedger.GLAcct
+
+--	WHERE AdjType = 'I' AND (Source = 'E') 
+
+--    AND TradeDt >= @dt1 and TradeDt <= @dt2 AND (@CoID = '' OR GPLEdger.MiscCOID = @CoID) 
+
+--    --GROUP BY Coalesce(GPLedger.MiscTradeType,''),GPLedger.GLAcct,GLAccount.[Name]
+
+  	
+
+--	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount) 
+
+--        SELECT 6,'POSTED-INTEREST','',1,'',@InterestFeeAc,'Interest Charge',SUM(HcAmount)*-1
+
+--	    FROM #LedgerDetail WHERE AcctClass = 'POSTED-INTEREST'
+
+--	    GROUP BY AcctGrp, TradeType
+
+----	*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	--EXPENSES REPORT SECTION
+
+	--=======================
+
+
+
+	--PURCHASES
+
+   INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,TranFormType,CustID,SuppID) 
+
+	SELECT 
+
+		7,'EXPENSES','',1,	
+
+		Coalesce(BuySell.TradeType,''),					
+
+		Coalesce(Payables.GLAcct,''),
+
+		dbo.TitleCase(GLAccount.[Name]),	
+
+		Payables.BuySellno,
+
+		BuySell.InvoiceDt,
+
+		Amount,
+
+		CASE WHEN BuySell.CustID = '(INV)' THEN 'PR' ELSE 'WKS' END,
+
+		buysell.CustID,buysell.VendorID
+
+		FROM Payables WITH(NOLOCK) 
+
+		INNER JOIN BuySell WITH(NOLOCK) on Payables.Buysellno = Buysell.Buysellno
+
+		LEFT JOIN GLAccount WITH(NOLOCK) ON Payables.glacct = GLaccount.GLacct  
+
+		WHERE 			
+
+	        Payables.ItemIDSource = 'S' 
+
+			AND BuySell.Status = 'I'
+
+			AND (BuySell.COID = @CoID OR @CoID = '') 			
+
+			AND (BuySell.InvoiceDt >= @dt1 and BuySell.InvoiceDt <= @dt2 ) 
+
+	
+
+	--EXPENSES
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,Reference,ExpItemID,IsOffsetTX,TranFormType,CustID,SuppID) 
+
+    SELECT 
+
+		7,'EXPENSES','',1,	
+
+		Coalesce(BuySell.TradeType,''),	
+
+		Payables.GLAcct, 
+
+		dbo.TitleCase(GLAccount.[Name]),	
+
+		BuySell.BuySellNo,
+
+		BuySell.InvoiceDt,		
+
+		Amount,
+
+		Convert(varchar(20),payables.payableid),		
+
+		Payables.ItemID,
+
+		CASE WHEN Payables.ChgBackWks <> '' AND Payables.Invoiceno = 'AP-OFFSET' THEN 1 ELSE 0 END,				
+
+        CASE WHEN BuySell.CustID <> '(INV)' AND BuySell.VendorID <> '(INV)' THEN 'WKS' ELSE (CASE WHEN BuySell.CustID = '(INV)' THEN 'PR' ELSE 'WKI' END) END,
+
+		buysell.CustID,buysell.VendorID
+
+		FROM (payables WITH(NOLOCK) 
+
+		INNER JOIN BuySell WITH(NOLOCK) on payables.buysellno = buysell.buysellno)
+
+		LEFT JOIN GLAccount WITH(NOLOCK) ON payables.glacct = GLaccount.glacct  
+
+		WHERE 			
+
+	        Payables.ItemIDSource = 'D' 
+
+			AND BuySell.Status = 'I'
+
+		    AND (BuySell.COID = @CoID OR @CoID = '') 
+
+			AND (buysell.invoicedt >= @dt1 and buysell.invoicedt <= @dt2 ) 
+
+	
+
+	--WORSKSHEET ADJUSTMENTS
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,Reference,ExpItemID,IsOffsetTX,TranFormType,CustID,SuppID) 
+
+    SELECT 
+
+		7,'EXPENSES','',1,	
+
+		Coalesce(BuySell.TradeType,''),	
+
+		Payables.GLAcct, 
+
+		dbo.TitleCase(GLAccount.[Name]),	
+
+		BuySell.BuySellNo,
+
+		BuySell.InvoiceDt,		
+
+		Amount,
+
+		Convert(varchar(20),payables.payableid),		
+
+		Payables.ItemID,
+
+		CASE WHEN Payables.ChgBackWks <> '' AND Payables.Invoiceno = 'AP-OFFSET' THEN 1 ELSE 0 END,
+
+		CASE WHEN BuySell.CustID <> '(INV)' AND BuySell.VendorID <> '(INV)' THEN 'WKS' ELSE (CASE WHEN BuySell.CustID = '(INV)' THEN 'PR' ELSE 'WKI' END) END,
+
+		buysell.CustID,buysell.VendorID
+
+		FROM Payables WITH(NOLOCK) 
+
+			INNER JOIN BuySell WITH(NOLOCK) on payables.buysellno = buysell.buysellno
+
+			INNER JOIN gpledger WITH(NOLOCK) ON payables.itemid = gpledger.ledgerid  
+
+			INNER JOIN GLAccount WITH(NOLOCK) ON payables.glacct = GLaccount.glacct  
+
+		WHERE 			
+
+	        Payables.ItemIDSource = 'A' AND     	
+
+			GPLedger.AdjPosted = 'Y' AND 	 
+
+			(GPLedger.TradeDt >= @dt1 AND GPLedger.TradeDt <= @dt2) AND
+
+			(BuySell.COID = @CoID OR @CoID = '') 
+
+
+
+
+
+	--CONVERTING EXPENSES & ADJUSTMENTS
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,Reference,ExpItemID,IsOffsetTX,TranFormType) 
+
+    SELECT 
+
+		7,'EXPENSES','',1,	
+
+		Coalesce(CJ.TradeType,''),	
+
+		Payables.GLAcct, 
+
+		dbo.TitleCase(GLAccount.[Name]),	
+
+		CJ.BuySellNo,
+
+		CJ.PostDt,		
+
+		Payables.Amount,
+
+		Convert(varchar(20),payables.payableid),		
+
+		Payables.ItemID,
+
+		CASE WHEN Payables.ChgBackWks <> '' AND Payables.Invoiceno = 'AP-OFFSET' THEN 1 ELSE 0 END,			        
+
+		'JOB'
+
+		FROM Payables WITH(NOLOCK) 
+
+			INNER JOIN ConvertingJob CJ ON CJ.BuysellNo = Payables.BuysellNo										
+
+			INNER JOIN GLAccount WITH(NOLOCK) ON payables.glacct = GLaccount.glacct  
+
+		WHERE 			
+
+			(
+
+				(Payables.ItemIDSource = 'C' AND CJ.PostDt >= @dt1 AND CJ.PostDt <= @dt2) 
+
+				OR
+
+				(Payables.ItemIDSource = 'A' AND Payables.RcvDt >= @dt1 AND Payables.RcvDt <= @dt2) 
+
+			)
+
+			AND (CJ.COID = @CoID OR @CoID = '') 
+
+
+
+
+
+
+
+	--EXPENSE ALLOCATIONS 
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,Reference,ExpItemID,IsOffsetTX,TranFormType,CustID,SuppID) 
+
+    SELECT 
+
+		7,'EXPENSES','',1,	
+
+		Coalesce(EAC.TradeType,''),	
+
+		Payables.GLAcct, 
+
+		dbo.TitleCase(GLAccount.[Name]),	
+
+		EAC.BuySellNo,
+
+		EAC.PostingDt,		
+
+		Payables.Amount,
+
+		Convert(varchar(20),payables.payableid),		
+
+		Payables.ItemID,
+
+		CASE WHEN Payables.ChgBackWks <> '' AND Payables.Invoiceno = 'AP-OFFSET' THEN 1 ELSE 0 END,
+
+		'EA',
+
+		CpID,''
+
+		FROM Payables WITH(NOLOCK) 
+
+			INNER JOIN ExpenseAllocation EAC ON EAC.BuysellNo = Payables.BuysellNo							
+
+			INNER JOIN GLAccount WITH(NOLOCK) ON payables.glacct = GLaccount.glacct  
+
+		WHERE 			
+
+		(
+
+			(Payables.ItemIDSource = 'A' AND (Payables.RcvDt >= @dt1 AND Payables.RcvDt <= @dt2) )
+
+	     OR
+
+		    (Payables.ItemIDSource = 'E' AND (EAC.PostingDt >= @dt1 AND EAC.PostingDt <= @dt2) )
+
+		)	
+
+			AND	(EAC.COID = @CoID OR @CoID = '') 
+
+
+
+    
+
+
+
+
+
+	----(AP Accrual Offset Transaction)
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+        SELECT 7,'EXPENSES','',2,'',@APAccrualAC,'Accrued Payables',SUM(HcAmount)*-1,'TOTAL'
+
+	    FROM #LedgerDetail WHERE AcctClass = 'EXPENSES'
+
+	    GROUP BY AcctGrp
+
+
+
+
+
+
+
+
+
+--	------/ASSIGN OFFSET ACCOUNTS FOR FLIPS
+
+--	UPDATE #LedgerDetail SET 
+
+--		Acctno = @OffsetAcct,
+
+--		AcctNm = 'Offset'
+
+--	WHERE IsOffsetTx = 1
+
+
+
+
+
+
+
+
+
+
+
+
+
+	----/* TAXES PAID*/
+
+	--------------------------------------------------------------------------------------------=    
+
+	
+
+	-- USING TAX CODES WITH RATES
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,TranFormType,CustID,SuppID) 
+
+	select 
+
+	8,'TAXES-PAID','',1,
+
+	'' TradeType,
+
+	SalesTax.PurchTaxAcct,
+
+	SalesTax.TaxDescription,
+
+	payablessalestax.APBatchNo, 
+
+	payablesbatch.PostingDt,
+
+	payablessalestax.TaxAmount,
+
+	'APBATCH',
+
+	PayablesBatch.CpID,''
+
+	from payablessalestax 
+
+		inner join payablesbatch ON payablessalestax.APBatchNo = payablesbatch.APBatchNo
+
+		inner join SalesTax ON payablessalestax.SalesTaxID = SalesTax.SalesTaxID
+
+	WHERE 
+
+	(payablesbatch.PostingDt >= @dt1 and payablesbatch.PostingDt <= @dt2)  
+
+	AND payablessalestax.TaxAmount <> 0  
+
+	AND (@COID  = '' OR @COID = payablesbatch.COID)
+
+
+
+
+
+
+
+	-- USING TAX CODE WITH NO RATES  (Price&Pierce Issue)
+
+	-------------------------------
+
+	CREATE TABLE #ZeroTaxRates(APBatchNo CHAR(15), Amt MONEY)
+
+	INSERT #ZeroTaxRates
+
+	SELECT 
+
+		payablessalestax.APBatchNo, 	
+
+		SUM(payablessalestax.TaxAmount)
+
+	FROM payablessalestax INNER JOIN payablesbatch ON payablessalestax.APBatchno = payablesbatch.APBAtchNo
+
+	WHERE 
+
+		(payablesbatch.PostingDt >= @dt1 and payablesbatch.PostingDt <= @dt2)  
+
+		AND (@COID  = '' OR @COID = payablesbatch.COID)
+
+		AND payablesbatch.SalesTaxAmt <> 0 
+
+		group By payablessalestax.APBatchNo
+
+	HAVING SUM(payablessalestax.TaxAmount) = 0
+
+	
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount,TranFormType) 
+
+	select 
+
+	8,'TAXES-PAID','',1,
+
+	'' TradeType,
+
+	'' PurchTaxAcct,
+
+	'{Zero Tax Rate}' TaxDescription,
+
+	payablesbatch.APBatchNo, 
+
+	payablesbatch.PostingDt,
+
+	payablesbatch.SalesTaxAmt,
+
+	'APBATCH'	 
+
+	from payablesbatch INNER JOIN #ZeroTaxRates ON payablesbatch.ApBatchNo = #ZeroTaxRates.APBAtchNo
+
+		
+
+
+
+
+
+
+
+
+
+
+
+	--INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount) 
+
+	--SELECT 
+
+	--	8,'TAXES-PAID','',1,	
+
+	--	Buysell.TradeType,	
+
+	--	PurchTaxAcct,		
+
+	--	SalesTax.TaxDescription,
+
+	--	BuySell.BuySellno,
+
+	--	Payables.InvoiceDt,
+
+	--	PayablesSalesTax.TaxAmount	
+
+	--FROM PayablesSalesTax INNER JOIN AP
+
+	
+
+	--((payables with(nolock) inner join BuySell with(nolock)  on payables.buysellno = buysell.buysellno)
+
+	--INNER JOIN PayablesSalesTax with(nolock)  ON PayablesSalesTax.PayableID = Payables.PayableID)
+
+	--LEFT JOIN SALESTAX  with(nolock) ON PayablesSalesTax.SalesTaxID = SALESTAX.SalesTaxID
+
+	--WHERE 
+
+	--(payables.InvoiceDt >= @dt1 and payables.InvoiceDt <= @dt2)  
+
+	--AND TaxAmount <> 0  
+
+	--AND  
+
+	--(
+
+	--	( Payables.ItemIDSource = 'S' AND  
+
+	--		(@COID  = '' 
+
+	--		OR 
+
+	--		(BuySell.COID = @COID AND (BuySell.COID_DueTo = '' OR BuySell.COID_DueTo IS NULL)) OR (BuySell.COID_DueTo = @COID)
+
+	--		)    
+
+	--	)
+
+	--	OR 
+
+	--	(Payables.ItemIDSource <> 'S' AND (@COID  = '' OR (BuySell.COID = @COID)) 
+
+	--	)
+
+	--)
+
+
+
+
+
+	
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*	
+
+	--Use Invoice date
+
+	IF @UsePostingDt = 0 BEGIN  
+
+		INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount) 
+
+		SELECT 
+
+			8,'TAXES-PAID','',1,	
+
+			Buysell.TradeType,	
+
+			PurchTaxAcct,		
+
+			SalesTax.TaxDescription,
+
+			BuySell.BuySellno,
+
+			Payables.InvoiceDt,
+
+			PayablesSalesTax.TaxAmount	
+
+		FROM ((payables with(nolock) inner join BuySell with(nolock)  on payables.buysellno = buysell.buysellno)
+
+		INNER JOIN PayablesSalesTax with(nolock)  ON PayablesSalesTax.PayableID = Payables.PayableID)
+
+		LEFT JOIN SALESTAX  with(nolock) ON PayablesSalesTax.SalesTaxID = SALESTAX.SalesTaxID
+
+		WHERE 
+
+		(payables.InvoiceDt >= @dt1 and payables.InvoiceDt <= @dt2)  
+
+		AND TaxAmount <> 0  
+
+		AND  
+
+		(
+
+			( Payables.ItemIDSource = 'S' AND  
+
+				(@COID  = '' 
+
+				OR 
+
+				(BuySell.COID = @COID AND (BuySell.COID_DueTo = '' OR BuySell.COID_DueTo IS NULL)) OR (BuySell.COID_DueTo = @COID)
+
+				)    
+
+			)
+
+			OR 
+
+			(Payables.ItemIDSource <> 'S' AND (@COID  = '' OR (BuySell.COID = @COID)) 
+
+			)
+
+		)
+
+		--GROUP BY TradeType, PurchTaxAcct, TaxDescription
+
+	END
+
+	
+
+	--Use Receive/Posting date
+
+	IF @UsePostingDt = 1 BEGIN  --Use Invoice date
+
+		INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount) 
+
+		SELECT 
+
+			8,'TAXES-PAID','',1,	
+
+			Buysell.TradeType,	
+
+			PurchTaxAcct,		
+
+			SalesTax.TaxDescription,
+
+			BuySell.BuySellno,
+
+			Payables.RcvDt,			
+
+			PayablesSalesTax.TaxAmount	
+
+		FROM ((payables with(nolock) inner join BuySell with(nolock)  on payables.buysellno = buysell.buysellno)
+
+		INNER JOIN PayablesSalesTax with(nolock)  ON PayablesSalesTax.PayableID = Payables.PayableID)
+
+		LEFT JOIN SALESTAX  with(nolock) ON PayablesSalesTax.SalesTaxID = SALESTAX.SalesTaxID
+
+		WHERE 
+
+		(payables.RcvDt >= @dt1 and payables.RcvDt <= @dt2)  
+
+		AND TaxAmount <> 0  
+
+		AND  
+
+		(
+
+			( Payables.ItemIDSource = 'S' AND  
+
+				(@COID  = '' 
+
+				OR 
+
+				(BuySell.COID = @COID AND (BuySell.COID_DueTo = '' OR BuySell.COID_DueTo IS NULL)) OR (BuySell.COID_DueTo = @COID)
+
+				)    
+
+			)
+
+			OR 
+
+			(Payables.ItemIDSource <> 'S' AND (@COID  = '' OR (BuySell.COID = @COID)) 
+
+			)
+
+		)
+
+		--GROUP BY TradeType, PurchTaxAcct, TaxDescription
+
+	END
+
+*/	
+
+
+
+	    
+
+	--(AP Accrual Offset Transaction)
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+		SELECT 8,'TAXES-PAID','',2,'',@APAccrualAC,'Accrued Payables',SUM(HcAmount)*-1,'TOTAL'
+
+			FROM #LedgerDetail WHERE AcctClass = 'TAXES-PAID'
+
+			GROUP BY AcctGrp, TradeType
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	----/* INVENTORY ACCRUAL */
+
+	--------------------------------------------------------------------------------------------=    
+
+    -- Get Open Period.	
+
+	--DECLARE @OPENPERIOD DATETIME
+
+	--SELECT @OPENPERIOD = OpenMonth FROM SystemInfo
+
+
+
+	
+
+	--(Create Temporary Transaction Table)
+
+    Create Table #InvTrx(
+
+		TranType CHAR(10),
+
+		BuySellno Char(12),		
+
+		TradeType varchar(25),
+
+		TranDate Datetime,
+
+		CPID char(12),
+
+		HCAmount Money
+
+		)
+
+
+
+	-- SALES (Cost of Goods Sold)
+
+	INSERT #InvTrx
+
+	SELECT 	'WKI',  
+
+			BuySell.BuySellNo, 
+
+			BuySell.TradeType,  
+
+			BuySell.InvoiceDt,
+
+			'',		
+
+			Buysell.PSupplierCost * -1			--WksInvValue	* -1		
+
+		FROM Buysell 
+
+		WHERE BuySell.Status = 'I'  
+
+		and buysell.invoicedt >= @dt1 and buysell.invoicedt <= @dt2		
+
+		and BuySell.VendorID = '(INV)'
+
+		And (BuySell.COID = @CoID OR @CoID = '') 
+
+
+
+
+
+
+
+    --PURCHASES.
+
+    INSERT #InvTrx
+
+		SELECT 
+
+			'PR',
+
+			GPLedger.BuySellNo, 
+
+			BuySell.TradeType,
+
+			BuySell.InvoiceDt,
+
+			VendorID, 
+
+			(GPLedger.Cost) -- *-1 
+
+		FROM GPLedger with(nolock)  inner join BuySell with(nolock)  ON GPLedger.buysellno = BuySell.buysellno
+
+		WHERE BuySell.Status = 'I'  
+
+		and buysell.invoicedt >= @dt1 and buysell.invoicedt <= @dt2
+
+		and Source = 'B'
+
+		and CustID = '(INV)' 
+
+		And (BuySell.COID = @CoID OR @CoID = '') 
+
+
+
+
+
+
+
+
+
+
+
+    --CONVERTING EXPENSES.
+
+    INSERT #InvTrx
+
+	SELECT 
+
+		'JOB',
+
+		CJ.JobNo,
+
+		CJ.TradeType,
+
+		CJ.PostDt,
+
+		CJExp.CPID,
+
+		CJExp.Amount
+
+	FROM Convertingjob_expenses CJExp inner join convertingjob CJ ON CJExp.Jobno = CJ.JobNo
+
+	WHERE [Status] = 'I' 
+
+	AND PostDt >= @dt1 AND PostDt <= @dt2
+
+	AND (CJ.CoID = @CoID OR @CoID = '') 
+
+
+
+    --EXPENSE ALLOCATIONS.
+
+    INSERT #InvTrx
+
+	SELECT 
+
+		'EA',
+
+		EA.TransNo,
+
+		EA.TradeType,
+
+		EA.PostIngDt,
+
+		EAExp.CPID,
+
+		EAExp.Amount
+
+	FROM ExpenseAlloc_Detail EAExp inner join ExpenseAllocation EA ON EAExp.TransNo = EA.TransNo
+
+	WHERE [IsPosted] = 1 
+
+	AND EA.PostingDt >= @dt1 AND EA.PostingDt <= @dt2
+
+	AND (EA.CoID = @CoID OR @CoID = '') 
+
+
+
+	
+
+
+
+
+
+	--(Get Inventory Transaction Balance)	
+
+	DECLARE @InvBal MONEY
+
+	DECLARE @InvSign MONEY
+
+	DECLARE @InvOrd SMALLINT
+
+	DECLARE @PurOrd SMALLINT
+
+	SELECT @InvBal  = SUM(HcAmount) FROM #InvTrx 
+
+	SET @InvSign = -1
+
+	SET @InvOrd = 1
+
+	SET @PurOrd = 2
+
+	
+
+	IF @InvBal < 0 BEGIN
+
+		SET @PurOrd = 1
+
+		SET @InvOrd = 2		
+
+	END
+
+
+
+
+
+	/* @InvBal:  
+
+		(+) DEBIT INV VALUE  CR EXPENSE  
+
+		(-) DEBIT EXPENSE    CR INV VALUE
+
+	*/
+
+
+
+	----(Inventory Value Account)
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+        SELECT 9,'INVENTORY','',@InvOrd,'',@Inventory,'Inventory-Value',@InvBal,'TOTAL'
+
+
+
+
+
+	----(Inventory Expense Account) 
+
+	--*DrillDown  
+
+	IF @DetailReportTag <> ''
+
+		INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount) 
+
+			SELECT 9,'INVENTORY','',@PurOrd,'',@InventoryPurchase,'Inventory-Purchase',#InvTrx.BuySellno,#InvTrx.TranDate,HcAmount
+
+			FROM #InvTrx 
+
+	--*Summary
+
+	ELSE
+
+		INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount) 
+
+			SELECT 9,'INVENTORY','',@PurOrd,'',@InventoryPurchase,'Inventory-Purchase','',NULL,(@InvBal * @InvSign)
+
+			
+
+
+
+
+
+
+
+
+
+	-- 10.) INVENTORY WRITE-OFFS (ADJUSTMENTS)
+
+	-------------------------------------------
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,TranNo,TranDt,HCAmount) 
+
+		SELECT 10,'INV-ADJUSTMENT','','1','',@InventoryPurchase,'Inventory-Adjustment',GPLedger.LotNo,GPLedger.TradeDt,Cost
+
+		FROM GPLedger WITH(NOLOCK) 
+
+			INNER JOIN INVENTORY WITH(NOLOCK) ON GPLedger.Lotno = INVENTORY.Lotno
+
+			INNER JOIN Grade on grade.gradeid = inventory.GradeID
+
+			LEFT JOIN CompanyInfo on CompanyInfo.coid = Inventory.coid
+
+			LEFT JOIN CounterParty Vendor WITH(NOLOCK) ON Inventory.VendorID = Vendor.CpID      
+
+	WHERE 
+
+	(GPLedger.TradeDt >= @dt1 AND GPLedger.TradeDt <= @dt2)  	
+
+	AND (@COID = '' OR Inventory.coid = @coid)
+
+	AND GPLedger.GrossProfit <> 0
+
+
+
+
+
+	----(Offset Transaction)
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+	    SELECT 10,'INV-ADJUSTMENT','','2','' TradeType,@Inventory,'Inventory',SUM(HcAmount)*-1,'TOTAL'
+
+	FROM #LedgerDetail WHERE AcctClass = 'INV-ADJUSTMENT'
+
+	    GROUP BY AcctGrp
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+    --'6.) INTERCOMPANY JOURNAL ENTRIES.    
+
+    --'---------------------------------
+
+    INSERT #ICTrades
+
+    EXEC q_Closing_InterCompany @dt1,@dt2,@COID
+
+    
+
+	--Due From		
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount) 
+
+    SELECT 
+
+		10,'INTER-COMPANY',ICType,1,'',	
+
+		GLAcctNo,		
+
+		GLAccountNm,		
+
+		Amount	
+
+	FROM #ICTrades WHERE ICType = 'DUE-FROM'       
+
+    
+
+	----Due From AP Accrual Offset
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount) 
+
+        SELECT 10,'INTER-COMPANY','DUE-FROM',2,'',@APAccrualAC,'Accrued Payables',SUM(Amount)*-1
+
+		FROM #ICTrades WHERE ICType = 'DUE-FROM' 
+
+    
+
+	---- Due To AP Accrual Offset 
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount) 
+
+        SELECT 10,'INTER-COMPANY','DUE-TO',3,'',@APAccrualAC,'Accrued Payables',SUM(Amount)
+
+		FROM #ICTrades WHERE ICType = 'DUE-TO' 
+
+
+
+    --Due To
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount) 
+
+    SELECT 
+
+		10,'INTER-COMPANY',ICType,4,'',	
+
+		GLAcctNo,		
+
+		GLAccountNm,
+
+		Amount*-1
+
+	FROM #ICTrades WHERE ICType = 'DUE-TO'       
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+	--SET "0" GL Accounts to Blank.
+
+	UPDATE #LedgerDetail SET AcctNo = '' WHERE AcctNo = '0'
+
+
+
+
+
+
+
+
+
+
+
+
+
+    /* CLOSING ALERTS SECTION */
+
+    ------------------------------------------------------------------------------------------=  
+
+
+
+    --Gross Profit Adjustments.
+
+	DECLARE @GPAdj Money
+
+	SET @GPAdj = 0
+
+    
+
+	-- GROSS PROFIT ADJUSTMENTS (NOT SUPPORTED) 
+
+	--SELECT 
+
+	--	@GPAdj = SUM(cost)
+
+	--  from gpledger WITH(NOLOCK) 
+
+	--  where TradeDt >= @dt1 and TradeDt <= @dt2 and source = 'E' And AdjType <> 'B' And Sale = 0 And Cost <> 0 
+
+
+
+
+
+	DECLARE @AlertTotal MONEY
+
+	SET @AlertTotal = 0 
+
+
+
+	--ALERT 1 (OLD ALERT 2) Expenses Against Future Sales by Rcvd Date.
+
+	SELECT @AlertTotal = Coalesce(SUM(Amount),0)
+
+		FROM payables WITH(NOLOCK) inner join buysell WITH(NOLOCK) ON Payables.BuySellNo = BuySell.BuySellNo
+
+		WHERE RcvDt <= @dt2 and buysell.invoicedt > @dt2 and payables.posted = 1  and payables.itemidsource<>'A'
+
+		AND buysell.Status = 'I' 
+
+		AND (@CoID = '' OR @CoID = BuySell.CoID) 
+
+	--Converting Jobs
+
+	SELECT @AlertTotal = @AlertTotal + Coalesce(SUM(Amount),0)
+
+		FROM payables WITH(NOLOCK) inner join ConvertingJob WITH(NOLOCK) ON Payables.BuySellNo = ConvertingJob.BuySellNo
+
+		where  RcvDt <= @dt2 and ConvertingJob.PostDt > @dt2 and payables.posted = 1  and payables.itemidsource<>'A'
+
+		and ConvertingJob.Status = 'I' 
+
+		AND (@CoID = '' OR @CoID = ConvertingJob.CoID) 
+
+	--Expense Allocations
+
+	SELECT @AlertTotal = @AlertTotal + Coalesce(SUM(Amount),0)
+
+		FROM payables WITH(NOLOCK) inner join ExpenseAllocation WITH(NOLOCK) ON Payables.BuySellNo = ExpenseAllocation.BuySellNo
+
+		where  payables.RcvDt <= @dt2 and ExpenseAllocation.PostingDt > @dt2 and payables.posted = 1  and payables.itemidsource<>'A'
+
+		and ExpenseAllocation.ISPOsted = 1
+
+		AND (@CoID = '' OR @CoID = ExpenseAllocation.CoID) 
+
+
+
+
+
+
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+	SELECT 20,'ALERTS','',2,'','','1.) Expenses Against Future Sales', Round(@AlertTotal,2),'ALERT-EXPONFUTSALE-RCVDT'
+
+
+
+
+
+
+
+	--ALERT 2 (OLD ALERT 3) Expenses Against Unposted Sales by Rcvd Date.
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+	SELECT 
+
+		20,'ALERTS','',3,'','',
+
+		'2.) Expenses Against Unposted Invoices', -- by Rcvd Date',	
+
+		Coalesce(SUM(payables.Amount),0),
+
+		'ALERT-EXPONUNPOSTSALE-RCVDT'
+
+		from payables WITH(NOLOCK) inner join buysell WITH(NOLOCK) ON Payables.BuySellNo = BuySell.BuySellNo
+
+		where Payables.InvoiceDt <= @dt2 and buysell.Status <> 'I' and payables.posted = 1 and payables.itemidsource<>'A'
+
+		AND (@CoID = '' OR @CoID = BuySell.CoID) 
+
+
+
+    --ALERT 3 Unposted Adjustments.
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+    SELECT 
+
+		20,'ALERTS','',4,'','',
+
+		'3.) Unposted Adjustments',	
+
+		SUM(GPLedger.Cost),
+
+		'ALERT-ADJUNPOSTED'
+
+    from gpledger WITH(NOLOCK) inner join buysell WITH(NOLOCK) ON gpledger.BuySellNo = BuySell.BuySellNo
+
+    WHERE Source = 'A' AND AdjType = 'P' AND GPLedger.AdjCompleted='Y' AND AdjPosted='N'
+
+    AND (@CoID = '' OR @CoID = BuySell.CoID) 
+
+
+
+
+
+    --ALERT 4 Adjustment Post Date Prior to Invoice Date.
+
+	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount,ActionTag) 
+
+    SELECT 
+
+		20,'ALERTS','',5,'','',
+
+		' Adjustment Post Date Prior to Invoice Date',	
+
+         sum(gpledger.cost),
+
+        'ALERT-ADJPRIORINVDT'
+
+   from gpledger WITH(NOLOCK) 
+
+    inner join buysell WITH(NOLOCK) ON gpledger.BuySellNo = BuySell.BuySellNo
+
+    inner join payables WITH(NOLOCK) on (gpledger.ledgerid = payables.itemid and gpledger.buysellno = payables.buysellno)
+
+    WHERE Source = 'A' AND AdjType = 'P' AND GPLedger.AdjCompleted='Y' AND AdjPosted='Y'
+
+    AND (@CoID = '' OR @CoID = BuySell.CoID) 
+
+    AND payables.RcvDt < payables.InvoiceDt
+
+    AND BuySell.InvoiceDt >= @dt1 and BuySell.InvoiceDt <= @dt2
+
+
+
+	
+
+	DELETE FROM #LedgerDetail WHERE AcctClass = 'ALERTS' AND HCAmount IS NULL	
+
+	UPDATE #LedgerDetail SET DebitAmt = (HCAmount), CreditAmt =0, HCAmount=(HCAmount) WHERE AcctClass = 'ALERTS'
+
+
+
+
+
+
+
+
+
+	/* ASSIGN DEBIT/CREDIT COLUMNS */
+
+	---------------------------------
+
+
+
+	--1. Assign basic debit and credit values.
+
+	UPDATE #LedgerDetail SET DebitAmt = abs(HCAmount), CreditAmt = 0  WHERE HcAmount > 0 AND AcctClass <> 'ALERTS'
+
+    UPDATE #LedgerDetail SET CreditAmt = abs(HCAmount), DebitAmt = 0  WHERE HcAmount <= 0 AND AcctClass <> 'ALERTS' 
+
+
+
+
+
+
+
+
+
+
+
+	--2. For Sales: Assign +Debits --> -Credits.
+
+	UPDATE #LedgerDetail SET DebitAmt = 0, CreditAmt = (HCAmount*-1) WHERE AcctGrp = 'SALES' AND COALESCE(ISTotalLn,0) <> 1 AND COALESCE(ActionTag,'') <> 'TOTAL' AND HCAmount > 0 
+
+
+
+	--3. For Posted Sales Adjustments: Assign -Credits --> +Debits.
+
+	UPDATE #LedgerDetail SET DebitAmt = (HCAmount), CreditAmt = 0   WHERE AcctClass = 'POSTED-SALESADJ' AND COALESCE(ActionTag,'') <> 'TOTAL' AND HCAmount < 0 
+
+    
+
+	-- 4.  For Expenses and taxes: Assign -credits --> +Debits.  
+
+	UPDATE #LedgerDetail SET DebitAmt = HCAmount, CreditAmt = 0  WHERE ( AcctClass = 'EXPENSES' OR  AcctGrp = 'TAXES-PAID') AND AcctGrpOrd=1 AND COALESCE(ActionTag,'') <> 'TOTAL' and HCAmount < 0 
+
+   
+
+
+
+	
+
+	
+
+	
+
+	/* COPY DEBIT ON TOTAL LINE */
+
+	UPDATE #LedgerDetail SET CreditAmt = HCAmount, DebitAmt= HCAmount WHERE ISTotalLn = 1 AND HCAmount <> 0 
+
+
+
+
+
+	/* DRILL-DOWN DETAIL REPORT */
+
+	---------------------------------------------------------------------------------------------------------
+
+	IF @DetailReportTag <> '' BEGIN
+
+		DECLARE 		
+
+			@pAcctClass Char(15),
+
+			@pAcctGrp Char(15),
+
+			@pAcctNm varchar(45),	
+
+			@pAcctNo varchar(20), 	
+
+			@pTradeType CHAR(25)	
+
+					
+
+
+
+		SET @pAcctClass = dbo.GetField(@DetailReportTag,2,'|')
+
+		SET @pAcctGrp = dbo.GetField(@DetailReportTag,3,'|')
+
+		SET @pAcctNm= dbo.GetField(@DetailReportTag,4,'|')
+
+		SET @pAcctNo= dbo.GetField(@DetailReportTag,5,'|')				
+
+		SET @pTradeType= dbo.GetField(@DetailReportTag,6,'|')
+
+
+
+		--select @DetailReportTag			
+
+		--select @pAcctClass, @pAcctGrp, @pAcctNm, @pAcctNo, @pTradeType
+
+		
+
+		INSERT #LedgerDrillDown
+
+		SELECT 
+
+			TranNo [Worksheet No],
+
+			TranFormType, 
+
+			TranDt [Posting Date],
+
+			AcctNm [Description],
+
+			AcctNo [Acct No],
+
+			HCAmount [Amount],
+
+			TranFormType,
+
+			CustID,
+
+			SuppID
+
+		FROM #LedgerDetail 
+
+		WHERE AcctClass = @pAcctClass 
+
+		AND AcctGrp = @pAcctGrp
+
+		AND AcctNo = @pAcctNo			
+
+		AND AcctNm = @pAcctNm		
+
+		AND TradeType = @pTradeType
+
+		AND HCAmount <> 0 
+
+		ORDER BY TranDt
+
+
+
+		INSERT #LedgerDrillDown
+
+			SELECT 'TOTAL',NULL,NULL,NULL,NULL,SUM(HCAmount),'','',''
+
+				FROM #LedgerDrillDown
+
+	
+
+		SELECT 			
+
+			TransNo [Tran-No],
+
+			TranType [Tran-Type],
+
+			TransDt [Posting Date],
+
+			AcctNm [Description],
+
+			AcctNo [Acct No],
+
+			HCAmount [Amount],
+
+			TranFormType [-Hidden-TranType],
+
+			c.CompanyNm as [Customer],
+
+			s.CompanyNm as [Supplier]
+
+		FROM #LedgerDrillDown
+
+		left join CounterParty c on #LedgerDrillDown.CustID = c.CpID
+
+		left join CounterParty s on #LedgerDrillDown.suppID = s.CpID
+
+		
+
+		RETURN
+
+	
+
+	END
+
+
+
+
+
+        
+
+	/* CLOSING ADJUSTMENT LEDGER REPORT */
+
+	---------------------------------------------------------------------------------------------------------	
+
+
+
+	/* ASSIGN ACTION TAGS FOR DRILL-DOWN REPORTING */
+
+	UPDATE #LedgerDetail SET ActionTag = 'DETAIL|'+ rtrim(AcctClass) + '|' + rtrim(AcctGrp) + '|' + rtrim(AcctNm) + '|' + rtrim(AcctNo) + '|' + rtrim(TradeType) + '|'
+
+		WHERE ActionTag IS NULL
+
+
+
+	/* FINAL REPORT */
+
+	SELECT 
+
+		AcctClass as [Class], AcctGrp as [Group], AcctNm as [Account Name], AcctNo [GL Acct], TradeType Segment, 
+
+		SUM(DebitAmt) [{C}Debit], Sum(CreditAmt) [{C}Credit], IsTotalLn as [-Hidden-IsTotalLn], ActionTag as [-Hidden-ActionTag]
+
+		FROM #LedgerDetail
+
+		WHERE HCAmount <> 0 OR AcctClass = 'ALERTS'
+
+		GROUP BY SectionSeq, AcctClass, AcctGrp, AcctGrpOrd, AcctNo, TradeType, AcctNm, IsTotalLn,ActionTag 		
+
+		ORDER BY SectionSeq, AcctClass, AcctGrp, AcctGrpOrd, AcctNo, TradeType, AcctNm, IsTotalLn
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,16 @@
+CREATE proc [dbo].[cw_ClosePeriod] as
+
+set nocount on
+
+set transaction isolation level read uncommitted
+
+
+
+update systeminfo set OpenMonth = DATEADD(mm, DATEDIFF(m,0,OpenMonth)+1,0) 
+
+
+
+
+
+
+

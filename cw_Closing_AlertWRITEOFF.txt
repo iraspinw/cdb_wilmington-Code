@@ -1,0 +1,154 @@
+
+
+
+
+CREATE PROC [dbo].[cw_Closing_AlertWRITEOFF] @DoColumnDefOnly BIT, @FromDt datetime,@ToDT datetime
+
+AS
+
+SET NOCOUNT ON
+
+--Inventory Write-off
+
+--10/11/2012 RS: Created or Closing Adjustments Ledger
+
+
+
+
+
+
+
+	/* DEFINE REPORT COLUMNS SECTION. */
+
+	IF @DoColumnDefOnly = 1 BEGIN
+
+	
+
+		CREATE TABLE #ReportDef(
+
+			ColName char(25),
+
+			ColAlign char(1),
+
+			ColWidth int,
+
+			ColDataType char(10),
+
+			ColNumFormat char(15)
+
+		)
+
+		
+
+		INSERT #ReportDef SELECT 'Lot No','L',1500,'TEXT',''
+
+		INSERT #ReportDef SELECT 'Date','L',1250,'DATE',''		
+
+		INSERT #ReportDef SELECT 'User','L',1000,'TEXT',''
+
+		INSERT #ReportDef SELECT 'Amount','R',1300,'NUM','#,###,##0.00'		
+
+		
+
+		SELECT ColName, ColAlign, ColWidth, ColDataType, ColNumFormat FROM #ReportDef
+
+		RETURN
+
+	END	
+
+	
+
+	CREATE TABLE #Report( 
+
+		LotNo VARCHAR(100),
+
+		TradeDt DATETIME, 	
+
+		UserID CHAR(30),  
+
+		Amount MONEY
+
+	)
+
+	
+
+	
+
+	
+
+	INSERT #Report
+
+    SELECT 
+
+		LotNo,	
+
+		TradeDt,
+
+		USERID,		
+
+		GPLedger.Cost	
+
+    FROM gpledger WITH(NOLOCK) 	
+
+    WHERE Source = 'I' 
+
+    AND TradeDt >= @FromDt AND TradeDt <= @ToDT
+
+    Order By TradeDt
+
+
+
+
+
+	----
+
+	INSERT #REPORT(LotNo,Amount)			
+
+		SELECT 
+
+			'TOTAL', 
+
+			SUM(Amount)
+
+		FROM #Report 
+
+	
+
+	
+
+	
+
+	--SELECT * FROM #Report
+
+	   SELECT
+
+		LotNo ,
+
+		TradeDt , 	
+
+		--UserID [User], 
+
+		UserDef.UserNm  [User], 
+
+		Amount 
+
+		FROM #Report
+
+		left join UserDef on UserDef.UserID=#Report.USERID
+
+--go
+
+--q_Closing_AlertWRITEOFF 0,'1/1/2012','10/12/2012'
+
+
+
+
+
+
+
+
+
+
+
+
+

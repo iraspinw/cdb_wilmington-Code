@@ -1,0 +1,174 @@
+
+
+
+
+CREATE PROC [dbo].[cw_Closing_AlertGPDetail] @DoColumnDefOnly BIT, @FromDt datetime,@ToDT datetime
+
+AS
+
+SET NOCOUNT ON
+
+--GP ADJUSTMENTS
+
+--10/11/2012 RS: Created or Closing Adjustments Ledger
+
+
+
+
+
+
+
+	/* DEFINE REPORT COLUMNS SECTION. */
+
+	IF @DoColumnDefOnly = 1 BEGIN
+
+	
+
+		CREATE TABLE #ReportDef(
+
+			ColName char(25),
+
+			ColAlign char(1),
+
+			ColWidth int,
+
+			ColDataType char(10),
+
+			ColNumFormat char(15)
+
+		)
+
+		
+
+		INSERT #ReportDef SELECT 'Posting Date','L',1250,'DATE',''		
+
+		INSERT #ReportDef SELECT 'Reason','L',1500,'TEXT',''
+
+		INSERT #ReportDef SELECT 'Amount','R',1300,'NUM','#,###,##0.00'		
+
+		INSERT #ReportDef SELECT 'Currency','L',700,'TEXT',''		
+
+		INSERT #ReportDef SELECT 'User','L',1000,'TEXT',''
+
+		INSERT #ReportDef SELECT 'HC Amount','R',1300,'NUM','#,###,##0.00'		
+
+		
+
+		SELECT ColName, ColAlign, ColWidth, ColDataType, ColNumFormat FROM #ReportDef
+
+		RETURN
+
+	END	
+
+	
+
+	CREATE TABLE #Report( 			
+
+		AdjPostDt char(12), 	
+
+		AdjReason VARCHAR(100),
+
+		FxAmount MONEY,
+
+		FxCurrency CHAR(3),		
+
+		UserID CHAR(30),  
+
+		Amount MONEY
+
+	)
+
+	
+
+	
+
+	
+
+	INSERT #Report
+
+    SELECT 
+
+		convert(char(12),AdjPostDt,101) as AdjPostDt,
+
+		AdjReason,			
+
+		AdjFxAmount, AdjCurrencyCd,
+
+		GPLedger.UserID,
+
+		(-1) * GPLedger.Cost	
+
+    FROM gpledger WITH(NOLOCK) 
+
+	
+
+    WHERE Source = 'E' AND AdjType <> 'B' 
+
+    And Sale = 0 And Cost <> 0 
+
+    AND (@FromDt='' OR (TradeDt >= @FromDt AND TradeDt <= @ToDT))
+
+    Order By AdjPostDt
+
+
+
+
+
+	----
+
+	INSERT #REPORT(AdjPostDt,Amount)			
+
+		SELECT 
+
+			'TOTAL', 
+
+			SUM(Amount)
+
+		FROM #Report 
+
+	
+
+	
+
+	
+
+	SELECT * FROM #Report
+
+
+
+	 SELECT
+
+	   AdjPostDt , 	
+
+		AdjReason ,
+
+		FxAmount ,
+
+		FxCurrency ,		
+
+		--UserID [User], 
+
+		UserDef.UserNm [User],
+
+		Amount 
+
+	 FROM #Report
+
+	 left join UserDef on UserDef.UserID=#Report.USERID
+
+--go
+
+--q_Closing_AlertGPDetail 0,'1/1/2012','9/30/2012'
+
+
+
+
+
+
+
+
+
+
+
+
+

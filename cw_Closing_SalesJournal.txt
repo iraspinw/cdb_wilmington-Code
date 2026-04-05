@@ -1,0 +1,466 @@
+CREATE   PROCEDURE [dbo].[cw_Closing_SalesJournal]  @dt1 datetime, @dt2 datetime, @CoID char(2),@TradeType varchar(25),@CustID char(12),
+
+	@GroupBy char(1), @ExpenseAcct char(12) = '',@RunByInvPurch bit = 0, @ExcludeOffset bit = 0, @IncludeAdjustments bit = 0, @CurrencyCd char(3) = ''
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+/****** Object:  Stored Procedure dbo.q_Closing_SalesJournal    Script Date: 11/12/2004 4:12:37 PM ******/
+
+--12/17/04 BM: change BuySell.FXSalesCurrency to BuySell.CurrencyCd
+
+-- 01/05/05 (JW) - Removed dual domicile code
+
+--5/26/2005 BM - Added Customer filter; Order by Customer vs GLAccount option.
+
+--11/10/2005 (dsh) Trade type fix.
+
+--12/20/2006 BM: Exclude Agency Worksheets
+
+--11/01/2007 DSH: Support for to show offset GL account on Sales Chargebacks (from expense section). Also switched over to using a Table variable.
+
+--05/30/2008 MCM: Extended columns in temp table
+
+--09/29/2014 DSH: Added columns for dept and tradetype
+
+--11/11/2014 DSH Changed Dept Company Name to Short Name
+
+--11/25/2014 DSH Updated to assign expense offsets to an OFFSET account.
+
+--01/26/2015 DSH Updated to remove date conversion
+
+--02/17/2015 DSH Corrected wrong default assignment of "offset" on chargeback
+
+--03/10/2015 MCM: Added @ExpenseAcct, @SalesGLAcct and offset logic from closing ledger to saleschargeback section to match closing ledger
+
+--04/18/2016 MEC: Delete records that have a Sales Amount of 0 per Rich
+
+--05/29/2020 DSH: Corrected reporting of Sales GL account on chargebacks.
+
+--08/11/2022 Nick: Added Foreign Currency values
+
+--03/29/2023 Nick: Added @IncludeAdjustments
+
+--04/03/2023 Nick: Added @CurrencyCd filter, added FxAmounts to sales chargebacks, added Grouping By Customer C
+
+
+
+
+
+BEGIN
+
+
+
+	DECLARE @OffsetAcct  char(12), @SalesGLAcct char(12)
+
+	SELECT TOP 1 @OffsetAcct = GLAcct from glaccount where cat = 'OFFSET'
+
+	-- GET DEFAULT SALES ACCT
+
+	SELECT TOP 1 @SalesGLAcct = GLAcct FROM GLAccount WHERE Cat = 'SALES'
+
+	IF @OffsetAcct = '' SET @OffsetAcct = '*OFFSET'
+
+
+
+
+
+    CREATE TABLE #REPORT (
+
+		TradeType char(65),
+
+		AcctName char(65), 
+
+		GLAcct char(20), 
+
+		BuySellNo char(12), 
+
+		InvoiceDt datetime, 
+
+		CompanyNm char(65), 
+
+		Source varchar(12), 
+
+		SAmt Money, 
+
+		SoNumber char(16),
+
+		DetailID INT, 
+
+		AltAcctName char(65),
+
+		DeptNm CHAR(60),
+
+		IsOffsetTx SMALLINT DEFAULT 0,
+
+		ExpItemID INT,
+
+		WksType char(1),
+
+		SFxAmount Money,
+
+		SCurrencyCd char(3)
+
+				
+
+	)
+
+
+
+
+
+	-- GET SALES	
+
+    INSERT #Report(TradeType,AcctName,GLAcct,BuySellNo,InvoiceDt,CompanyNm,Source,SAmt,SONumber,DetailID,DeptNm,WksType,SFxAmount,SCurrencyCd)
+
+	SELECT BuySell.TradeType, ISNULL(GLAccount.Name,'(SALES)'), ISNULL(GLAccount.GLAcct,''), BuySell.BuySellno,
+
+		Buysell.InvoiceDt, Counterparty.CompanyNm, Case When BuySell.VendorID = '(INV)' Then 'Inv' Else 'Brk' End AS Source, SAmount,
+
+		(Select TOP 1 SPO FROM WksDetail WITH(NOLOCK)  where WksDetail.BuySellNo = BuySell.BuySellNo) AS SONumber, 
+
+        WksDetail.DetailID,
+
+        CompanyInfo.CompanyDesc,
+
+		CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END,
+
+		SFxAmount,
+
+		SCurrencyCd
+
+	FROM BuySell WITH(NOLOCK) INNER JOIN wksDetail WITH(NOLOCK) ON BuySell.BuySellNo = wksDetail.BuySellNo
+
+		INNER JOIN Counterparty ON BuySell.CustID = Counterparty.CPID
+
+        INNER JOIN Grade ON Grade.GradeID = wksDetail.GradeID 
+
+        INNER JOIN CompanyInfo WITH(NOLOCK) ON BuySell.COID = CompanyInfo.COID
+
+        LEFT JOIN GLAccount ON GLAccount.GLAcct = Grade.GLAcct        
+
+	WHERE BuySell.InvoiceDt >= @dt1 and BuySell.InvoiceDt <= @dt2 
+
+		and (BuySell.CustID <> '(INV)' AND BuySell.CustID <> '{C}'  AND BuySell.CustID <> '(PLANT)')
+
+        AND [Status] = 'I'
+
+        AND (  (@CoID = '')  OR (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00')) )
+
+		AND (BuySell.TradeType = @TradeType OR @TradeType = '')
+
+		AND (@CustID = '' OR BuySell.CustID = @CustID)
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND (@ExpenseAcct = '' OR (ISNULL(GLAccount.GLAcct,'') = @ExpenseAcct) OR (@SalesGLAcct = @ExpenseAcct AND GLAccount.GLAcct IS NULL))
+
+		and ((@ExcludeOffset = 1  and GLAccount.GLAcct <> @OffsetAcct) or (@ExcludeOffset = 0))
+
+		AND (@CurrencyCd = '' OR ScurrencyCd = @CurrencyCd)
+
+
+
+
+
+	-- GET SALES CHARGEBACKS 
+
+    INSERT #Report(TradeType,AcctName,GLAcct,BuySellNo,InvoiceDT,CompanyNm,Source,SAmt,SONumber,DetailID,AltAcctName,DeptNm,IsOffsetTx,ExpItemID,WksType,SFxAmount,SCurrencyCd)
+
+	SELECT BuySell.TradeType, AcctName='Sales-' + GLAccount.Name, GLAcct=GLAccount.GLAcct, BuySell.BuySellno,
+
+		Buysell.InvoiceDt, Counterparty.CompanyNm, Case When BuySell.VendorID = '(INV)' Then 'InvExp' Else 'BrkExp' End AS Source, SAmt = ChgToCustAmt,
+
+		BuySell.REFSONO  AS SONumber,   -- (Select TOP 1 SPO FROM WksDetail  WITH(NOLOCK) where WksDetail.BuySellNo = BuySell.BuySellNo)
+
+        WksDelivery.ItemID AS DetailID,
+
+        AcctName=GLAccount.Name,
+
+        CompanyInfo.CompanyDesc,
+
+		CASE WHEN UPPER(BuySell.VendorID) <> '(OTHER)' THEN 0 ELSE  -1 END IsOffsetTx,
+
+		WksDelivery.ItemID,
+
+		CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END,
+
+		WksDelivery.FxAmountCust,
+
+		WksDelivery.CurrencyCdCust
+
+	FROM WksDelivery WITH(NOLOCK) INNER JOIN BuySell WITH(NOLOCK) On WKSDelivery.BuySellNo = BuySell.BuySellNo
+
+		INNER JOIN Counterparty ON BuySell.CustID = Counterparty.CPID 
+
+		INNER JOIN CompanyInfo WITH(NOLOCK) ON BuySell.COID = CompanyInfo.COID
+
+        LEFT JOIN GLAccount WITH(NOLOCK) ON WksDelivery.SalesGLAcct = glaccount.glacct
+
+	WHERE InvoiceDt >= @dt1 and InvoiceDt <= @dt2 
+
+        AND (CustID <> '(INV)'  AND CustID <> '{C}'  AND BuySell.CustID <> '(PLANT)')  
+
+        And [Status] = 'I'
+
+        AND ChgToCustAmt <> 0
+
+        AND ((@CoID = '')  OR (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00')))
+
+		AND (BuySell.TradeType = @TradeType OR @TradeType = '')
+
+		AND (@CustID = '' OR BuySell.CustID = @CustID)
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND (@ExpenseAcct = '' OR ISNULL(GLAccount.GLAcct,'') = @ExpenseAcct OR (@SalesGLAcct = @ExpenseAcct AND GLAccount.GLAcct IS NULL) OR (@OffsetAcct = @ExpenseAcct AND GLAccount.GLAcct IS NULL))
+
+		and ((@ExcludeOffset = 1  and GLAccount.GLAcct <> @OffsetAcct) or (@ExcludeOffset = 0))
+
+		AND (@CurrencyCd = '' OR CurrencyCdCust = @CurrencyCd)
+
+		
+
+
+
+    UPDATE #Report SET AcctName = AltAcctName WHERE AltAcctName IS NOT NULL 
+
+    UPDATE #Report SET GLAcct = '--'  WHERE GLAcct IS NULL
+
+
+
+
+
+	-- GET SALES TAX 
+
+	INSERT #Report(TradeType,AcctName,GLAcct,BuySellNo,InvoiceDT,CompanyNm,Source,SAmt,SONumber,DetailID,DeptNm,WksType,SFxAmount,SCurrencyCd)
+
+	SELECT BuySell.TradeType, AcctName='(SALES-TAX)', '--' AS GLAcct, BuySell.BuySellno,
+
+		Buysell.InvoiceDt, Counterparty.CompanyNm, Case When BuySell.VendorID = '(INV)' Then 'InvTax' Else 'BrkTax' End AS Source, SAmt = SalesTaxAmt,
+
+		(Select TOP 1 SPO FROM WksDetail WITH(NOLOCK)  where WksDetail.BuySellNo = BuySell.BuySellNo) AS SONumber, 
+
+		0 as DetailID  ,
+
+		CompanyInfo.CompanyDesc,
+
+		CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END,
+
+		FXSalesTaxAmt,
+
+		CurrencyCd
+
+	FROM BuySell WITH(NOLOCK) INNER JOIN Counterparty ON BuySell.CustID = Counterparty.CPID
+
+		INNER JOIN CompanyInfo WITH(NOLOCK) ON BuySell.COID = CompanyInfo.COID
+
+	WHERE BuySell.InvoiceDt >= @dt1 and BuySell.InvoiceDt <= @dt2 and (BuySell.CustID <> '(INV)'  AND BuySell.CustID <> '(PLANT)' 
+
+		AND BuySell.CustID <> '{C}')
+
+        And [Status] = 'I'
+
+        AND SalesTaxAmt <> 0
+
+        AND (  (@CoID = '')  OR (BuySell.CoID = @CoID OR (BuySell.CoID='' AND @CoID = '00')) )
+
+		AND (BuySell.TradeType = @TradeType OR @TradeType = '')
+
+		AND (@CustID = '' OR BuySell.CustID = @CustID)
+
+		AND ISNULL(BuySell.IsAgency,0) <> 1
+
+		AND @ExpenseAcct = ''
+
+		AND (@CurrencyCd = '' OR CurrencyCd = @CurrencyCd)
+
+	-- TAG SALES-CHARGEBACK ITEMS THAT ARE AP OFFSETS
+
+	------------------------------------------------------
+
+
+
+	-- GET SALES ADJUSTMENTS
+
+	If @IncludeAdjustments = 1 begin
+
+		INSERT #Report(TradeType,AcctName,GLAcct,BuySellNo,InvoiceDt,CompanyNm,Source,SAmt,SONumber,DetailID,DeptNm,WksType,SFxAmount,SCurrencyCd)
+
+		SELECT
+
+			BuySell.TradeType, 
+
+        	AdjReason,
+
+			ISNULL(GLAccount.GLAcct,''),
+
+        	GPLedger.BuySellNo,
+
+			GPLedger.TradeDt,
+
+			CounterParty.CompanyNm,
+
+			'Adj' AS Source,
+
+        	GPLedger.GrossProfit,
+
+        	buysell.RefSONo,
+
+			0 as DetailID,
+
+			companyinfo.CompanyDesc,
+
+			CASE WHEN Buysell.custid = '(INV)' THEN 'R' WHEN buysell.vendorid='(INV)' THEN 'S' ELSE 'W' END as WksType, 
+
+			AdjFxAmount,
+
+			AdjCurrencyCd
+
+        FROM GPLedger with(nolock)  
+
+		INNER JOIN BuySell ON GPLedger.BuySellNo = BuySell.BuySellNo 
+
+		INNER JOIN CounterParty ON GPLEdger.AdjCpID = CounterParty.CpID 
+
+		LEFT JOIN GLAccount ON GPLedger.GLAcct = GLAccount.GLAcct
+
+		LEFT JOIN CompanyInfo WITH(NOLOCK) ON BuySell.COID = CompanyInfo.COID
+
+        WHERE 
+
+			GPLedger.AdjType = 'S' 
+
+			AND (GPLedger.TradeDt > = @dt1 AND GPLedger.TradeDt <= @dt2)
+
+			AND GPLedger.AdjPosted = 'Y'
+
+			AND (@COID = '' OR Buysell.COID = @COID)
+
+			AND (@CustID = '' OR GPLedger.AdjCPID = @CustID) 
+
+			AND (@ExpenseAcct = '' OR @ExpenseAcct = GPLedger.GLAcct)
+
+			AND (IsNull(GPLedger.Reversed,0) = 0)
+
+			AND (@CurrencyCd = '' OR AdjCurrencyCd = @CurrencyCd)
+
+	end
+
+
+
+	UPDATE #Report 
+
+		SET IsOffsetTx = 1
+
+	FROM #Report INNER JOIN Payables ON #Report.ExpItemID = Payables.ItemID 
+
+	WHERE #Report.IsOffsetTx = -1 AND ItemIDSource = 'D' AND COALESCE(ChgBackWks,'') <> ''
+
+
+
+	----/ASSIGN OFFSET ACCOUNTS FOR FLIPS
+
+	UPDATE #Report SET 
+
+		GLAcct = @OffsetAcct,
+
+		AcctName = 'Offset'
+
+	WHERE IsOffsetTx = 1
+
+
+
+	------------------------------------------------------
+
+	IF @SalesGLAcct = @ExpenseAcct
+
+		DELETE FROM #Report WHERE IsOffsetTx = 1
+
+
+
+	IF @OffsetAcct = @ExpenseAcct
+
+		DELETE FROM #Report WHERE IsOffsetTx <> 1
+
+
+
+	
+
+	DELETE FROM #Report WHERE SAmt = 0
+
+
+
+  	
+
+	IF @GroupBy = 'A'
+
+		SELECT acctname as [-Hidden-AcctName], 
+
+		InvoiceDt as [Posting Date], 
+
+		CompanyNm as [Customer], 
+
+		Buysellno as [Wks No], 
+
+		Source, 
+
+		SoNumber as [SO No], 
+
+		SAmt as [{C}HC Amount],
+
+		WksType As [-Hidden-WksType],
+
+		SFxAmount as [{C}Amount],
+
+		SCurrencyCd as Currency
+
+		FROM #Report 
+
+		WHERE (@RunByInvPurch = 0 OR (@RunByInvPurch = 1 AND (SELECT COUNT(WksInventory.BuySellNo) FROM WksInventory WHERE WksInventory.BuySellNo = #REPORT.BuySellNo) > 0))
+
+		ORDER BY [-Hidden-AcctName], TradeType, InvoiceDt, BuySellNo 
+
+		
+
+	ELSE IF @GroupBy = 'C'
+
+		SELECT acctname as [-Hidden-AcctName], 
+
+		InvoiceDt as [Posting Date], 
+
+		CompanyNm as [Customer], 
+
+		Buysellno as [Wks No], 
+
+		Source, 
+
+		SoNumber as [SO No], 
+
+		SAmt as [{C}HC Amount],
+
+		WksType As [-Hidden-WksType],
+
+		SFxAmount as [{C}Amount],
+
+		SCurrencyCd as Currency
+
+		FROM #Report 
+
+		WHERE (@RunByInvPurch = 0 OR (@RunByInvPurch = 1 AND (SELECT COUNT(WksInventory.BuySellNo) FROM WksInventory WHERE WksInventory.BuySellNo = #REPORT.BuySellNo) > 0))
+
+		ORDER BY CompanyNm, [-Hidden-AcctName], TradeType, InvoiceDt, BuySellNo 
+
+	ELSE
+
+		SELECT *, InvoiceDt AS InvDt FROM #Report ORDER BY CompanyNm, InvoiceDt, AcctName, TradeType, BuySellNo
+
+     
+
+End
+
+
+

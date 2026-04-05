@@ -1,0 +1,316 @@
+CREATE PROC [dbo].[cw_Closing_Alert2Detail] @DoColumnDefOnly BIT, @FromDt datetime,@ToDT datetime,@COID char(2), @UsePostingDt BIT
+
+AS
+
+SET NOCOUNT ON
+
+--FutureExpenseDetails
+
+--6/22/2005   BM: Created
+
+--11/07/2005  DSH: Added option to run by postibg vs invoice date.
+
+--04/25/2006  DSH: Removed filter on FROM DATE.
+
+--08/18/2006 BF: Fixed Counterparty name display error
+
+--01/26/2009 DSH Excluded Adjustments From Result Set
+
+--09/18/2012 DSH Updated for Closing Adjustments Ledger.
+
+--03/09/2020 Alex Added  CustID,VendorID
+
+--08/29/2022 DSH Added Support for Expense Allocations and Converting Jobs
+
+
+
+    -- GET ACCOUNTING SYSTEM.
+
+    Declare @AccountingSystem varchar(30)
+
+    SELECT TOP 1 @AccountingSystem = AccountingSystem from AccountingCompany WHERE AccountingSystem IS NOT NULL AND AccountingSystem <> '(NONE)'
+
+
+
+
+
+	/* DEFINE REPORT COLUMNS SECTION. */
+
+	IF @DoColumnDefOnly = 1 BEGIN
+
+	
+
+		CREATE TABLE #ReportDef(
+
+			ColName char(25),
+
+			ColAlign char(1),
+
+			ColWidth int,
+
+			ColDataType char(10),
+
+			ColNumFormat char(15)
+
+		)
+
+		
+
+		INSERT #ReportDef SELECT 'Invoice No','L',1250,'TEXT',''
+
+		INSERT #ReportDef SELECT 'Worksheet No.','L',1250,'TEXT',''
+
+		INSERT #ReportDef SELECT 'Batch No.','L',1250,'TEXT',''
+
+		IF @UsePostingDt = 1
+
+			INSERT #ReportDef SELECT 'Received Date','L',1250,'DATE',''
+
+		ELSE
+
+			INSERT #ReportDef SELECT 'Invoice Date','L',1250,'DATE',''		
+
+		INSERT #ReportDef SELECT 'Vendor','L',3100,'TEXT',''
+
+		INSERT #ReportDef SELECT 'Source','L',800,'TEXT',''
+
+		INSERT #ReportDef SELECT 'User','L',1000,'TEXT',''
+
+		INSERT #ReportDef SELECT 'Amount','R',1300,'NUM','#,###,###0.00'		
+
+		
+
+		SELECT ColName, ColAlign, ColWidth, ColDataType, ColNumFormat FROM #ReportDef
+
+		RETURN
+
+	END	
+
+	
+
+	
+
+	CREATE TABLE #Report( 	
+
+		InvoiceNo CHAR(20), 
+
+		BuySellNo CHAR(12),
+
+		APBatchNo CHAR(15),		
+
+		TransDt DATETIME,  		
+
+		CompanyNm VARCHAR(65),
+
+		ItemIDSource CHAR(1), 
+
+		UserID CHAR(30),  
+
+		Amount MONEY,
+
+		[-Hidden-CustID] char(12),
+
+		[-Hidden-VendorID] char(12)
+
+	)
+
+	
+
+	
+
+	
+
+	/* PRODUCE DETAIL REPORT RESULTS BY POSTING DATE. */
+
+	IF @UsePostingDt = 1 BEGIN
+
+		
+
+		--Worksheet Expenses			
+
+		INSERT #Report
+
+		SELECT InvoiceNo,Payables.BuySellNo,payables.APBatchNo,Payables.InvoiceDt,Counterparty.CompanyNm,ItemIDSource,UserID,Amount,CustID,VendorID
+
+			FROM Payables WITH(NOLOCK) 
+
+				INNER JOIN buysell WITH(NOLOCK) ON Payables.BuySellNo = BuySell.BuySellNo
+
+				LEFT JOIN Counterparty ON Payables.CpID = Counterparty.CpID
+
+			WHERE 
+
+				Payables.RcvDt <= @ToDT AND BuySell.InvoiceDt > @ToDT AND payables.itemidsource<>'A' AND Payables.Posted = 1
+
+				AND BuySell.Status = 'I' 
+
+				AND (@COID = '' OR @COID = BuySell.COID) 
+
+			ORDER BY PAYABLES.InvoiceDt
+
+
+
+		----Expense Allocations			
+
+		INSERT #Report 
+
+		SELECT InvoiceNo,Payables.BuySellNo,payables.APBatchNo,Payables.InvoiceDt,Counterparty.CompanyNm,ItemIDSource,UserID,Amount,NULL CustID,Payables.CPID
+
+			FROM Payables WITH(NOLOCK) 
+
+				INNER JOIN ExpenseAllocation WITH(NOLOCK) ON Payables.BuySellNo = ExpenseAllocation.BuySellNo
+
+				LEFT JOIN Counterparty ON Payables.CpID = Counterparty.CpID
+
+			WHERE 
+
+				Payables.RcvDt <= @ToDT AND ExpenseAllocation.PostingDt > @ToDT AND payables.itemidsource<>'A' AND Payables.Posted = 1
+
+				AND ExpenseAllocation.IsPOsted = 1 
+
+				AND (@COID = '' OR @COID = ExpenseAllocation.COID) 
+
+			ORDER BY PAYABLES.InvoiceDt
+
+
+
+		----Converting Jobs		
+
+		INSERT #Report 
+
+		SELECT InvoiceNo,Payables.BuySellNo,payables.APBatchNo,Payables.InvoiceDt,Counterparty.CompanyNm,ItemIDSource,UserID,Amount,NULL CustID,Payables.CPID
+
+			FROM Payables WITH(NOLOCK) 
+
+				INNER JOIN ConvertingJob WITH(NOLOCK) ON Payables.BuySellNo = ConvertingJob.BuySellNo
+
+				LEFT JOIN Counterparty ON Payables.CpID = Counterparty.CpID
+
+			WHERE 
+
+				Payables.RcvDt <= @ToDT AND ConvertingJob.PostDt > @ToDT AND payables.itemidsource<>'A' AND Payables.Posted = 1
+
+				AND ConvertingJob.Status = 'I' 
+
+				AND (@COID = '' OR @COID = ConvertingJob.COID) 
+
+			ORDER BY PAYABLES.InvoiceDt
+
+
+
+
+
+	END	
+
+
+
+
+
+	/* PRODUCE REPORT DETAIL BY INVOICE DATE. */
+
+	/*
+
+	IF @UsePostingDt = 0 BEGIN
+
+		INSERT #Report
+
+		SELECT 
+
+			InvoiceNo, 
+
+			Payables.BuySellNo,
+
+			payables.APBatchNo,		
+
+			Payables.InvoiceDt,  		
+
+			Counterparty.CompanyNm,
+
+			ItemIDSource, 
+
+			UserID, 
+
+			Amount ,
+
+			CustID,
+
+			VendorID
+
+		FROM Payables WITH(NOLOCK) 
+
+		INNER JOIN buysell WITH(NOLOCK) ON Payables.BuySellNo = BuySell.BuySellNo
+
+		LEFT JOIN Counterparty ON Payables.CpID = Counterparty.CpID
+
+		WHERE 
+
+		payables.itemidsource<>'A' AND 
+
+		Payables.InvoiceDt <= @ToDT AND BuySell.InvoiceDt > @ToDT		
+
+		AND Payables.Posted = 1
+
+		AND BuySell.Status = 'I'
+
+		AND (@COID = '' OR @COID = BuySell.COID) 
+
+		ORDER BY PAYABLES.InvoiceDt		
+
+	END	
+
+	*/
+
+
+
+
+
+	--
+
+	INSERT #REPORT(InvoiceNo,Amount)			
+
+		SELECT 
+
+			'TOTAL', 
+
+			SUM(Amount)
+
+		FROM #Report 
+
+	
+
+	
+
+	--SELECT * FROM #Report
+
+		SELECT
+
+		InvoiceNo [Invoice No], 
+
+		BuySellNo [Worksheet No],
+
+		APBatchNo [Batch No],		
+
+		TransDt [Invoice Date],  		
+
+		CompanyNm [Vendor],
+
+		ItemIDSource [Source], 
+
+		--UserID [User],
+
+		UserDef.UserNm [User] ,
+
+		Amount ,
+
+		[-Hidden-CustID] ,
+
+		[-Hidden-VendorID] 
+
+		FROM #Report
+
+		left join UserDef on UserDef.UserID=#Report.USERID
+
+
+
+
+

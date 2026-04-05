@@ -1,0 +1,32 @@
+
+
+
+
+CREATE PROC [dbo].[cw_ClosePurchOrder] 
+
+	@PONumber char(15), 
+
+	@UserID char(10)
+
+
+
+AS
+
+
+
+SET NOCOUNT ON 
+
+
+
+--07/29/2014 RS: Created
+
+--09/17/2015 MEC: Copied for cieTrade.net
+
+	
+
+	UPDATE PO SET Status = 'CLOSED' WHERE PONumber = @PONumber 
+
+
+
+	EXEC cw_LogEvent @UserID, 'PO', @PONumber, 'EDIT', 'Purchase Order', 'CLOSED'
+

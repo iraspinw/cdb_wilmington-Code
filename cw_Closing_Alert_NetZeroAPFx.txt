@@ -1,0 +1,216 @@
+CREATE PROC [dbo].[cw_Closing_Alert_NetZeroAPFx] @DoColumnDefOnly BIT, @FromDt datetime,@ToDT datetime,@COID char(2)
+
+AS
+
+SET NOCOUNT ON
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--Expenses Against Unposted Sales Details
+
+--09/25/2012 DSH Created for Closing Adjustments Ledger.
+
+
+
+	IF @COID IS NULL	
+
+		SET @COID = ''
+
+
+
+    -- GET ACCOUNTING SYSTEM.
+
+    Declare @AccountingSystem varchar(30)    
+
+    SELECT TOP 1 @AccountingSystem = AccountingSystem from AccountingCompany WHERE AccountingSystem IS NOT NULL AND AccountingSystem <> '(NONE)'
+
+
+
+    -- GET FUNCTIONAL CURRENCY
+
+    Declare @SysCurrency char(3)
+
+    SELECT @SysCurrency = CurrCode from systeminfo
+
+
+
+	/* DEFINE REPORT COLUMNS SECTION. */
+
+	IF @DoColumnDefOnly = 1 BEGIN
+
+	
+
+		CREATE TABLE #ReportDef(
+
+			ColName char(25),
+
+			ColAlign char(1),
+
+			ColWidth int,
+
+			ColDataType char(10),
+
+			ColNumFormat char(15)
+
+		)
+
+		
+
+		INSERT #ReportDef SELECT 'Invoice No','L',1250,'TEXT',''		
+
+		INSERT #ReportDef SELECT 'Batch No.','L',1250,'TEXT',''		
+
+		INSERT #ReportDef SELECT 'Received Date','L',1250,'DATE',''
+
+		INSERT #ReportDef SELECT 'Vendor','L',2600,'TEXT',''
+
+		INSERT #ReportDef SELECT 'User','L',1000,'TEXT',''
+
+		INSERT #ReportDef SELECT 'HC Amount','R',1300,'NUM','#,###,###0.00'				
+
+		INSERT #ReportDef SELECT 'Amount','R',1300,'NUM','#,###,###0.00'		
+
+		INSERT #ReportDef SELECT 'Currency','L',700,'TEXT',''
+
+		
+
+		SELECT ColName, ColAlign, ColWidth, ColDataType, ColNumFormat FROM #ReportDef
+
+		RETURN
+
+	END	
+
+	
+
+	
+
+	CREATE TABLE #Report( 	
+
+		InvoiceNo CHAR(40), 		
+
+		APBatchNo CHAR(25),		
+
+		TransDt DATETIME,  		
+
+		CompanyNm VARCHAR(65),		 
+
+		UserID CHAR(50),  
+
+		Amount MONEY,
+
+		FxAmount MONEY,
+
+		CurrencyCd CHAR(3),
+
+		Seq Int,
+
+		[-Hidden-CustID] char(12),
+
+		[-Hidden-VendorID] char(12)
+
+	)
+
+
+
+	/* PRODUCE REPORT DETAIL BY RECEIVE DATE. */	
+
+	INSERT #Report
+
+	SELECT 
+
+		PayablesBatch.InvoiceNo, 		
+
+		Payables.APBatchNo,		
+
+		PayablesBatch.InvoiceDt,
+
+		Counterparty.CompanyNm,		 
+
+		--PayablesBatch.UserID,  
+
+		UserDef.UserNm,
+
+		SUM(Payables.Amount),
+
+		SUM(Payables.FxAmount),
+
+		Payables.CurrencyCd,
+
+		1 ,CustID,VendorID
+
+	FROM Payables WITH(NOLOCK) 	
+
+		INNER JOIN buysell WITH(NOLOCK) ON Payables.BuySellNo = BuySell.BuySellNo
+
+		LEFT JOIN PayablesBatch WITH(NOLOCK) ON Payables.APBatchNo = PayablesBatch.APBatchNo
+
+		LEFT JOIN Counterparty ON PayablesBatch.CpID = Counterparty.CpID
+
+		left join UserDef on UserDef.UserID=PayablesBatch.USERID
+
+	WHERE 	
+
+		Payables.RcvDt >= @FromDt and Payables.RcvDt <= @ToDt 
+
+		AND Payables.CurrencyCd <> @SysCurrency 			
+
+		AND (@CoID = '' OR @CoID = PayablesBatch.CoID) 
+
+	GROUP BY PayablesBatch.InvoiceNo,Payables.apbatchno, payables.currencycd,PayablesBatch.InvoiceDt,Counterparty.CompanyNm,UserDef.UserNm,custid, vendorid		  
+
+	HAVING SUM(Payables.FXAmount) = 0
+
+	ORDER BY PayablesBatch.InvoiceDt		
+
+
+
+	
+
+	INSERT #REPORT(InvoiceNo,Amount,Seq)			
+
+		SELECT 
+
+			'TOTAL', 
+
+			SUM(Amount),2
+
+		FROM #Report 
+
+	
+
+	
+
+	--SELECT * FROM #Report Order by Seq, TransDt
+
+		
+
+		SELECT 
+
+	    InvoiceNo [Invoice No],			
+
+		APBatchNo [Batch No],		
+
+		TransDt [Invoice Date],  		
+
+		CompanyNm [Vendor] ,		 
+
+		UserID [User],  
+
+		Amount ,
+
+		FxAmount ,
+
+		CurrencyCd ,
+
+		Seq Int,
+
+		[-Hidden-CustID] ,
+
+		[-Hidden-VendorID] 
+
+		FROM #Report Order by Seq, TransDt
+
+
+
+
+

@@ -1,0 +1,856 @@
+
+
+--5/23/24
+
+
+
+-- Run this
+
+-- [dbo].[API_TradingInquiry_OCC_NEW_Supp_Old] '', '', '', '',''
+
+
+
+
+
+-- [dbo].[API_TradingInquiry_OCC_NEW_Supp_Old] '', '', '', ''
+
+
+
+-- [dbo].[API_TradingInquiry_OCC_NEW_Supp_Old] '07/01/2023', '02/29/2024', '105', '110',''
+
+
+
+CREATE PROCEDURE [dbo].[API_TradingInquiry_OCC_NEW_Supp_Old]  
+
+	@FromDt datetime, @ToDt datetime,
+
+	@SE_HS_OBM_NE INT,
+
+	@SE_HS_OBM_SE INT,
+
+	@TradeType varchar(25)
+
+AS
+
+
+
+BEGIN
+
+
+
+SET NOCOUNT ON 
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+
+
+--5/24/24
+
+IF @FromDt = '' 
+
+  SET @FromDt = '7/1/23' 
+
+--IF @FromDt = '' 
+
+--   SET @FromDt = DATEFROMPARTS(YEAR(DATEADD(MONTH,-4,GETDATE())),MONTH(DATEADD(MONTH,-4,GETDATE())),1)
+
+
+
+IF @ToDt = '' 
+
+   SET @ToDt = EOMONTH(DATEADD(MONTH,-1,GETDATE()),0)
+
+
+
+DROP TABLE DBO.OCC_REPORT_CIETRADE_SUPP
+
+
+
+DELETE 
+
+FROM DBO.OCC_REPORT_CIETRADE_MASTER_SUPP
+
+WHERE [DATE] >= @FromDt
+
+
+
+--DATEFROMPARTS(YEAR(DATEADD(MONTH,-4,GETDATE())),MONTH(DATEADD(MONTH,-4,GETDATE())),1)
+
+
+
+
+
+	CREATE TABLE #REPORT(
+
+	CPID CHAR(12),
+
+		Buysellno CHAR(12),
+
+		Detailid INT,
+
+		Department VARCHAR(200),
+
+		TradeType  VARCHAR(200),
+
+		[Status] VARCHAR(30),
+
+		ShippingDt DATE,
+
+		InvoiceDt DATE,
+
+		OrderDt DATE,
+
+		Customer VARCHAR(200),	
+
+		CustomerAddress VARCHAR(450),
+
+		ShipFromID VARCHAR(200),	 
+
+		RelNo VARCHAR(50),	 
+
+		ContainerNo CHAR(40),	
+
+		Supplier VARCHAR(200),
+
+		SupplierAddress VARCHAR(450),
+
+		ShipTo VARCHAR(200),
+
+		PickupNo VARCHAR(200), 	
+
+		BookingNo VARCHAR(200),
+
+		DestPort VARCHAR(200), 
+
+		ETA DATETIME,
+
+		ProductCat VARCHAR(200),
+
+		ProductGrp VARCHAR(200),
+
+		Description VARCHAR(200),
+
+		Specifications VARCHAR(800),
+
+		InvoiceDesc VARCHAR(200),
+
+		Units INT,
+
+		UnitType CHAR(100),
+
+		WksWeightLBS DECIMAL(22,5),
+
+		[Tons] DECIMAL(22,5),
+
+		SWeight  DECIMAL(22,5),
+
+		SWeightUOM CHAR(1),
+
+		PWeight  DECIMAL(22,5),
+
+		PWeightUOM CHAR(1), 
+
+		SWeightLBS DECIMAL(22,5),
+
+		WksSales MONEY,	
+
+		WksChgBack MONEY,
+
+		WksExp MONEY,
+
+		WksPurchases MONEY,
+
+		WksSAdj MONEY,
+
+		WksPAdj MONEY,
+
+		Factor decimal(18,12),
+
+		SPO CHAR(30),
+
+		SCurrencyCd CHAR(3),
+
+		SPrice DECIMAL(22,8),
+
+		SPriceUOM CHAR(1),
+
+		SAmount	MONEY,
+
+		PO CHAR(30),
+
+		PCurrencyCd CHAR(3), 
+
+		PPrice  DECIMAL(22,8),
+
+		PPriceUOM CHAR(1),	
+
+		PAmount MONEY,
+
+		ChargeBacks MONEY, 
+
+		FreightExp MONEY, 
+
+		Expenses MONEY,
+
+		SAdjs MONEY,
+
+		PAdjs MONEY,
+
+		Interest MONEY,
+
+		BankFees MONEY,	
+
+		Discount MONEY,	
+
+		Margin MONEY,
+
+		TotalSale MONEY,
+
+		TotalCost MONEY,
+
+		GrossProfit MONEY,
+
+		NetProfit MONEY,
+
+		[Sell-Rep] VARCHAR(200), 
+
+		[Buy-Rep] VARCHAR(200), 
+
+		IsAgency BIT,
+
+		IsNegSales BIT,
+
+		TranSrc CHAR(3),
+
+		UserDefined1 VARCHAR(100),
+
+		UserDefined2 VARCHAR(100),
+
+		UserDefined3 VARCHAR(100),
+
+		OwnerName VARCHAR(60),
+
+		[OCC_Sales_Premium] DECIMAL(10,2)
+
+	)
+
+
+
+	INSERT #REPORT
+
+	SELECT 
+
+	C.CpID,
+
+		buysell.buysellno,
+
+		wksdetail.detailid,
+
+		W.CompanyDesc,
+
+		BuySell.TradeType,
+
+		[dbo].[CnvWksStatus_Name](ISNULL(buysell.[Status],''),'') [Status],
+
+		ShippingDt,
+
+		InvoiceDt,
+
+		PO.PODate,
+
+		--Customer Supplier
+
+		C.CompanyNm Customer,
+
+		dbo.FormatAddress(CustAddr.Addr1, CustAddr.Addr2, CustAddr.Addr3, CustAddr.City, CustAddr.Region, CustAddr.PostalCd, CustAddr.Country, 1),
+
+		buysell.ShipFromID, 
+
+		Buysell.RelNo,
+
+		wksdetail.ContainerNo,	
+
+		S.CompanyNm Supplier,
+
+		dbo.FormatAddress(SupAddr.Addr1, SupAddr.Addr2, SupAddr.Addr3, SupAddr.City, SupAddr.Region, SupAddr.PostalCd, SupAddr.Country, 1),
+
+		buysell.shiptoid ShipTo, 
+
+		PickupNo, 	
+
+		Buysell.BookingNo,
+
+		PO.DestCountry DestPort,	
+
+		(CASE WHEN BookSheet.ETA < '1/1/1980' THEN NULL ELSE BookSheet.ETA END) ,
+
+
+
+		--Grade
+
+		isnull(ProductCategoryID, ' ') as ProductCat,
+
+		isnull(ProductGroupID, ' ') as ProductGrp,
+
+		Grade.Description,
+
+		Specifications,
+
+		Wksdetail.InvoiceDesc,
+
+
+
+		--Quantity
+
+		Units,
+
+		UnitType.UnitType,
+
+		Round(TotalWeightLBS,0,1) WksWeightLBS,
+
+		[dbo].[CnvFromLbs](TotalWeightLbs, 'S') [Tons],
+
+		SWeight, SWeightUOM,
+
+		PWeight, PWeightUOM, 
+
+		dbo.CONVERT_TO_UOM(SWeight,SWeightUOM,'L') SWeightLBS,
+
+	
+
+		--TOTAL WKS FINANCIALS
+
+		SalesAmt		WksSales,	
+
+		SFreightChg		WksChgBack, 
+
+		PFreightChg		WksExp,
+
+		PSupplierCost	WksPurchases,
+
+		SAdjustment		WksSAdj, 
+
+		PAdjustment		WksPAdj,
+
+
+
+		--WKSDETAIL FINANCIALS	
+
+		convert(decimal(18,12),0) as Factor, 
+
+
+
+		--Sale	
+
+		SPO,
+
+		wksdetail.SCurrencyCd,
+
+		SPrice, SPriceUOM,
+
+		SAmount,	
+
+	
+
+		--Purchase
+
+		PPO as PO,
+
+		wksdetail.PCurrencyCd, 
+
+		PPrice, PUOM PPriceUOm,	
+
+		PAmount,
+
+
+
+		--Expenses
+
+		CONVERT(MONEY,0) AS ChargeBacks, 
+
+		CONVERT(MONEY,0) as Expenses,
+
+		CONVERT(MONEY,0) as SAdjs,
+
+		CONVERT(MONEY,0) as PAdjs,
+
+		CONVERT(MONEY,0) as Interest,
+
+		CONVERT(MONEY,0) as BankFees,	
+
+		CONVERT(MONEY,0) as Discount,	
+
+		
+
+		--Other Financials
+
+		CONVERT(MONEY,0) as Margin,
+
+		CONVERT(MONEY,0) as TotalSale,
+
+		convert(money,0) as TotalCost,
+
+		convert(money,0) as GrossProfit,
+
+		convert(money,0) NetProfit,
+
+
+
+		(SELECT sum(WksDelivery.Cost) from WksDelivery WITH (NOLOCK) WHERE WksDelivery.BuySellNo = buysell.BuySellNo and WksDelivery.isFreight=1) as FreightExp ,--Alex pend·ing change
+
+
+
+		--SALES REPS
+
+		isnull(referrer.[name], ' ') as Referrer, 
+
+		isnull(PurchRep.[name], ' ') as Referrer2,
+
+	
+
+		BuySell.IsAgency,
+
+		0 as IsNegSales,
+
+		(CASE WHEN VendorID = '(INV)' THEN 'INV' ELSE 'BRK' END),
+
+		buysell.UserDefined1,
+
+		buysell.UserDefined2,
+
+		buysell.UserDefined3,
+
+
+
+		UserDef.UserNm,
+
+		NULL
+
+		--BasisWt,BasisWtUOM,RollWd,RollWdUOM,SheetSize,SheetSizeUOM,Diameter, DiameterUOM,CoreSize,CoreSizeUOM,Caliper,LinearLen,MSF
+
+	
+
+		FROM buysell with(nolock)
+
+		inner join wksdetail with(nolock) on wksdetail.buysellno = buysell.buysellno
+
+		inner join grade with(nolock) on grade.gradeid = wksdetail.gradeid
+
+		inner join Counterparty C with(nolock) on C.CPID = buysell.CustID
+
+		inner join Counterparty S with(nolock) on S.CPID = buysell.vendorID
+
+		INNER JOIN [CompanyInfo] W WITH(NOLOCK) ON W.COID = Buysell.COID
+
+		LEFT JOIN UnitType WITH(NOLOCK) on wksdetail.UnitType = UnitType.TypeID
+
+		left join referrer with(nolock) on referrer.referrerno = buysell.referrerno1
+
+		left join referrer PurchRep with(nolock) on PurchRep.referrerno = buysell.referrerno2
+
+		left join BookSheet on BookSheet.BookingNo=buysell.BookingNo
+
+		LEFT JOIN PO ON SPO = PO.PONumber
+
+		LEFT JOIN Address As CustAddr ON CustAddr.CpID = C.CpID AND CustAddr.Type = buysell.ShipToID
+
+		LEFT JOIN Address As SupAddr ON SupAddr.CpID = S.CpID AND SupAddr.Type = BuySell.ShipFromID
+
+		LEFT JOIN UserDef ON BuySell.UserID = UserDef.UserID
+
+		WHERE 	
+
+		     custid = '(INV)'
+
+			--(custid <> '(INV)' AND custid <> '(PLANT)')   --(vendorID <> '(INV)' AND vendorID <> '{C}') AND 
+
+
+
+		--	AND (@COID = '' OR @COID = buysell.COID)
+
+
+
+		--AND (@COID = '' OR @COID = buysell.COID)
+
+		AND (@TradeType = '' OR BuySell.TradeType = @TradeType)
+
+		AND 
+
+		(
+
+			(@FromDt = '' OR ShippingDt >= @FromDt) and 
+
+			(@ToDt = '' OR ShippingDt <= @ToDt)
+
+		)			
+
+		--AND ProductGroupID = 'OCC (#11)'
+
+		AND UPPER([dbo].[CnvWksStatus_Name](ISNULL(BUYSELL.[Status], ''), '')) = 'INVOICED'
+
+
+
+		/* FLAG WORKSHEETS WITH NEGATIVE SALES */
+
+		CREATE TABLE #NegativeSales(BuySellNo Char(12), UNIQUE (BuySellNo) )
+
+		INSERT #NegativeSales select distinct buysellno FROM #REPORT where SAmount < 0
+
+		UPDATE #REPORT SET IsNegSales = 1 FROM #REPORT INNER JOIN #NegativeSales ON #REPORT.BuySellNo = #NegativeSales.BuySellNo
+
+
+
+		/* DETERMINE ALLOCATION FACTOR BY SALES AMOUNT */	
+
+		update #REPORT set factor = (SAmount  / WksSales) where WksSales <> 0 AND IsNegSales = 0
+
+		update #REPORT set factor = (SWeightLBS / WksWeightLBS) where (WksSales = 0 OR IsNegSales = 1) and WksWeightLBS <> 0 AND Factor = 0
+
+		update #REPORT set factor = (PAmount / WksPurchases) where WksSales = 0 and WksPurchases <> 0 AND WksWeightLBS = 0 AND Factor = 0 
+
+
+
+		--/* CALCULATE ALLOCATED EXPENSES */
+
+		UPDATE #REPORT SET 
+
+			ChargeBacks = Round(WksChgBack * Factor,2),
+
+			Expenses	= Round(WksExp * Factor,2),
+
+			SAdjs		= Round(WksSAdj * Factor,2),
+
+			PAdjs		= Round(WksPAdj * Factor,2),
+
+			FreightExp  = Round(FreightExp * Factor,2)
+
+
+
+
+
+		/* CALCULATE GROSS PROFIT */		
+
+		update #REPORT set TotalSale = SAmount + ChargeBacks + SAdjs
+
+		update #REPORT set TotalCost = PAmount + Expenses + PAdjs
+
+		update #REPORT set GrossProfit = Round(TotalSale - TotalCost,2)
+
+		update #REPORT set Margin = case when TotalCost<>0 then  (GrossProfit/TotalCost)*100 else 0 end  --Alex 7/16/2020
+
+		update #REPORT set Expenses = Expenses - FreightExp
+
+
+
+		--UPDATE #REPORT set [OCC_Sales_Premium] =  - 110
+
+
+
+
+
+SELECT * 
+
+INTO OCC_REPORT_CIETRADE_SUPP
+
+FROM (
+
+
+
+SELECT TRIM(Department) AS Department,
+
+'TONS' AS METRIC,
+
+MONTH(ShippingDt) AS MONTH_NUM,
+
+YEAR(ShippingDt) AS YEAR,
+
+DATENAME(MM,ShippingDt) + ' ' + CAST(YEAR(ShippingDt) AS NVARCHAR) AS MONTH_YEAR,
+
+SUM(Tons) AS TOTAL
+
+,SUM(CASE 
+
+	WHEN Description LIKE 'Corrugated - Clean%'
+
+	AND CPID IN ('6373',	'6173',	'6195',	'6237',	'6371',	'6195',	'6297',	'6237',	'6237',	'6237',	'6370',	'6203',	'6173',	'6297',	'6241',	'6553',	'6241',
+
+	--'MIDL500',	
+
+	'6553',	
+
+	--'KRUG100',
+
+	'6332',	'6544',	'6544',	'6241',	'6373',	'6246',	'6246',	'6371',	
+
+	--'KENP100',
+
+	'6484')
+
+		THEN Tons
+
+		ELSE 0
+
+		END) AS CORRUGATED_CLEAN
+
+,SUM(CASE 
+
+	WHEN Description LIKE 'Double Sorted OCC%'
+
+	AND CPID IN ('6373',	'6173',	'6336',	'6173',	'6544')
+
+		THEN Tons
+
+		ELSE 0
+
+		END) AS DOUBLE_SORTED_OCC
+
+,SUM(CASE 
+
+	WHEN Description LIKE 'Corrugated - Select%'
+
+	AND CPID IN ('6237',	'6336',	'6371')
+
+		THEN Tons
+
+		ELSE 0
+
+		END) AS CORRUGATED_SELECT
+
+,DATEFROMPARTS(YEAR(ShippingDt),MONTH(ShippingDt),1) AS [DATE]
+
+FROM #REPORT
+
+GROUP BY Department,
+
+MONTH(ShippingDt),
+
+YEAR(ShippingDt),
+
+DATENAME(MM,ShippingDt) + ' ' + CAST(YEAR(ShippingDt) AS NVARCHAR)
+
+--ORDER BY Department,
+
+--YEAR(ShippingDt),
+
+--MONTH(ShippingDt),
+
+--DATENAME(MM,ShippingDt) + ' ' + CAST(YEAR(ShippingDt) AS NVARCHAR)
+
+
+
+UNION ALL
+
+
+
+SELECT TRIM(Department) AS Department,
+
+'TOTALSALE' AS METRIC,
+
+MONTH(ShippingDt) AS MONTH_NUM,
+
+YEAR(ShippingDt) AS YEAR,
+
+DATENAME(MM,ShippingDt) + ' ' + CAST(YEAR(ShippingDt) AS NVARCHAR) AS MONTH_YEAR,
+
+SUM(TOTALSALE) AS TOTAL
+
+,SUM(CASE 
+
+	WHEN Description LIKE 'Corrugated - Clean%'
+
+	AND CPID IN ('6373',	'6173',	'6195',	'6237',	'6371',	'6195',	'6297',	'6237',	'6237',	'6237',	'6370',	'6203',	'6173',	'6297',	'6241',	'6553',	'6241',
+
+	--'MIDL500',	
+
+	'6553',	
+
+	--'KRUG100',
+
+	'6332',	'6544',	'6544',	'6241',	'6373',	'6246',	'6246',	'6371',	
+
+	--'KENP100',
+
+	'6484')
+
+		THEN TOTALSALE
+
+		ELSE 0
+
+		END) AS CORRUGATED_CLEAN
+
+,SUM(CASE 
+
+	WHEN Description LIKE 'Double Sorted OCC%'
+
+	AND CPID IN  ('6373',	'6173',	'6336',	'6173',	'6544')
+
+		THEN TOTALSALE
+
+		ELSE 0
+
+		END) AS DOUBLE_SORTED_OCC
+
+,SUM(CASE 
+
+	WHEN Description LIKE 'Corrugated - Select%'
+
+	AND CPID IN ('6237',	'6336',	'6371')
+
+		THEN TOTALSALE
+
+		ELSE 0
+
+		END) AS CORRUGATED_SELECT
+
+,DATEFROMPARTS(YEAR(ShippingDt),MONTH(ShippingDt),1) AS [DATE]
+
+FROM #REPORT
+
+GROUP BY Department,
+
+MONTH(ShippingDt),
+
+YEAR(ShippingDt),
+
+DATENAME(MM,ShippingDt) + ' ' + CAST(YEAR(ShippingDt) AS NVARCHAR)
+
+--ORDER BY Department,
+
+--YEAR(ShippingDt),
+
+--MONTH(ShippingDt),
+
+--DATENAME(MM,ShippingDt) + ' ' + CAST(YEAR(ShippingDt) AS NVARCHAR)
+
+) X
+
+
+
+
+
+INSERT INTO OCC_REPORT_CIETRADE_MASTER_SUPP
+
+SELECT *
+
+FROM OCC_REPORT_CIETRADE_SUPP
+
+
+
+DROP TABLE OCC_REPORT_COMBINED_SUPP
+
+
+
+SELECT *
+
+INTO OCC_REPORT_COMBINED_SUPP
+
+FROM
+
+(
+
+SELECT  [Department]
+
+      ,[METRIC]
+
+      ,[MONTH_NUM]
+
+      ,[YEAR]
+
+      ,[MONTH_YEAR]
+
+      ,[TOTAL]
+
+      ,[CORRUGATED_CLEAN]
+
+      ,[DOUBLE_SORTED_OCC]
+
+      ,[CORRUGATED_SELECT]
+
+  FROM [cdb_Wilmington].[dbo].[OCC_REPORT_CIETRADE_MASTER_SUPP]
+
+
+
+
+
+UNION ALL
+
+
+
+SELECT 
+
+CASE 
+
+	WHEN BillCompany = 'RMR' THEN 'RMR Raleigh'
+
+	WHEN BillCompany = 'RMR High Point' THEN 'RMR Central Carolina'
+
+	ELSE TRIM(BillCompany)
+
+	END AS Department
+
+	,[METRIC]
+
+      ,[MONTH_NUM]
+
+      ,[YEAR]
+
+      ,[MONTH_YEAR]
+
+      ,[TOTAL]
+
+      ,[CORRUGATED_CLEAN]
+
+      ,[DOUBLE_SORTED_OCC]
+
+      ,[CORRUGATED_SELECT]
+
+FROM [WPSQL2K18].[WildRMR].[dbo].[OCC_PREMIUM_MASTER_Supp]
+
+)X
+
+
+
+
+
+IF OBJECT_ID('tempdb..#tmp_combined') IS NOT NULL DROP TABLE #tmp_combined
+
+
+
+select department, metric, month_num, [year]
+
+       ,month_year
+
+	   ,sum(total) TOTAL
+
+	   ,sum(CORRUGATED_CLEAN) CORRUGATED_CLEAN
+
+	   ,sum(double_sorted_occ) DOUBLE_SORTED_OCC
+
+	   ,sum(CORRUGATED_SELECT) CORRUGATED_SELECT
+
+	   into #tmp_combined
+
+from OCC_REPORT_COMBINED_SUPP
+
+GROUP BY department, metric, month_num, [year]
+
+       ,month_year
+
+
+
+TRUNCATE TABLE OCC_REPORT_COMBINED_SUPP
+
+INSERT OCC_REPORT_COMBINED_SUPP
+
+SELECT * FROM #tmp_combined
+
+
+
+DECLARE @ProcedureName VARCHAR(100) = (SELECT OBJECT_NAME(@@PROCID))
+
+INSERT INTO tblEvents ([Event]) VALUES(@ProcedureName + ' ran by ' + SUSER_NAME())
+
+
+
+END
+

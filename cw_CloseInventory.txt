@@ -1,0 +1,582 @@
+CREATE PROC [dbo].[cw_CloseInventory] @WarehouseNm char(12), @DoClosing bit = 0, @AsOfCurrent bit = 0, @Errormessage varchar(150) = '' OUTPUT   AS
+
+--1/6/2004 Added support for destination warehouse.
+
+--07/06/2009 DSH **Rewritten for redeveloped Average Cost Model**
+
+--07/13/2009 DSH **Corrected sales cost for negative positions (minor issue)**
+
+--07/16/2009 DSH Corrected problem with writing Gross Profit on close
+
+--03/02/2010 DSH Corrected problem where future allocations were included in processing. - Caused over allocation and reset to zero. 
+
+--11/06/2012 DSH Support Recycle Inventory-Adjustment Ledger.  
+
+--03/06/2012 DSH Department Locking Support.
+
+--06/03/2013 DSH New "Update COGS Only" feature.
+
+--06/06/2013 DSH Fixed error check for locked department.
+
+--07/30/2013 DSH Use Estimated cost if necessary on UpdateCogsOnly mode
+
+SET NOCOUNT ON 
+
+SET ANSI_WARNINGS OFF
+
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
+
+--cw_CloseInventory '',1,0, ''
+
+DECLARE @mID INT,
+
+		@mWeightChangeLbs decimal(18,5),
+
+		@mSourceGradeID char(15),
+
+		@mDestGradeID char(15),
+
+		@mWhseCPID char(12),
+
+		@mDestWhseCPID char(12),
+
+		@FromDt as datetime, 
+
+		@ToDt datetime, 
+
+		@BegDt datetime,
+
+		@CrntAvgCost decimal(18,8),
+
+		@CrntQty decimal(18,5),
+
+		@CrntValue  Money,
+
+		@AllocValue money,
+
+		@AllocQty decimal(18,5),		
+
+		@mBuySellno char(12),
+
+		@mSellWhse char(12),
+
+		@mSellGrade char(15),
+
+		@mSellQty decimal(18,5),
+
+		@mSellValue money,
+
+		@WksPrice decimal(25,14),
+
+		@NewCost money,
+
+		@pfreightchg money,
+
+		@ErrWhseName varchar(65), 
+
+		@ErrGradeNm varchar(65),		
+
+		@DoPostCOGS bit,
+
+		@OldPrice MONEY,
+
+		@PeriodPurchasesAmt Money,
+
+		@PeriodPurchasesQty decimal(18,5)		
+
+		
+
+
+
+
+
+    -- Get Current Period Dates.    
+
+    SELECT @FromDt  = OpenMonth FROM SystemInfo WITH(NOLOCK)
+
+    SET @ToDt = DATEADD(Month,1,@FromDt )-1
+
+    IF @AsofCurrent = 1 SET @ToDt = convert(date,GETDATE())
+
+    SET @BegDt = DATEADD(Day,-1,@FromDt)
+
+	declare @CloseDt datetime
+
+    set @CloseDt = DATEADD(Month,1,@FromDt )-1
+
+	
+
+    
+
+    -- Get Scale Weight UOM.
+
+    Declare @ScaleUOM char(3), @PriceUOM char(1)
+
+    Declare @PriceUomFactor decimal(18,8)
+
+    Select @ScaleUOM = scalewtuom from SystemInfo
+
+	If @ScaleUOM = 'L' BEGIN 
+
+		SET @PriceUomFactor=2000
+
+		SET @PriceUOM = 'S'
+
+	END
+
+	If @ScaleUOM = 'K' BEGIN
+
+		SET @PriceUomFactor=1000
+
+		SET @PriceUOM = 'M'
+
+	End
+
+
+
+
+
+	Create Table #COGSUpdateList(
+
+		WhseCPID char(12),
+
+		BuySellNo char(12),
+
+		DetailID INT,
+
+		GradeID CHAR(12),
+
+		OldPrice Money,
+
+		Price Money,
+
+		PriceUOM CHAR(1),
+
+		Amount Money
+
+		)
+
+
+
+   Create Table #INVENTORY_TRANS(
+
+			Warehouse varchar(45),
+
+			GradeID char(15),
+
+			InvClass char(10),
+
+			Location char(25),
+
+			Supplier char(12),
+
+			Qty decimal(18,4),
+
+			Amount money
+
+			)
+
+
+
+   Create Table #INVENTORY_SALES(
+
+			WhseCPID char(12),
+
+			GradeID char(15),
+
+			SellQty decimal(18,4),
+
+			CostOfSales money
+
+			)
+
+
+
+   Create Table #INVENTORY(			
+
+			Warehouse varchar(45),
+
+			GradeID char(15),
+
+			InvClass char(10),
+
+			Location char(25),
+
+			Supplier char(12),
+
+			Qty decimal(18,4) DEFAULT 0,
+
+			Value money DEFAULT 0,
+
+			AvgCost Money DEFAULT 0,
+
+			Estimate bit DEFAULT 0,
+
+			--(For Reference)
+
+			PeriodPurchaseQty decimal(18,4) DEFAULT 0 ,
+
+			PeriodPurchaseAmt money DEFAULT 0,
+
+			PeriodSalesQty decimal(18,4) DEFAULT 0,
+
+			PeriodSalesAmt money DEFAULT 0,
+
+			PeriodAllocInQty decimal(18,4) DEFAULT 0,
+
+			PeriodAllocInAmt money DEFAULT 0,
+
+			PeriodAllocOutQty decimal(18,4) DEFAULT 0,
+
+			PeriodAllocOutAmt money DEFAULT 0
+
+			)
+
+
+
+
+
+	
+
+	--Create Table #LOCKED_WAREHOUSELIST(
+
+	--	Dept CHAR(2),
+
+	--	WhseCPID char(12)
+
+	--	)			
+
+		
+
+
+
+		
+
+	---- CREATE LIST OF LOCKED WAREHOUSES.	
+
+	--IF @DoDeptLock=1 And @DoCLosing = 0
+
+	--	INSERT #LOCKED_WAREHOUSELIST
+
+	--		SELECT	companyinfo_whse.COID, 
+
+	--				companyinfo_whse.WhseID 
+
+	--		FROM companyinfo_whse inner join companyinfo ON companyinfo_whse.COID = companyinfo.COID
+
+	--		WHERE ISDeptLocked = 1
+
+
+
+
+
+	-- Get Beginning Balance: Quantity & Cost (From Last Close).			
+
+	INSERT #INVENTORY_TRANS			
+
+		SELECT 
+
+			WarehouseNm,
+
+			GradeID,
+
+			InvClass,
+
+			Location,
+
+			Supplier,
+
+			Quantity [Weight],
+
+			ValueAmt Amount 
+
+		FROM InventoryValue WITH (NOLOCK)
+
+		WHERE ValueDt = @BegDt   
+
+
+
+		
+
+
+
+			
+
+	-- Get Period Purchases & Adjustments: Quantity & Cost.
+
+	INSERT #INVENTORY_TRANS			
+
+        SELECT 
+
+			a.WarehouseNm, 
+
+			a.GradeID, 
+
+			isnull(a.InvClass,''),
+
+			isnull(a.Location,''),
+
+			isnull(a.Supplier,''),
+
+			sum(ISNULL(Quantity,0)) [Weight] ,  
+
+			sum(ISNULL(Amount,0)) Amount			
+
+        FROM InventoryLedger a WITH(NOLOCK) 
+
+		inner join grade on grade.gradeid=a.GradeID
+
+        WHERE 
+
+			PostDate >=@FromDt AND PostDate <=@ToDt	
+
+			and (@warehouseNm='' or WarehouseNm = @WarehouseNm)
+
+			and isnull(lotno, '') = ''
+
+			and grade.InventoryType = 'BULK_WTVAL'
+
+        GROUP BY WarehouseNm, a.GradeID, a.InvClass, a.Location, a.Supplier
+
+
+
+	-- Rollup Period Purchases by Grade & Warehouse: Quantity & Cost.
+
+	INSERT #INVENTORY(Warehouse,GradeID,Invclass, location, supplier, Qty,Value)			
+
+		SELECT 
+
+			Warehouse,
+
+			GradeID,
+
+			InvClass,
+
+			Location,
+
+			Supplier,
+
+			SUM(Qty) ,
+
+			SUM(Amount)			
+
+		FROM #INVENTORY_TRANS 	
+
+		GROUP BY Warehouse, GradeID, invclass, location, Supplier
+
+
+
+
+
+	------------------------------------
+
+	-- GET TOTAL INVENTORY AVERAGE COST. 
+
+	--(Used to estimate cost of sales on negative inventory in open period)
+
+	DECLARE @OverallAvgCost decimal(18,8)
+
+	SELECT @OverallAvgCost  = (SUM(Value) / SUM(Qty)) 
+
+		FROM #INVENTORY 
+
+		WHERE Qty > 0 AND (Warehouse = @WarehouseNm OR @WarehouseNm= '')
+
+	------------------------------------
+
+	
+
+	
+
+	------------------------------------
+
+	-- CAPTURE PERIOD PURCHASES AND COSTS BEFORE SALES ALLOCATIONS ARE APPLIED.
+
+	--(For reference Only.)
+
+	UPDATE #INVENTORY SET 
+
+		PeriodPurchaseQty = QTY,
+
+		PeriodPurchaseAmt = Value
+
+		FROM #INVENTORY 
+
+	------------------------------------
+
+
+
+	--------------------------------------------------
+
+	--* ESTIMATE COST OF SALES FOR NEGATIVE INVENTORY. 
+
+	-- (Used to estimate cost of sales on negative inventory in open period)	
+
+	--For reference only.
+
+	--------------------------------------------------
+
+	UPDATE #inventory SET 
+
+		Estimate=1, 
+
+		Value = (Qty * @OverallAvgCost),
+
+		PeriodSalesAmt = round((abs(Qty) * @OverallAvgCost),2)
+
+		where Qty < 0 and Value = 0 
+
+		AND (@WarehouseNm='' OR @WarehouseNm = Warehouse)
+
+
+
+	------------------------------------------------
+
+	/* CALCULATE AVG COST PER PRICE UOM.          */
+
+	-- (Used to present Avg-Cost on commodity allocation. 
+
+	--For reference only.
+
+	------------------------------------------------
+
+	UPDATE #INVENTORY SET AvgCost =  round( (Value/Qty) ,3) WHERE Qty <> 0 
+
+
+
+	
+
+	------------------------------------------------
+
+	/* MONTH-END CLOSING						  */
+
+	------------------------------------------------
+
+	IF @DoClosing = 1  BEGIN	
+
+	
+
+		--B.) Cancel close if there are negative quantities on hand.
+
+		SELECT	@ErrWhseName = Warehouse,
+
+				@ErrGradeNm	 = Description
+
+			FROM #INVENTORY 
+
+			INNER JOIN GRADE ON #INVENTORY.GradeID = GRADE.GRADEID
+
+			WHERE #INVENTORY.QTY < 0						
+
+			
+
+
+
+		IF @ErrWhseName IS NULL SET @ErrWhseName= ''
+
+		IF @ErrWhseName <> '' BEGIN
+
+			SET @Errormessage = 'Product/Grade ' + @ErrGradeNm + ' in Warehouse ' + rtrim(@ErrWhseName) + ' has a negative quantity on hand.'
+
+			--select @Errormessage			
+
+			RETURN
+
+		END
+
+	
+
+		
+
+		--C.) MONTH-END CLOSING - WRITE INVENTORY.       
+
+		------------------------------------------
+
+		DELETE FROM InventoryValue WHERE ValueDt = @ToDt
+
+
+
+		--FOR GENERAL CLOSE.
+
+		IF @DoClosing = 1 BEGIN
+
+			INSERT inventoryvalue(GradeID,InvClass, Location, Supplier, UnitCost,Quantity,ValueDt, ValueAmt,WarehouseNm)  
+
+				SELECT	GradeID,
+
+						InvClass,
+
+						Location,
+
+						SUpplier,
+
+						AvgCost,
+
+						Qty,
+
+						@ToDt,
+
+						Value,
+
+						Warehouse
+
+						
+
+				FROM #INVENTORY	--WHERE QTY <> 0 
+
+
+
+		END
+
+		
+
+		--FOR DEPT CLOSE.
+
+		
+
+		 
+
+		 
+
+		 SET @ERRORMESSAGE=''
+
+		 RETURN				
+
+	END
+
+
+
+
+
+
+
+	Select #INVENTORY.GradeID, 
+
+			SUM(PeriodPurchaseQty) PeriodPurchaseQty,
+
+			SUM(PeriodPurchaseAmt)PeriodPurchaseAmt,
+
+			SUM(PeriodSalesQty) PeriodSalesQty,
+
+			SUM(PeriodSalesAmt) PeriodSalesAmt,
+
+			SUM(PeriodAllocInQty) PeriodAllocInQty,
+
+			SUM(PeriodAllocInAmt) PeriodAllocInAmt,
+
+			SUM(PeriodAllocOutQty) PeriodAllocOutQty,
+
+			SUM(PeriodAllocOutAmt) PeriodAllocOutAmt
+
+			FROM #INVENTORY INNER JOIN GRADE ON #INVENTORY.GRADEID = GRADE.GRADEID
+
+				
+
+			WHERE (@WarehouseNm='' OR @WarehouseNm = Warehouse)			
+
+			GROUP BY #INVENTORY.GradeID, InvClass, Location, Warehouse
+
+
+
+			
+

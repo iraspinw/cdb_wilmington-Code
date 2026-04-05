@@ -1,0 +1,180 @@
+CREATE PROC [dbo].[cw_Closing_Alert_UnPostedAdjustments] @DoColumnDefOnly BIT, @FromDt datetime,@ToDT datetime,@COID char(2)
+
+AS
+
+SET NOCOUNT ON
+
+--09/19/2012 DSH Created for Closing Adjustment Ledger.
+
+--03/09/2020 Alex Added  CustID,VendorID
+
+
+
+	/* DEFINE REPORT COLUMNS SECTION. */
+
+	IF @DoColumnDefOnly = 1 BEGIN
+
+	
+
+		CREATE TABLE #ReportDef(
+
+			ColName char(25),
+
+			ColAlign char(1),
+
+			ColWidth int,
+
+			ColDataType char(10),
+
+			ColNumFormat char(15)
+
+		)
+
+		
+
+		INSERT #ReportDef SELECT 'Worksheet No.','L',1250,'TEXT',''		
+
+		INSERT #ReportDef SELECT 'Request Date','L',1250,'DATE',''		
+
+		INSERT #ReportDef SELECT 'Vendor','L',2100,'TEXT',''
+
+		INSERT #ReportDef SELECT 'Reason','L',1500,'TEXT',''
+
+		INSERT #ReportDef SELECT 'Amount','R',1300,'NUM','#,###,##0.00'		
+
+		INSERT #ReportDef SELECT 'Currency','L',700,'TEXT',''		
+
+		INSERT #ReportDef SELECT 'User','L',1000,'TEXT',''
+
+		INSERT #ReportDef SELECT 'HC Amount','R',1300,'NUM','#,###,##0.00'		
+
+		
+
+		SELECT ColName, ColAlign, ColWidth, ColDataType, ColNumFormat FROM #ReportDef
+
+		RETURN
+
+	END	
+
+	
+
+	
+
+	CREATE TABLE #Report( 			
+
+		BuySellNo CHAR(12),
+
+		ReqDate DATETIME, 	
+
+		CompanyNm VARCHAR(65),
+
+		AdjReason VARCHAR(1000),
+
+		FxAmount MONEY,
+
+		FxCurrency CHAR(3),		
+
+		UserID CHAR(30),  
+
+		Amount MONEY,
+
+		[-Hidden-CustID] char(12),
+
+		[-Hidden-VendorID] char(12)
+
+	)
+
+	
+
+	
+
+	
+
+	INSERT #Report
+
+    SELECT 
+
+		GPLedger.BuySellNo, 
+
+		AdjReqDate,
+
+		CompanyNm,
+
+		AdjReason,			
+
+		AdjFxAmount, AdjCurrencyCd,
+
+		GPLedger.UserID,
+
+		GPLedger.Cost,
+
+	    CustID,
+
+	    VendorID		
+
+    FROM GPLedger WITH(NOLOCK) 
+
+    INNER JOIN Buysell WITH(NOLOCK) ON GPLedger.BuySellNo = BuySell.BuySellNo
+
+    INNER JOIN Counterparty ON GPLedger.AdjCPID = Counterparty.CPID
+
+    WHERE Source = 'A' AND AdjType = 'P' AND GPLedger.AdjCompleted='Y' AND AdjPosted='N'
+
+    AND (@CoID = '' OR @CoID = BuySell.CoID) 	
+
+    Order By AdjReqDate
+
+
+
+	----
+
+	INSERT #REPORT(BuySellNo,Amount)			
+
+		SELECT 
+
+			'TOTAL', 
+
+			SUM(Amount)
+
+		FROM #Report 
+
+	
+
+	--SELECT * FROM #Report
+
+	SELECT
+
+		BuySellNo [Worksheet No],
+
+		ReqDate , 	
+
+		CompanyNm [Vendor],
+
+		AdjReason ,
+
+		FxAmount ,
+
+		FxCurrency ,		
+
+		--UserID [User], 
+
+		UserDef.UserNm [User],
+
+		Amount ,
+
+		[-Hidden-CustID] ,
+
+		[-Hidden-VendorID] 
+
+		FROM #Report
+
+		left join UserDef on UserDef.UserID=#Report.USERID
+
+--go
+
+--q_Closing_Alert_UnPostedAdjustments 0,'7/1/2012','7/31/2012' ,''
+
+
+
+
+
