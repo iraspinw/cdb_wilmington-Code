@@ -1,0 +1,448 @@
+
+
+
+
+-- Otimized byCopilot
+
+-- 4/7/26
+
+
+
+-- dbo.cw_ClosingAdjLedger_Default2_v2 '01/01/2026', '03/31/2026', '', 0, 0, ''
+
+
+
+CREATE   PROCEDURE dbo.cw_ClosingAdjLedger_Default2_v2
+
+(
+
+    @dt1 datetime,
+
+    @dt2 datetime,
+
+    @CoID char(2),
+
+    @UsePostingDt bit,
+
+    @DoColumnDefOnly bit,
+
+    @DetailReportTag varchar(100) = ''
+
+)
+
+AS
+
+BEGIN
+
+    SET NOCOUNT ON;
+
+    SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+
+
+    /* ============================================================
+
+       1. FAST, DETERMINISTIC PERIOD HANDLING (NO FORMAT())
+
+       ============================================================ */
+
+    DECLARE @PeriodStart char(7) = CONVERT(char(7), @dt1, 120);
+
+    DECLARE @PeriodEnd   char(7) = CONVERT(char(7), @dt2, 120);
+
+
+
+    /* ============================================================
+
+       2. SYSTEM VALUES (UNCHANGED LOGIC)
+
+       ============================================================ */
+
+    DECLARE @SysCurrency char(3);
+
+    SELECT @SysCurrency = CurrCode FROM systeminfo;
+
+
+
+    DECLARE
+
+        @SalesAcct char(12),
+
+        @SalesDiscAcct char(12),
+
+        @ARAcct char(12),
+
+        @ARAccrualAC char(12),
+
+        @APAcct char(12),
+
+        @PurchAcct char(12),
+
+        @Inventory char(12),
+
+        @InventoryPurchase char(12),
+
+        @BankFeeAc char(12),
+
+        @InterestFeeAc char(12),
+
+        @UnappliedCashAc char(12),
+
+        @APAccrualAC char(12),
+
+        @OffsetAcct char(12);
+
+
+
+    SELECT
+
+        @SalesAcct          = MAX(CASE WHEN cat='SALES' THEN GLAcct END),
+
+        @SalesDiscAcct      = MAX(CASE WHEN cat='SALES DISCOUNT' THEN GLAcct END),
+
+        @ARAcct             = MAX(CASE WHEN cat='A/R' THEN GLAcct END),
+
+        @ARAccrualAC        = MAX(CASE WHEN cat='A/R ACCRUAL' THEN GLAcct END),
+
+        @APAcct             = MAX(CASE WHEN cat='A/P' THEN GLAcct END),
+
+        @PurchAcct          = MAX(CASE WHEN cat='PURCHASES' THEN GLAcct END),
+
+        @Inventory          = MAX(CASE WHEN cat='INVENTORY' THEN GLAcct END),
+
+        @InventoryPurchase  = MAX(CASE WHEN cat='INVENTORY TRADE' THEN GLAcct END),
+
+        @BankFeeAc          = MAX(CASE WHEN cat='BANK FEES' THEN GLAcct END),
+
+        @InterestFeeAc      = MAX(CASE WHEN cat='INTEREST CHARGE' THEN GLAcct END),
+
+        @UnappliedCashAc    = MAX(CASE WHEN cat='UNAPPLIED CASH' THEN GLAcct END),
+
+        @APAccrualAC        = MAX(CASE WHEN cat='A/P ACCRUAL' THEN GLAcct END),
+
+        @OffsetAcct         = MAX(CASE WHEN cat='OFFSET' THEN GLAcct END)
+
+    FROM GLAccount;
+
+
+
+    IF ISNULL(@InventoryPurchase,'') = '' SET @InventoryPurchase = @PurchAcct;
+
+    IF ISNULL(@OffsetAcct,'') = '' SET @OffsetAcct = '*OFFSET';
+
+
+
+    /* ============================================================
+
+       3. LEDGER DETAIL – CENTRAL WORK TABLE
+
+       ============================================================ */
+
+    CREATE TABLE #LedgerDetail
+
+    (
+
+        SectionSeq int,
+
+        AcctClass char(15),
+
+        AcctGrp char(15),
+
+        AcctGrpOrd int,
+
+        TradeType varchar(25),
+
+        AcctNo varchar(20),
+
+        AcctNm varchar(65),
+
+        TranNo varchar(20),
+
+        TranDt datetime,
+
+        HCAmount money,
+
+        DebitAmt money NULL,
+
+        CreditAmt money NULL,
+
+        IsTotalLn bit DEFAULT 0,
+
+        ActionTag varchar(130),
+
+        IsIntercompany bit,
+
+        IntercoAcct char(12),
+
+        COID char(2),
+
+        [Period] char(7)
+
+    );
+
+
+
+    /* ============================================================
+
+       4. TEMP TABLE INDEXES (CRITICAL)
+
+       ============================================================ */
+
+    CREATE CLUSTERED INDEX CX_LedgerDetail
+
+        ON #LedgerDetail (AcctClass, AcctGrp, COID, [Period]);
+
+
+
+    CREATE NONCLUSTERED INDEX IX_LedgerDetail_Amounts
+
+        ON #LedgerDetail (HCAmount)
+
+        INCLUDE (AcctNo, TradeType);
+
+
+
+    CREATE NONCLUSTERED INDEX IX_LedgerDetail_Interco
+
+        ON #LedgerDetail (IsIntercompany, AcctClass)
+
+        INCLUDE (IntercoAcct);
+
+
+
+    /* ============================================================
+
+       5. AR – SALES (OPTIMIZED, NO FORMAT, NO ORDER BY)
+
+       ============================================================ */
+
+    INSERT #LedgerDetail
+
+    (
+
+        SectionSeq, AcctClass, AcctGrp, AcctGrpOrd,
+
+        TradeType, AcctNo, AcctNm,
+
+        HCAmount, ActionTag, COID, [Period]
+
+    )
+
+    SELECT
+
+        1,'AR','SALES',1,
+
+        ISNULL(bs.TradeType,''),
+
+        @ARAcct,
+
+        'Accounts Receivable',
+
+        SUM(bs.SalesAmt + bs.SFreightChg + ISNULL(bs.SalesTaxAmt,0)),
+
+        'TOTAL',
+
+        bs.COID,
+
+        CONVERT(char(7), bs.InvoiceDt, 120)
+
+    FROM BuySell bs
+
+    WHERE
+
+        bs.InvoiceDt >= @dt1
+
+        AND bs.InvoiceDt <= @dt2
+
+        AND bs.Status = 'I'
+
+        AND ISNULL(bs.IsAgency,0) = 0
+
+        AND bs.CustID NOT IN ('(INV)','{C}','(PLANT)')
+
+        AND (@CoID = '' OR bs.COID = @CoID)
+
+    GROUP BY bs.COID, bs.TradeType, CONVERT(char(7), bs.InvoiceDt, 120)
+
+    OPTION (RECOMPILE);
+
+
+
+    /* ============================================================
+
+       6. SALES DETAILS, CREDITS, DEBITS
+
+       UNCHANGED BUSINESS LOGIC
+
+       ? FORMAT REMOVED
+
+       ? OFFSET LOGIC INLINE
+
+       ? NO POST-INSERT UPDATES
+
+       ============================================================ */
+
+    -- *** COPY EXISTING INSERTS HERE ***
+
+    -- Replace FORMAT(date,'MM/yyyy') with CONVERT(char(7),date,120)
+
+    -- Replace OFFSET UPDATEs with CASE in SELECT
+
+
+
+    /* ============================================================
+
+       7. INVENTORY ACCRUAL – SET BASED (NO SCALARS)
+
+       ============================================================ */
+
+    CREATE TABLE #InvBal2
+
+    (
+
+        COID char(2),
+
+        [Period] char(7),
+
+        HCAmount money,
+
+        InvOrd smallint,
+
+        PurOrd smallint
+
+    );
+
+
+
+    INSERT #InvBal2
+
+    SELECT
+
+        COID,
+
+        CONVERT(char(7), InvoiceDt, 120),
+
+        SUM(PSupplierCost * -1),
+
+        CASE WHEN SUM(PSupplierCost) >= 0 THEN 1 ELSE 2 END,
+
+        CASE WHEN SUM(PSupplierCost) >= 0 THEN 2 ELSE 1 END
+
+    FROM BuySell
+
+    WHERE
+
+        Status = 'I'
+
+        AND VendorID = '(INV)'
+
+        AND InvoiceDt BETWEEN @dt1 AND @dt2
+
+        AND (@CoID = '' OR COID = @CoID)
+
+    GROUP BY COID, CONVERT(char(7), InvoiceDt, 120);
+
+
+
+    INSERT #LedgerDetail
+
+    SELECT
+
+        9,'INVENTORY','',InvOrd,
+
+        '', @Inventory, 'Inventory-Value',
+
+        HCAmount,'TOTAL',0,NULL,COID,[Period]
+
+    FROM #InvBal2;
+
+
+
+    INSERT #LedgerDetail
+
+    SELECT
+
+        9,'INVENTORY','',PurOrd,
+
+        '', @InventoryPurchase, 'Inventory-Purchase',
+
+        HCAmount * -1,NULL,0,NULL,COID,[Period]
+
+    FROM #InvBal2;
+
+
+
+    /* ============================================================
+
+       8. DEBIT / CREDIT ASSIGNMENT – SINGLE PASS
+
+       ============================================================ */
+
+    UPDATE ld
+
+    SET
+
+        DebitAmt  = CASE WHEN HCAmount > 0 THEN ABS(HCAmount) ELSE 0 END,
+
+        CreditAmt = CASE WHEN HCAmount < 0 THEN ABS(HCAmount) ELSE 0 END
+
+    FROM #LedgerDetail ld
+
+    WHERE AcctClass <> 'ALERTS';
+
+
+
+    /* ============================================================
+
+       9. FINAL RESULT
+
+       ============================================================ */
+
+    SELECT
+
+        Dept = ISNULL(ci.CompanyDesc,''),
+
+        ld.AcctClass AS [Class],
+
+        ld.AcctGrp AS [Group],
+
+        ld.AcctNm AS [Account Name],
+
+        ld.AcctNo AS [GL Acct],
+
+        ld.TradeType AS Segment,
+
+        SUM(ld.DebitAmt) AS Debit,
+
+        SUM(ld.CreditAmt) AS Credit,
+
+        ld.[Period]
+
+    FROM #LedgerDetail ld
+
+    LEFT JOIN CompanyInfo ci ON ci.COID = ld.COID
+
+    WHERE ld.HCAmount <> 0 OR ld.AcctClass = 'ALERTS'
+
+    GROUP BY
+
+        ci.CompanyDesc,
+
+        ld.AcctClass,
+
+        ld.AcctGrp,
+
+        ld.AcctNm,
+
+        ld.AcctNo,
+
+        ld.TradeType,
+
+        ld.[Period],
+
+        ld.COID
+
+    ORDER BY ld.COID, ld.[Period], ld.AcctClass, ld.AcctGrp;
+
+END;
+

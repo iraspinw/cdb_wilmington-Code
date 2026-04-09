@@ -2966,7 +2966,7 @@ SET @InvSign = -1
 
 		,SUM(DebitAmt) [Debit]
 
-		,Sum(CreditAmt) [Credit]
+		,Sum(CreditAmt) --* (-1)--- 2*Sum(CreditAmt) [Credit] -- to be shown as negative amounts
 
 		, [Period]
 
