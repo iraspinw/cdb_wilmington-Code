@@ -8,13 +8,13 @@
 
 -- Tests
 
--- [dbo].[cw_ClosingAdjLedger_Default2] '03/01/2026', '03/31/2026', '', 0, 0, ''
+-- [dbo].[cw_ClosingAdjLedger_Default2_ODS] '03/01/2026', '03/31/2026', '', 0, 0, ''
 
--- [dbo].[cw_ClosingAdjLedger_Default2] '01/01/2026', '03/31/2026', '', 0, 0, ''
+-- [dbo].[cw_ClosingAdjLedger_Default2_ODS] '01/01/2026', '03/31/2026', '', 0, 0, ''
 
 
 
-CREATE PROCEDURE [dbo].[cw_ClosingAdjLedger_Default2] @dt1 as datetime, @dt2 as datetime, @CoID as char(2),  @UsePostingDt BIT, @DoColumnDefOnly bit, @DetailReportTag VARCHAR(100) = '' 
+CREATE   PROCEDURE [dbo].[cw_ClosingAdjLedger_Default2_ODS] @dt1 as datetime, @dt2 as datetime, @CoID as char(2),  @UsePostingDt BIT, @DoColumnDefOnly bit, @DetailReportTag VARCHAR(100) = '' 
 
 AS  
 
@@ -1160,7 +1160,7 @@ q_Closing_FxAdjDetails
 
 --	INSERT #LedgerDetail(SectionSeq,AcctClass,AcctGrp,AcctGrpOrd,TradeType,AcctNo,AcctNm,HCAmount) 
 
---        SELECT 6,'POSTED-INTEREST','',1,'',@InterestFeeAc,'Interest Charge',SUM(HcAmount)*-1
+--      SELECT 6,'POSTED-INTEREST','',1,'',@InterestFeeAc,'Interest Charge',SUM(HcAmount)*-1
 
 --	    FROM #LedgerDetail WHERE AcctClass = 'POSTED-INTEREST'
 
@@ -2932,8 +2932,6 @@ SET @InvSign = -1
 
 	/* CLOSING ADJUSTMENT LEDGER REPORT */
 
-	---------------------------------------------------------------------------------------------------------	
-
 
 
 	/* ASSIGN ACTION TAGS FOR DRILL-DOWN REPORTING */
@@ -2948,17 +2946,9 @@ SET @InvSign = -1
 
 
 
-	-- SELECT * FROM tblClosingAdjustments
-
-	TRUNCATE TABLE tblClosingAdjustments
-
-	INSERT tblClosingAdjustments
-
 	SELECT 
 
-		 Dept = ISNULL((SELECT CompanyDesc from CompanyInfo where coid = #LedgerDetail.coid), ''),
-
-		 Code = (SELECT Code from CompanyCode where coid = #LedgerDetail.coid)
+		 Dept = ISNULL((SELECT CompanyDesc from CompanyInfo where coid = #LedgerDetail.coid), '')
 
 		,AcctClass as [Class], AcctGrp as [Group], AcctNm as [Account Name], AcctNo [GL Acct]
 
@@ -2968,7 +2958,7 @@ SET @InvSign = -1
 
 		,SUM(DebitAmt) [Debit]
 
-		,Sum(CreditAmt) * (-1)--- 2*Sum(CreditAmt) [Credit] -- to be shown as negative amounts
+		,Sum(CreditAmt) --* (-1)--- 2*Sum(CreditAmt) [Credit] -- to be shown as negative amounts
 
 		, [Period]
 
@@ -2981,8 +2971,6 @@ SET @InvSign = -1
 		GROUP BY COID, [period], SectionSeq, AcctClass, AcctGrp, AcctGrpOrd, AcctNo, TradeType, AcctNm, IsTotalLn,ActionTag 		
 
 		ORDER BY COID, SectionSeq, AcctClass, AcctGrp, AcctGrpOrd, AcctNo, TradeType, AcctNm, IsTotalLn
-
-
 
 
 
