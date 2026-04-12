@@ -2950,6 +2950,8 @@ SET @InvSign = -1
 
 		 Dept = ISNULL((SELECT CompanyDesc from CompanyInfo where coid = #LedgerDetail.coid), '')
 
+		 ,Code = (SELECT Code from CompanyCode where coid = #LedgerDetail.coid)
+
 		,AcctClass as [Class], AcctGrp as [Group], AcctNm as [Account Name], AcctNo [GL Acct]
 
 		, TradeType Segment
